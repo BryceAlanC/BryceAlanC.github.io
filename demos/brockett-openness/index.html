@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An interactive visualization of Brockett openness profiles and gain-limited feedback stabilization."
+    />
+    <title>Openness profiles and gain envelopes</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="demo-shell" id="demo-shell">
+      <header class="demo-header">
+        <p class="kicker">Brockett openness laboratory</p>
+        <h1>How much control can the openness profile support?</h1>
+        <p class="lede">
+          The open-loop field supplies a scale-dependent ball of velocities. A gain ceiling limits
+          how far the feedback graph can reach into that field. Move the controls to compare the
+          desired closed-loop ball with the open-loop capacity.
+        </p>
+      </header>
+
+      <section class="theorem-strip" aria-labelledby="theorem-title">
+        <div>
+          <p class="kicker">Graph-limited Brockett inequality</p>
+          <h2 id="theorem-title">The feedback graph bounds the closed-loop profile.</h2>
+          <p>
+            Let <span class="inline-math">G<sub>u</sub>(x)=(x,u(x))</span> be the feedback graph and
+            <span class="inline-math">F<sub>u</sub>=f&nbsp;&compfn;&nbsp;G<sub>u</sub></span> the closed-loop field.
+            If <span class="inline-math">&#x2016;u(x)&#x2016;&le;d(&#x2016;x&#x2016;)</span>, then
+          </p>
+        </div>
+        <div class="theorem-equation" aria-label="Omega sub F u of r is less than or equal to Omega sub f of the square root of r squared plus d of r squared.">
+          <strong>
+            &Omega;<sub>F<sub>u</sub></sub>(r)
+            &le;
+            &Omega;<sub>f</sub>(&radic;<span class="radicand">r<sup>2</sup>+d(r)<sup>2</sup></span>)
+          </strong>
+        </div>
+      </section>
+
+      <section class="laboratory" aria-labelledby="lab-title">
+        <div class="section-heading">
+          <p class="kicker">Exact radial example</p>
+          <h2 id="lab-title">Resize the image, target, and gain envelope.</h2>
+          <p>
+            Here the open-loop image is an ellipse whose largest centered ball is known exactly.
+            A green result means this necessary test does not rule the target out; it is not a
+            general sufficiency claim.
+          </p>
+        </div>
+
+        <div class="lab-layout">
+          <form class="control-panel" id="control-panel" aria-label="Openness-profile parameters">
+            <div class="control-heading">
+              <span>Parameters</span>
+              <button type="button" id="reset-controls">Reset</button>
+            </div>
+
+            <label class="range-control" for="kappa-slider">
+              <span>
+                <b>Open-loop openness</b>
+                <output id="kappa-output" for="kappa-slider">&kappa; = 0.80</output>
+              </span>
+              <input id="kappa-slider" type="range" min="0.25" max="1.5" step="0.05" value="0.8" />
+              <small>&Omega;<sub>f</sub>(s)=&kappa;s<sup>2</sup></small>
+            </label>
+
+            <label class="range-control" for="target-slider">
+              <span>
+                <b>Desired closed-loop rate</b>
+                <output id="target-output" for="target-slider">c = 0.80</output>
+              </span>
+              <input id="target-slider" type="range" min="0.1" max="1.2" step="0.05" value="0.8" />
+              <small>&gamma;(r)=cr</small>
+            </label>
+
+            <label class="range-control" for="gain-slider">
+              <span>
+                <b>Allowed gain coefficient</b>
+                <output id="gain-output" for="gain-slider">K = 0.80</output>
+              </span>
+              <input id="gain-slider" type="range" min="0" max="2" step="0.05" value="0.8" />
+              <small id="gain-formula">d(r)=K&radic;r</small>
+            </label>
+
+            <fieldset class="gain-shape">
+              <legend>Gain-envelope shape</legend>
+              <label>
+                <input type="radio" name="gain-shape" value="sqrt" checked />
+                <span>Square root <small>d(r)=K&radic;r</small></span>
+              </label>
+              <label>
+                <input type="radio" name="gain-shape" value="linear" />
+                <span>Linear <small>d(r)=Kr</small></span>
+              </label>
+            </fieldset>
+
+            <label class="range-control inspection" for="radius-slider">
+              <span>
+                <b>Inspection radius</b>
+                <output id="radius-output" for="radius-slider">r = 0.10</output>
+              </span>
+              <input id="radius-slider" type="range" min="0.01" max="0.35" step="0.01" value="0.1" />
+              <small>Move the vertical cursor in the plot.</small>
+            </label>
+          </form>
+
+          <div class="visuals">
+            <article class="visual-card geometry-card">
+              <header>
+                <span>At the selected radius</span>
+                <h3>The open-loop image and its centered ball</h3>
+              </header>
+              <canvas
+                id="geometry-canvas"
+                role="img"
+                aria-label="An output ellipse containing its largest centered openness ball and the desired closed-loop ball."
+              ></canvas>
+              <div class="canvas-legend" aria-label="Geometry color legend">
+                <span><i class="ellipse-key"></i>f(B<sub>R</sub>)</span>
+                <span><i class="capacity-key"></i>openness ball</span>
+                <span><i class="target-key"></i>desired ball</span>
+              </div>
+            </article>
+
+            <article class="visual-card plot-card">
+              <header>
+                <span>Across nearby scales</span>
+                <h3>Target openness versus available capacity</h3>
+              </header>
+              <canvas
+                id="profile-canvas"
+                role="img"
+                aria-label="A plot comparing desired closed-loop openness with the open-loop capacity allowed by the gain envelope."
+              ></canvas>
+              <div class="canvas-legend" aria-label="Plot color legend">
+                <span><i class="capacity-line-key"></i>&kappa;(r<sup>2</sup>+d(r)<sup>2</sup>)</span>
+                <span><i class="target-line-key"></i>cr</span>
+                <span><i class="cursor-key"></i>selected r</span>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="metric-grid" aria-label="Current inequality values">
+          <div>
+            <span>Control ceiling</span>
+            <strong id="metric-gain">d(r) = 0.253</strong>
+          </div>
+          <div>
+            <span>Joint radius reached</span>
+            <strong id="metric-radius">R = 0.272</strong>
+          </div>
+          <div>
+            <span>Desired ball</span>
+            <strong id="metric-target">cr = 0.080</strong>
+          </div>
+          <div>
+            <span>Open-loop capacity</span>
+            <strong id="metric-capacity">&kappa;R<sup>2</sup> = 0.059</strong>
+          </div>
+        </div>
+
+        <div class="status-card" id="status-card" role="status" aria-live="polite">
+          <div class="status-icon" aria-hidden="true">!</div>
+          <div>
+            <span id="status-kicker">Ruled out near the equilibrium</span>
+            <strong id="status-title">This gain envelope is too small.</strong>
+            <p id="status-detail"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="model" aria-labelledby="model-title">
+        <div class="section-heading">
+          <p class="kicker">Why the geometry is exact</p>
+          <h2 id="model-title">A simple system realizes the threshold.</h2>
+        </div>
+        <div class="model-grid">
+          <article>
+            <span>Open-loop field</span>
+            <strong>f<sub>&kappa;</sub>(x,u)=&#x2016;u&#x2016;A<sub>&kappa;</sub>u</strong>
+            <p>
+              For A<sub>&kappa;</sub>=&kappa;&middot;diag(1.6,1), a joint ball of radius s maps to an ellipse
+              with semiaxes 1.6&kappa;s<sup>2</sup> and &kappa;s<sup>2</sup>. Therefore
+              &Omega;<sub>f</sub>(s)=&kappa;s<sup>2</sup> exactly.
+            </p>
+          </article>
+          <article>
+            <span>Exact linear closed loop</span>
+            <strong>f<sub>&kappa;</sub>(x,u<sub>c</sub>(x))=&minus;cx</strong>
+            <p>
+              Taking y=&minus;cA<sub>&kappa;</sub><sup>&minus;1</sup>x and
+              u<sub>c</sub>(x)=y/&radic;<span class="radicand">&#x2016;y&#x2016;</span> produces the target field.
+              Set u<sub>c</sub>(0)=0. Its magnitude is bounded by
+              &radic;<span class="radicand">c/&kappa;</span>&radic;<span class="radicand">&#x2016;x&#x2016;</span>.
+            </p>
+          </article>
+          <article>
+            <span>Asymptotic threshold</span>
+            <strong id="threshold-formula">K &ge; &radic;(c/&kappa;) = 1.00</strong>
+            <p>
+              This is a minimum required size for an upper gain envelope—not a maximum allowed
+              gain. A linear envelope Kr is too small near zero for every finite K.
+            </p>
+          </article>
+        </div>
+        <p class="necessary-note">
+          Outside this exact example, satisfying the displayed inequality only means that this
+          Brockett obstruction is silent. Other obstructions may still prevent stabilization.
+        </p>
+      </section>
+    </main>
+    <script src="./demo.js" defer></script>
+  </body>
+</html>

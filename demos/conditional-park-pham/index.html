@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conditional Park–Pham laboratory</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="demo-shell">
+      <header class="demo-heading">
+        <p class="eyebrow">Exact conditioning laboratory</p>
+        <h1>Conditioning can preserve, ignore, or reverse an increasing event.</h1>
+        <p class="lede">
+          Every point below is one of the 16 subsets of <i>X</i>={a,b,c,d}. The blue event is always
+          <i>F</i>={S:{a,b}⊆S}; switch the amber conditioning event <i>B</i> and move <i>p</i> to recompute
+          every probability exactly.
+        </p>
+      </header>
+
+      <section class="control-deck" aria-label="Laboratory controls">
+        <label class="probability-control" for="p-slider">
+          <span>Product probability <i>p</i></span>
+          <strong id="p-value">0.50</strong>
+          <input id="p-slider" type="range" min="0.05" max="0.95" step="0.01" value="0.50" />
+        </label>
+        <fieldset class="preset-control">
+          <legend>Conditioning event <i>B</i></legend>
+          <div class="preset-buttons">
+            <button type="button" data-preset="harris" aria-pressed="true">Increasing · Harris</button>
+            <button type="button" data-preset="independent" aria-pressed="false">Nonmonotone · independent</button>
+            <button type="button" data-preset="unfavorable" aria-pressed="false">Unfavorable</button>
+          </div>
+        </fieldset>
+      </section>
+
+      <section class="laboratory">
+        <article class="lattice-card" aria-labelledby="lattice-title">
+          <div class="card-heading">
+            <div>
+              <p>Boolean lattice 2<sup>X</sup></p>
+              <h2 id="lattice-title">All outcomes, not a simulation</h2>
+            </div>
+            <div class="legend" aria-label="Visual legend">
+              <span><i class="key key-f"></i>F</span>
+              <span><i class="key key-b"></i>B</span>
+              <span><i class="key key-both"></i>F∩B</span>
+            </div>
+          </div>
+          <svg id="lattice" viewBox="0 0 900 520" role="img" aria-labelledby="lattice-svg-title lattice-svg-desc">
+            <title id="lattice-svg-title">Probability-weighted Boolean lattice on four elements</title>
+            <desc id="lattice-svg-desc">Sixteen subsets arranged by rank. Node area represents exact product-measure probability; outlines and patterns show event membership.</desc>
+            <defs>
+              <pattern id="condition-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+                <rect width="8" height="8" fill="#18322d"></rect>
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#f0b18b" stroke-width="2.2"></line>
+              </pattern>
+              <filter id="soft-glow" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
+                <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+              </filter>
+            </defs>
+            <g id="lattice-edges" aria-hidden="true"></g>
+            <g id="lattice-nodes"></g>
+          </svg>
+          <p class="mass-note">Node <em>area</em> tracks μ<sub>p</sub>({S})=p<sup>|S|</sup>(1−p)<sup>4−|S|</sup>.</p>
+        </article>
+
+        <aside class="readout-card" aria-live="polite">
+          <div class="condition-description">
+            <p id="condition-kicker">Increasing condition</p>
+            <h2 id="condition-title">At least three elements are present.</h2>
+            <p id="condition-body">Both F and B are increasing, so Harris correlation supplies the nonnegative surplus.</p>
+          </div>
+
+          <dl class="probability-grid">
+            <div><dt>μ<sub>p</sub>(F)</dt><dd id="mu-f">0.2500</dd></div>
+            <div><dt>μ<sub>p</sub>(B)</dt><dd id="mu-b">0.3125</dd></div>
+            <div><dt>μ<sub>p</sub>(F∩B)</dt><dd id="mu-fb">0.1875</dd></div>
+            <div class="featured"><dt>P(F | B)</dt><dd id="conditional">0.6000</dd></div>
+          </dl>
+
+          <div class="surplus-panel">
+            <span>Correlation surplus</span>
+            <strong>Δ<sub>p</sub> = <b id="delta">+0.109375</b></strong>
+            <p>μ<sub>p</sub>(F∩B) − μ<sub>p</sub>(F)μ<sub>p</sub>(B)</p>
+          </div>
+
+          <div id="transfer-status" class="transfer-status positive">
+            <span class="status-mark" aria-hidden="true">✓</span>
+            <div><strong>Conditional transfer holds here.</strong><p>P(F|B) ≥ μ<sub>p</sub>(F).</p></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="identity-card" aria-labelledby="identity-title">
+        <div>
+          <p>What the theorem needs</p>
+          <h2 id="identity-title">One exact surplus carries the bound through conditioning.</h2>
+        </div>
+        <div class="identity-flow" role="img" aria-label="If the correlation surplus is nonnegative, conditional probability is at least unconditional probability">
+          <span>Δ<sub>p</sub> ≥ 0</span><i aria-hidden="true">⇒</i><span>P(F|B) = μ<sub>p</sub>(F∩B) / μ<sub>p</sub>(B)</span><i aria-hidden="true">⇒</i><strong>P(F|B) ≥ μ<sub>p</sub>(F)</strong>
+        </div>
+      </section>
+
+      <section class="poset-card" aria-labelledby="poset-title">
+        <div>
+          <p>Beyond the Boolean cube</p>
+          <h2 id="poset-title">Embed, estimate, condition back.</h2>
+        </div>
+        <div class="poset-flow">
+          <article><span>01 · embed</span><strong>U ⊆ P</strong><p>Place the ordered problem inside 2<sup>X</sup> through an embedding f.</p></article>
+          <i aria-hidden="true">→</i>
+          <article><span>02 · estimate</span><strong>f(U)=F∩f(P)</strong><p>Apply the Boolean product-measure estimate to the increasing event.</p></article>
+          <i aria-hidden="true">→</i>
+          <article><span>03 · condition back</span><strong>Y<sub>p</sub>=f<sup>−1</sup>(X<sub>p</sub> | X<sub>p</sub>∈f(P))</strong><p>Transfer the conclusion to the original finite poset.</p></article>
+        </div>
+      </section>
+
+      <details class="exact-table-wrap">
+        <summary>Exact outcome table</summary>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Subset S</th><th>|S|</th><th>μ<sub>p</sub>({S})</th><th>In F?</th><th>In B?</th></tr></thead>
+            <tbody id="outcome-table"></tbody>
+          </table>
+        </div>
+      </details>
+    </main>
+    <script src="./demo.js"></script>
+  </body>
+</html>

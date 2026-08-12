@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Double-Scoring: Reliable Extraction of Strong Lottery Tickets | Bryce Christopherson</title>
+    <meta name="description" content="An augmented score-space method for extracting strong lottery tickets without tuning a separate sparsity level for every layer." />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Double-Scoring: Reliable Extraction of Strong Lottery Tickets | Bryce Christopherson" />
+    <meta property="og:description" content="An augmented score-space method for extracting strong lottery tickets without tuning a separate sparsity level for every layer." />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+
+    <meta name="keywords" content="double-scoring, strong lottery tickets, lottery ticket hypothesis, sparse neural networks, edge-popup, neural network pruning" />
+    <meta property="article:published_time" content="2026-07-20" />
+    <meta name="citation_title" content="Double-Scoring: Reliable Extraction of Strong Lottery Tickets" />
+    <meta name="citation_author" content="Bryce A. Christopherson" />
+    <meta name="citation_author" content="Jack Baretz" />
+    <meta name="citation_author" content="Darian Colgrove" />
+    <meta name="citation_author" content="Salah Dandan" />
+    <meta name="citation_publication_date" content="2026" />
+    <meta name="citation_pdf_url" content="https://arxiv.org/pdf/2607.20555" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"ScholarlyArticle","headline":"Double-Scoring: Reliable Extraction of Strong Lottery Tickets","name":"Double-Scoring: Reliable Extraction of Strong Lottery Tickets","description":"An augmented score-space method for extracting strong lottery tickets without tuning a separate sparsity level for every layer.","abstract":"Double-scoring enlarges the score space used to select a neural-network mask while leaving the randomly initialized weights frozen. Fixed-density competition in the augmented score space induces an effective sparsity on the original weights, removing the need to tune a separate sparsity level for every layer.","author":[{"@type":"Person","name":"Bryce A. Christopherson","affiliation":{"@type":"CollegeOrUniversity","name":"University of North Dakota"}},{"@type":"Person","name":"Jack Baretz","affiliation":{"@type":"CollegeOrUniversity","name":"University of North Dakota"}},{"@type":"Person","name":"Darian Colgrove","affiliation":{"@type":"CollegeOrUniversity","name":"University of North Dakota"}},{"@type":"Person","name":"Salah Dandan","affiliation":{"@type":"CollegeOrUniversity","name":"University of North Dakota"}}],"datePublished":"2026-07-20","keywords":["strong lottery tickets","sparse neural networks","edge-popup","mask optimization","pruning at initialization"],"isAccessibleForFree":true,"url":"https://commons.und.edu/math-fac/1/","sameAs":["https://arxiv.org/abs/2607.20555","https://commons.und.edu/math-fac/1/"],"publisher":{"@type":"Organization","name":"University of North Dakota Scholarly Commons"}}</script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/" aria-current="page">Research</a><a href="../../teaching/">Teaching</a><a href="../../service/">Service</a><a href="../../presentations/">Presentations</a><a href="../../#about">About</a>
+        </nav>
+        <a class="header-cta" href="../../files/Bryce-Christopherson-CV.pdf" target="_blank" rel="noreferrer">CV <span aria-hidden="true">↗</span></a>
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation"><a href="../../research/" aria-current="page">Research</a><a href="../../teaching/">Teaching</a><a href="../../service/">Service</a><a href="../../presentations/">Presentations</a><a href="../../#about">About</a></nav>
+        </details>
+      </div>
+    </header>
+    <main id="main-content">
+  <section class="page-intro paper-intro" id="top"><div class="section-shell page-intro-grid">
+    <p class="section-kicker">Paper project · Sparse machine learning</p>
+    <h1>Double-Scoring: Reliable Extraction of Strong Lottery Tickets</h1>
+    <div style="color:rgba(255,253,247,.72);line-height:1.75">
+      <p style="margin:0;color:rgba(255,253,247,.9)">Bryce A. Christopherson · Jack Baretz · Darian Colgrove · Salah Dandan</p>
+      <p style="margin:.45rem 0 0">University of North Dakota · 2026 preprint</p>
+      <div class="work-actions" style="margin-top:2rem">
+        <a class="button button-light" href="https://arxiv.org/abs/2607.20555" target="_blank" rel="noreferrer">Read on arXiv <span aria-hidden="true">↗</span></a>
+        <a class="button button-quiet" href="https://commons.und.edu/math-fac/1/" target="_blank" rel="noreferrer">UND Scholarly Commons <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </div></section>
+
+  <section class="course-detail-bar" aria-label="Paper at a glance"><div class="section-shell">
+    <div><span>Status</span><strong>Public preprint</strong></div>
+    <div><span>Core idea</span><strong>Enlarge score space, not weight space</strong></div>
+    <div><span>What is trained</span><strong>Scores only · weights remain frozen</strong></div>
+    <div><span>Interactive demo</span><strong>Watch the mask emerge</strong></div>
+  </div></section>
+
+  <section class="page-section" aria-labelledby="overview-title"><div class="section-shell">
+    <div class="split-heading"><div><p class="section-kicker">Overview</p><h2 id="overview-title">The extraction problem, reparameterized.</h2></div><p>Strong lottery tickets are sparse subnetworks that are already useful while their random weights remain untrained. Edge-popup searches for them by training scores over frozen weights, but it requires layerwise sparsity levels in advance. Double-scoring replaces that brittle search with competition in an augmented score space. The weight tensors do not grow; only the space used to decide which weights survive is enlarged.</p></div>
+    <div class="detail-cards" style="margin-top:4rem">
+      <article class="detail-card accent-blue"><span>01</span><h2>Freeze the network</h2><p class="card-subtitle">Weights stay at initialization</p><p>The underlying randomly initialized weights are held fixed. Training changes score variables that determine a binary mask, so accuracy before weight training measures strong-ticket extraction.</p></article>
+      <article class="detail-card accent-teal"><span>02</span><h2>Double the scores</h2><p class="card-subtitle">Original and auxiliary coordinates</p><p>Each original score tensor competes with an equally shaped auxiliary tensor. A fixed-density top-k mask is chosen in the combined score space and then restricted back to the original coordinates.</p></article>
+      <article class="detail-card accent-orange"><span>03</span><h2>Let sparsity emerge</h2><p class="card-subtitle">No layerwise density tuple</p><p>Auxiliary coordinates act as a competitive reservoir. Their presence lets optimization induce the effective original-coordinate sparsity instead of requiring a separate density choice for every layer.</p></article>
+    </div>
+  </div></section>
+
+  <section class="work-section page-work" id="interactive-demo" aria-labelledby="demo-title">
+    <div class="section-shell">
+    <div class="work-heading"><div><p class="section-kicker">Interactive visualization</p><h2 id="demo-title">Watch a sparse subnetwork emerge.</h2></div><p>Play the score-training run or scrub through it yourself, rotate the network, and select a handwritten digit to inspect how the emerging ticket processes it.</p></div>
+    </div>
+    <div class="paper-demo-stage">
+    <iframe class="paper-demo-frame" src="../../demos/double-scoring/index.html?embedded=1" title="Interactive Double-Scoring neural-network visualization" loading="lazy" allowfullscreen scrolling="no"></iframe>
+    <script>
+      (function () {
+        const frame = document.querySelector("iframe.paper-demo-frame");
+        if (!frame) return;
+        let inView = false;
+        const startPlayback = function () {
+          if (inView && frame && frame.contentWindow) {
+            frame.contentWindow.postMessage(
+              { type: "double-scoring-demo-play" },
+              window.location.origin
+            );
+          }
+        };
+        frame.addEventListener("load", startPlayback);
+        new IntersectionObserver(function (entries) {
+          const entry = entries[0];
+          inView = Boolean(entry && entry.isIntersecting && entry.intersectionRatio >= 0.25);
+          if (inView) startPlayback();
+        }, { threshold: [0.25] }).observe(frame);
+
+        window.addEventListener("message", function (event) {
+        const height = Number(event.data && event.data.height);
+        if (
+          frame &&
+          event.origin === window.location.origin &&
+          event.source === frame.contentWindow &&
+          event.data &&
+          event.data.type === "double-scoring-demo-height" &&
+          Number.isFinite(height) &&
+          height >= 600 &&
+          height <= 5000
+        ) frame.style.height = Math.ceil(height) + "px";
+        });
+      })();
+    </script>
+    <div class="work-actions">
+      <a class="button button-light" href="../../demos/double-scoring/index.html" target="_blank" rel="noreferrer">Open the demo on its own <span aria-hidden="true">↗</span></a>
+      <a class="button button-quiet" href="https://github.com/vasturiano/3d-force-graph" target="_blank" rel="noreferrer">Visualization built with 3d-force-graph <span aria-hidden="true">↗</span></a>
+    </div>
+    </div>
+  </section>
+
+  <section class="paper-citation-section" aria-labelledby="citation-title"><div class="section-shell paper-citation-layout">
+    <div>
+      <p class="section-kicker">Citation</p>
+      <h2 id="citation-title">Use or reference this work.</h2>
+      <p>The preprint is available on arXiv and in the University of North Dakota Scholarly Commons. The citation below uses the arXiv record.</p>
+    </div>
+    <details class="paper-citation">
+      <summary>BibTeX citation</summary>
+      <pre><code>@article{christopherson2026double,
+  title         = {Double-Scoring: Reliable Extraction of Strong Lottery Tickets},
+  author        = {Christopherson, Bryce A. and Baretz, Jack and Colgrove, Darian and Dandan, Salah},
+  year          = {2026},
+  eprint        = {2607.20555},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  doi           = {10.48550/arXiv.2607.20555},
+  url           = {https://arxiv.org/abs/2607.20555}
+}</code></pre>
+    </details>
+  </div></section>
+    <footer class="site-footer">
+      <div><p>© 2026 Bryce A. Christopherson</p><p>University of North Dakota</p></div>
+      <a class="footer-email" href="mailto:bryce.christopherson@UND.edu">bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a>
+      <a href="#top">Back to top ↑</a>
+    </footer></main>
+  </body>
+</html>

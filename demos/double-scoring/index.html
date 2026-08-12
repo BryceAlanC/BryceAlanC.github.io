@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071b17" />
+    <meta
+      name="description"
+      content="An interactive, illustrative visualization of Double-Scoring on the scikit-learn handwritten-digits dataset."
+    />
+    <title>Double-Scoring | Interactive method visualization</title>
+    <script>
+      if (window.self !== window.top) document.documentElement.classList.add("is-embedded");
+    </script>
+    <script type="module" crossorigin src="./assets/index-BNyuKUCi.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-ExY43BoL.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#demo-controls">Skip to controls</a>
+
+    <main class="demo-shell">
+      <header class="demo-intro">
+        <div>
+          <p class="eyebrow">Interactive method visualization</p>
+          <h1>A frozen network finds its own route.</h1>
+          <p class="intro-copy">
+            Double-Scoring trains scores around fixed random weights, allowing a
+            sparse subnetwork to emerge without training the weights themselves.
+          </p>
+        </div>
+        <div class="scope-note" role="note">
+          <strong>Illustrative scikit-learn digits run</strong>
+          <span>Not one of the paper&rsquo;s FashionMNIST benchmark experiments</span>
+        </div>
+      </header>
+
+      <section class="control-deck" id="demo-controls" aria-label="Visualization controls">
+        <div class="epoch-control">
+          <div class="control-label-row">
+            <label for="epoch-slider">Score-training checkpoint</label>
+            <output id="epoch-output" for="epoch-slider">Epoch 0</output>
+          </div>
+          <div class="epoch-slider-row">
+            <input
+              id="epoch-slider"
+              type="range"
+              min="0"
+              max="30"
+              step="1"
+              value="0"
+              aria-describedby="epoch-help"
+            />
+            <button class="quiet-button training-button" id="training-toggle" type="button" aria-pressed="false">
+              Play score training
+            </button>
+          </div>
+          <div class="epoch-ticks" id="epoch-ticks" aria-hidden="true"></div>
+          <p id="epoch-help">
+            Play the genuine saved checkpoints or scrub through them yourself; use
+            Resume to continue from the checkpoint you choose.
+            Choosing a digit probes the current mask; it does not change training.
+          </p>
+        </div>
+
+        <div class="view-actions">
+          <button class="quiet-button" id="motion-toggle" type="button" aria-pressed="false">
+            Pause signal flow
+          </button>
+          <button class="quiet-button" id="reset-view" type="button">Reset view</button>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="graph-card" aria-labelledby="graph-title">
+          <div class="card-heading graph-heading">
+            <div>
+              <p class="section-label">Network view</p>
+              <h2 id="graph-title">Scores compete. A ticket lights up.</h2>
+            </div>
+            <p id="render-count">Loading graph&hellip;</p>
+          </div>
+
+          <div class="graph-stage">
+            <div class="layer-labels" aria-hidden="true">
+              <span>8&times;8 input</span>
+              <span>hidden 28</span>
+              <span>hidden 20</span>
+              <span>10 outputs</span>
+            </div>
+            <div
+              id="graph"
+              role="img"
+              aria-describedby="graph-summary graph-legend"
+              aria-label="Three-dimensional view of a fixed neural network and its score-selected subnetwork"
+            >
+              <div class="graph-loading" id="graph-loading" role="status">
+                <span aria-hidden="true"></span>
+                Preparing the network&hellip;
+              </div>
+            </div>
+            <div class="graph-fallback" id="graph-fallback" hidden>
+              <strong>The 3D view is unavailable in this browser.</strong>
+              <p>The digit, prediction, sparsity, and score-reservoir summaries remain available.</p>
+            </div>
+          </div>
+
+          <div class="legend" id="graph-legend">
+            <span><i class="legend-line weight-line"></i> Thickness = |weight|</span>
+            <span><i class="legend-line score-line"></i> Opacity = score margin above cutoff</span>
+            <span><i class="legend-line masked-line"></i> Masked links hidden</span>
+            <span><i class="legend-line positive-line"></i> Positive weight</span>
+            <span><i class="legend-line negative-line"></i> Negative weight</span>
+            <span><i class="legend-glow"></i> Glow = newly selected</span>
+            <span><i class="legend-dot"></i> Hidden node size = activation</span>
+            <span><i class="legend-halo"></i> Output halo area = softmax output</span>
+          </div>
+          <p class="sr-only" id="graph-summary" aria-live="polite"></p>
+        </article>
+
+        <aside class="inspection-column" aria-label="Selected example and run details">
+          <article class="sample-card">
+            <div class="card-heading compact-heading">
+              <div>
+                <p class="section-label">Selected input</p>
+                <h2>Digit <span id="true-label">0</span></h2>
+              </div>
+              <div class="result-chip" id="result-chip">Correct</div>
+            </div>
+
+            <div class="sample-result">
+              <div class="digit-image" id="digit-image" aria-label="Selected handwritten digit"></div>
+              <div class="prediction-copy">
+                <span>Ticket prediction</span>
+                <strong id="prediction">0</strong>
+                <small id="confidence">43.6% softmax output</small>
+              </div>
+            </div>
+
+            <div class="probabilities" id="probabilities" aria-label="Softmax outputs by digit"></div>
+          </article>
+
+          <article class="metrics-card">
+            <div class="card-heading compact-heading">
+              <div>
+                <p class="section-label">Run snapshot</p>
+                <h2>Frozen weights, trained scores</h2>
+              </div>
+            </div>
+            <dl class="metric-grid">
+              <div><dt>Test accuracy</dt><dd id="test-accuracy">84.7%</dd></div>
+              <div><dt>Achieved sparsity</dt><dd id="sparsity">66.3%</dd></div>
+              <div><dt>Active links</dt><dd id="active-links">861 / 2,552</dd></div>
+              <div><dt>Weight updates</dt><dd>0</dd></div>
+            </dl>
+          </article>
+        </aside>
+
+        <article class="reservoir-card">
+          <div class="card-heading compact-heading">
+            <div>
+              <p class="section-label">Double-score competition</p>
+              <h2>Selected-slot allocation</h2>
+            </div>
+          </div>
+          <p class="reservoir-explainer">
+            Each layer keeps the top 18% of scores across its real connections
+            and an equally large pool of zero-weight dummy coordinates. A selected
+            real slot becomes a live edge; a selected dummy slot does not. Each bar
+            shows the composition of that fixed selected quota—not the size of the
+            two candidate pools.
+          </p>
+          <div class="reservoir-layers" id="reservoir-layers"></div>
+          <p class="reservoir-summary" id="reservoir-summary"></p>
+        </article>
+      </section>
+
+      <section class="digit-picker" aria-labelledby="digit-picker-title">
+        <div>
+          <p class="section-label">Try another input</p>
+          <h2 id="digit-picker-title">Follow ten examples through the same ticket.</h2>
+        </div>
+        <div class="digit-buttons" id="digit-buttons" role="group" aria-label="Choose a handwritten digit"></div>
+      </section>
+
+      <footer class="demo-footer">
+        <p>
+          Model: <span id="architecture">64 &rarr; 28 &rarr; 20 &rarr; 10</span>
+          &middot; fixed random weights &middot; seed <span id="seed">3</span>
+        </p>
+        <p>
+          This compact run demonstrates the mechanism. The publication reports
+          controlled FashionMNIST and CIFAR-10 experiments on larger models.
+        </p>
+      </footer>
+    </main>
+
+    <div class="fatal-fallback" id="fatal-fallback" hidden role="alert">
+      <strong>The interactive data could not be loaded.</strong>
+      <p>Please reload the page or use the accompanying written explanation of Double-Scoring.</p>
+    </div>
+
+    <noscript>
+      <div class="noscript-note">JavaScript is required for this interactive visualization.</div>
+    </noscript>
+  </body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An interactive visualization of continuous feedback stabilization through a local section of a nonlinear control system."
+    />
+    <title>From a local section to a feedback law</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="demo-shell" id="demo-shell">
+      <header class="demo-header">
+        <p class="kicker">Composition-operator stabilization</p>
+        <h1>From a local section to a feedback law</h1>
+        <p class="lede">
+          A local right inverse separates one hard question into two concrete objects: an associated
+          state field whose stability can be checked directly, and a feedback law that makes the
+          original plant reproduce that field.
+        </p>
+      </header>
+
+      <section class="factorization" aria-labelledby="factorization-title">
+        <div class="section-heading">
+          <p class="kicker">The factorization</p>
+          <h2 id="factorization-title">The section recovers each requested velocity.</h2>
+        </div>
+        <div class="factorization-flow" aria-label="A velocity v passes through alpha to a state and control pair, then through f back to v.">
+          <div class="flow-node">
+            <span>velocity</span>
+            <strong>v</strong>
+          </div>
+          <div class="flow-arrow">
+            <span>&alpha;(v)=(&alpha;<sub>1</sub>(v), &alpha;<sub>2</sub>(v))</span>
+            <b aria-hidden="true">&rarr;</b>
+          </div>
+          <div class="flow-node wide">
+            <span>state + control</span>
+            <strong>(&alpha;<sub>1</sub>(v), &alpha;<sub>2</sub>(v))</strong>
+          </div>
+          <div class="flow-arrow short">
+            <span>f</span>
+            <b aria-hidden="true">&rarr;</b>
+          </div>
+          <div class="flow-node output">
+            <span>recovered velocity</span>
+            <strong>v</strong>
+          </div>
+        </div>
+        <p class="identity-line"><span>Right-inverse identity</span> f&nbsp;&compfn;&nbsp;&alpha; = id</p>
+        <div class="factorization-result">
+          <div>
+            <span>Associated state field</span>
+            <strong>&#x1E8B; = &alpha;<sub>1</sub><sup>&minus;1</sup>(x)</strong>
+          </div>
+          <i aria-hidden="true">&Longrightarrow;</i>
+          <div>
+            <span>Feedback pulled from the section</span>
+            <strong>u(x) = &alpha;<sub>2</sub>(&alpha;<sub>1</sub><sup>&minus;1</sup>(x))</strong>
+          </div>
+          <i aria-hidden="true">&Longrightarrow;</i>
+          <div>
+            <span>Closed-loop identity</span>
+            <strong>f(x,u(x)) = &alpha;<sub>1</sub><sup>&minus;1</sup>(x)</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="example" aria-labelledby="example-title">
+        <div class="section-heading split">
+          <div>
+            <p class="kicker">A polynomial example</p>
+            <h2 id="example-title">The controller replaces one unstable velocity component.</h2>
+          </div>
+          <p>
+            The example below is local: all initial states lie near the equilibrium at the origin.
+            The middle and right trajectories coincide because the feedback makes the original
+            system equal the associated stable field.
+          </p>
+        </div>
+
+        <div class="equation plant-equation" aria-label="The nonlinear control system used in the animation.">
+          <span class="equation-label">Original plant</span>
+          <strong>
+            &#x1E8B; = f(x,u) =
+            <span class="matrix" aria-hidden="true">
+              <span>x<sub>1</sub><sup>2</sup> + x<sub>2</sub><sup>2</sup> + x<sub>2</sub></span>
+              <span>x<sub>1</sub>x<sub>2</sub> + x<sub>2</sub><sup>2</sup> + u<sup>3</sup></span>
+            </span>
+          </strong>
+        </div>
+
+        <div class="animation-controls" aria-label="Trajectory animation controls">
+          <button id="play-toggle" type="button" aria-pressed="false">Pause trajectories</button>
+          <button id="restart" type="button">Restart</button>
+          <label for="time-slider">Time</label>
+          <input id="time-slider" type="range" min="0" max="8" step="0.01" value="0" />
+          <output id="time-output" for="time-slider">0.00 s</output>
+          <label for="speed-select">Speed</label>
+          <select id="speed-select">
+            <option value="0.5">0.5&times;</option>
+            <option value="1" selected>1&times;</option>
+            <option value="1.5">1.5&times;</option>
+          </select>
+          <span class="motion-note" id="motion-note" hidden>
+            Motion is paused because reduced motion is enabled.
+          </span>
+        </div>
+
+        <div class="trajectory-grid">
+          <article class="trajectory-card card-uncontrolled">
+            <header>
+              <span>01 · Original plant</span>
+              <h3>No control: u = 0</h3>
+              <p>Some nearby states move away. Along x<sub>2</sub>=0 with x<sub>1</sub>&gt;0, &#x1E8B;<sub>1</sub>=x<sub>1</sub><sup>2</sup>.</p>
+            </header>
+            <canvas
+              id="uncontrolled-canvas"
+              role="img"
+              aria-label="Trajectories of the uncontrolled polynomial system. Several trajectories leave the origin."
+            ></canvas>
+          </article>
+
+          <article class="trajectory-card card-associated">
+            <header>
+              <span>02 · Associated state field</span>
+              <h3>&#x1E8B; = g(x) = &alpha;<sub>1</sub><sup>&minus;1</sup>(x)</h3>
+              <p>A stable second component is chosen while retaining the plant's first component.</p>
+            </header>
+            <canvas
+              id="associated-canvas"
+              role="img"
+              aria-label="Trajectories of the associated stable system. The trajectories converge toward the origin."
+            ></canvas>
+          </article>
+
+          <article class="trajectory-card card-controlled">
+            <header>
+              <span>03 · Original plant + feedback</span>
+              <h3>f(x,u(x)) = g(x)</h3>
+              <p>The feedback correction, shown in green, converts the native velocity into the chosen stable velocity.</p>
+            </header>
+            <canvas
+              id="controlled-canvas"
+              role="img"
+              aria-label="The controlled plant follows the same trajectories as the associated stable system. A vector decomposition shows native drift, control correction, and their stable resultant."
+            ></canvas>
+            <div class="vector-legend" aria-label="Vector color legend">
+              <span><i class="native"></i>native velocity</span>
+              <span><i class="correction"></i>control correction</span>
+              <span><i class="resultant"></i>resultant</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="control-construction">
+          <div class="equation target-equation">
+            <span class="equation-label">Choose the stable second velocity</span>
+            <strong class="target">g<sub>2</sub>(x) = &minus;&frac12;x<sub>1</sub> &minus; 2x<sub>2</sub></strong>
+          </div>
+          <div class="equation balance-equation">
+            <span class="equation-label">Make the original plant reproduce it</span>
+            <strong>
+              <span class="native-text">x<sub>1</sub>x<sub>2</sub> + x<sub>2</sub><sup>2</sup></span>
+              <span class="operator">+</span>
+              <span class="correction-text">u(x)<sup>3</sup></span>
+              <span class="operator">=</span>
+              <span class="target-text">&minus;&frac12;x<sub>1</sub> &minus; 2x<sub>2</sub></span>
+            </strong>
+          </div>
+          <div class="equation feedback-equation">
+            <span class="equation-label">The continuous feedback</span>
+            <strong>
+              u(x) = &#x221B;<span class="radicand"><span class="target-text">&minus;&frac12;x<sub>1</sub> &minus; 2x<sub>2</sub></span>
+              <span class="operator">&minus;</span>
+              <span class="native-text">(x<sub>1</sub>x<sub>2</sub> + x<sub>2</sub><sup>2</sup>)</span></span>
+            </strong>
+          </div>
+        </div>
+
+        <p class="technical-note">
+          The Jacobian of g at the origin has eigenvalues (&minus;2 &plusmn; &radic;2)/2, both negative.
+          Thus the displayed associated system—and therefore the controlled plant—is locally exponentially stable.
+        </p>
+        <p id="trajectory-summary" class="sr-only" aria-live="polite"></p>
+      </section>
+    </main>
+    <script src="./demo.js" defer></script>
+  </body>
+</html>

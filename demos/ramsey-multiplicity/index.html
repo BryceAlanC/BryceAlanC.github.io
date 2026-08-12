@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An exact interactive visualization of K4 copies anchored at one critical edge, counted through a complete bipartite common neighborhood."
+    />
+    <title>One edge carries every forced clique</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./demo.js" defer></script>
+  </head>
+  <body>
+    <main class="demo-shell" id="demo-shell">
+      <header class="demo-header">
+        <div>
+          <p class="eyebrow">Threshold Ramsey multiplicity</p>
+          <h1>One edge carries every forced clique.</h1>
+        </div>
+        <p class="intro">
+          Every displayed <span class="math">K<sub>4</sub></span> is the
+          backbone edge <span class="math">e = uv</span> together with one
+          vertex from each part of the common neighborhood.
+        </p>
+      </header>
+
+      <section class="lemma-rail" aria-labelledby="lemma-rail-title">
+        <h2 class="sr-only" id="lemma-rail-title">The last-edge cloning construction</h2>
+        <article>
+          <span>01 · begin below the threshold</span>
+          <div class="mini-graph mini-original" aria-hidden="true">
+            <i class="mini-node n1"></i><i class="mini-node n2"></i><i class="mini-node n3"></i><i class="mini-node n4"></i>
+            <b class="mini-edge e1"></b><b class="mini-edge e2"></b><b class="mini-edge e3"></b><b class="mini-edge e4"></b>
+          </div>
+          <strong>A target-free coloring of K<sub>R−1</sub></strong>
+          <p>Mark a vertex <i>u</i> whose colored neighborhood will be copied.</p>
+        </article>
+        <i class="rail-arrow" aria-hidden="true">→</i>
+        <article>
+          <span>02 · clone u</span>
+          <div class="mini-graph mini-clone" aria-hidden="true">
+            <i class="mini-node clone-u">u</i><i class="mini-node clone-v">v</i><b class="mini-edge clone-gap"></b>
+            <i class="clone-spokes"></i>
+          </div>
+          <strong>Copy every incident color; leave uv missing</strong>
+          <p>The partial coloring on K<sub>R</sub>−e is still target-free.</p>
+        </article>
+        <i class="rail-arrow" aria-hidden="true">→</i>
+        <article class="rail-final">
+          <span>03 · color the final edge</span>
+          <div class="mini-graph mini-anchor" aria-hidden="true">
+            <i class="mini-node anchor-u">u</i><i class="mini-node anchor-v">v</i><b class="mini-edge anchor-edge-mini"></b>
+            <i class="copy-fan fan-one"></i><i class="copy-fan fan-two"></i><i class="copy-fan fan-three"></i>
+          </div>
+          <strong>Every newly forced copy passes through e</strong>
+          <p>The global count now hinges on one two-vertex backbone.</p>
+        </article>
+      </section>
+
+      <section class="control-panel" aria-labelledby="controls-title">
+        <div class="control-heading">
+          <div>
+            <p class="section-label" id="controls-title">Build the example</p>
+            <p class="control-note">
+              Change the two Turán-part sizes, then remove or restore the last
+              edge.
+            </p>
+          </div>
+
+          <button
+            class="edge-toggle"
+            id="edge-toggle"
+            type="button"
+            aria-pressed="true"
+            aria-controls="graph copy-grid count-panel"
+          >
+            <span class="toggle-track" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
+            <span>
+              <small>Backbone edge <i>e</i></small>
+              <strong id="edge-toggle-label">Present</strong>
+            </span>
+          </button>
+        </div>
+
+        <div class="range-controls">
+          <label class="range-control" for="part-a-size">
+            <span>
+              <strong>Part <i>A</i></strong>
+              <output id="part-a-output" for="part-a-size">3 vertices</output>
+            </span>
+            <input
+              id="part-a-size"
+              type="range"
+              min="1"
+              max="4"
+              step="1"
+              value="3"
+            />
+            <span class="range-ticks" aria-hidden="true">
+              <i>1</i><i>2</i><i>3</i><i>4</i>
+            </span>
+          </label>
+
+          <label class="range-control range-control-b" for="part-b-size">
+            <span>
+              <strong>Part <i>B</i></strong>
+              <output id="part-b-output" for="part-b-size">3 vertices</output>
+            </span>
+            <input
+              id="part-b-size"
+              type="range"
+              min="1"
+              max="4"
+              step="1"
+              value="3"
+            />
+            <span class="range-ticks" aria-hidden="true">
+              <i>1</i><i>2</i><i>3</i><i>4</i>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="visual-layout" aria-label="Anchored clique construction">
+        <figure class="graph-card">
+          <figcaption>
+            <div>
+              <p class="section-label">The anchored graph</p>
+              <h2>
+                <span class="math">H[C] = K<sub id="part-label-a">3</sub>,<sub id="part-label-b">3</sub></span>
+              </h2>
+            </div>
+            <p id="graph-caption">
+              Hover a cross-edge or focus a grid cell to isolate one anchored
+              <span class="math">K<sub>4</sub></span>.
+            </p>
+          </figcaption>
+
+          <div class="graph-wrap">
+            <svg
+              id="graph"
+              class="graph"
+              viewBox="0 0 820 540"
+              role="img"
+              aria-labelledby="graph-title graph-description"
+            >
+              <title id="graph-title">
+                Complete bipartite common neighborhood anchored at edge u v
+              </title>
+              <desc id="graph-description">
+                The edge u v, when present, combines with every cross-edge
+                between parts A and B to form one K4. With three vertices in
+                each part there are nine such copies.
+              </desc>
+            </svg>
+          </div>
+
+          <p class="graph-key" aria-hidden="true">
+            <span><i class="key-dot key-backbone"></i>critical edge</span>
+            <span><i class="key-dot key-a"></i>part <i>A</i></span>
+            <span><i class="key-dot key-b"></i>part <i>B</i></span>
+          </p>
+        </figure>
+
+        <aside class="count-card" id="count-panel" aria-labelledby="count-title">
+          <p class="section-label">Exact count</p>
+          <h2 id="count-title">Every cross-edge gives one copy.</h2>
+
+          <div class="equivalence" aria-label="Clique counting equivalence">
+            <span>
+              <strong id="cross-edge-count">9</strong>
+              <small>edges in <span class="math">H[C]</span></small>
+            </span>
+            <i aria-hidden="true">↔</i>
+            <span>
+              <strong id="anchored-copy-count">9</strong>
+              <small>anchored <span class="math">K<sub>4</sub></span>s</small>
+            </span>
+          </div>
+
+          <div class="formula-card" aria-label="Counting formula">
+            <p>
+              <span class="math">#K<sub>4</sub>(H)</span>
+              <span aria-hidden="true">=</span>
+              <span class="indicator" id="edge-indicator">1</span>
+              <span aria-hidden="true">·</span>
+              <span class="factor factor-a" id="formula-a">3</span>
+              <span aria-hidden="true">·</span>
+              <span class="factor factor-b" id="formula-b">3</span>
+              <span aria-hidden="true">=</span>
+              <strong id="formula-total">9</strong>
+            </p>
+            <small>
+              <span class="math">1<sub>{uv ∈ E(H)}</sub> |A| |B|</span>
+            </small>
+          </div>
+
+          <div class="status-box" id="status-box" aria-live="polite">
+            <strong id="status-title">The final edge is present.</strong>
+            <span id="status-text">
+              Deleting <i>e</i> destroys all 9 anchored copies at once.
+            </span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="grid-section" aria-labelledby="grid-title">
+        <div class="grid-copy">
+          <p class="section-label">Copy-by-copy correspondence</p>
+          <h2 id="grid-title">
+            Choose <span class="factor-a">one vertex from <i>A</i></span> and
+            <span class="factor-b">one from <i>B</i></span>.
+          </h2>
+          <p>
+            Each cell represents the four vertices
+            <span class="math">{u, v, a<sub>i</sub>, b<sub>j</sub>}</span>.
+            The matching cross-edge and clique highlight together.
+          </p>
+        </div>
+
+        <div class="copy-grid-wrap">
+          <div
+            class="copy-grid"
+            id="copy-grid"
+            role="group"
+            aria-label="Pairs of common-neighborhood vertices"
+          ></div>
+        </div>
+      </section>
+
+      <footer class="demo-footer">
+        <p>
+          Removing <span class="math">e</span> leaves no
+          <span class="math">K<sub>4</sub></span>: the common-neighborhood graph
+          is bipartite and therefore triangle-free.
+        </p>
+        <p class="general-formula">
+          In general:
+          <span class="math">
+            #K<sub>s</sub>(H) = #K<sub>s−2</sub>(H[C]),
+            &nbsp; C = N(u) ∩ N(v).
+          </span>
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>
