@@ -9,6 +9,24 @@
   line-height: 1.5;
 }
 
+#life-cluster-controls[hidden] {
+  display: none;
+}
+
+#life-within-probability-control[hidden] {
+  display: none;
+}
+
+#life-degree-control[hidden] {
+  display: none;
+}
+
+#life-cluster-controls {
+  margin-top: 1rem;
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--hairline);
+}
+
 .stage-message {
   position: absolute;
   z-index: 3;
@@ -32,6 +50,14 @@
 .life-renderer {
   position: absolute;
   inset: 0;
+}
+
+.life-bloom-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  pointer-events: none;
 }
 
 .life-canvas-renderer {

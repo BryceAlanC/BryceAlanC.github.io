@@ -40,7 +40,9 @@
       dragging: false,
       moved: false,
       pointerX: 0,
-      pointerY: 0
+      pointerY: 0,
+      projectionRadius: 1,
+      projectionScale: 1
     };
 
     function chainSetting(name, value) {
@@ -118,6 +120,8 @@
         radius = Math.max(radius, Math.hypot(node.x, node.y, node.z));
       });
       const scale = settings.zoom * Math.min(width, height) * 0.39 / radius;
+      settings.projectionRadius = radius;
+      settings.projectionScale = scale;
       settings.projected = settings.nodes.map(function projectNode(node) {
         return project(node, radius, scale);
       });
@@ -253,6 +257,14 @@
       linkOpacity: function linkOpacity(value) { return chainSetting("linkOpacity", value); },
       linkWidth: function linkWidth(value) { return chainSetting("linkWidth", value); },
       onNodeClick: function onNodeClick(value) { return chainSetting("onNodeClick", value); },
+      graph2ScreenCoords: function graph2ScreenCoords(x, y, z) {
+        const projected = project(
+          { x: Number(x) || 0, y: Number(y) || 0, z: Number(z) || 0 },
+          settings.projectionRadius,
+          settings.projectionScale
+        );
+        return { x: projected.x, y: projected.y };
+      },
       zoomToFit: function zoomToFit() { settings.zoom = 1; draw(); return api; },
       renderer: function renderer() {
         return {

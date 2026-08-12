@@ -30,11 +30,11 @@
   ]);
 
   const VALIDATION = Object.freeze({
-    integrator: "fixed-step RK4 at 0.0025 s with force limited to ±30 N",
+    integrator: "fixed-step RK4 at 0.0025 s with 0.0350/0.0175 N·m·s/rad pivot/elbow damping and force limited to ±30 N",
     defaultFinalAt10Seconds: Object.freeze([
-      0.00503, -0.00333, 8.43e-5, 1.18e-4, 7.34e-5, 1.29e-4
+      0.00984, 0.03912, -0.00534, 0.00395, -0.00546, 0.00396
     ]),
-    testedPerturbations: "Empirically recovered in the validated model from ±2 N s cart impulses during balance.",
+    testedPerturbations: "Empirically recovered by t = 20 s from ±2 N·s cart impulses applied at t = 4 s during balance.",
     caveat: "Nominal trajectory tracking is not a globally stabilizing autonomous swing-up law."
   });
 

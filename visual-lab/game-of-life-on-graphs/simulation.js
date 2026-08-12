@@ -60,6 +60,89 @@
     return { nodes: nodes, pairs: pairs, degrees: degrees };
   }
 
+  function simplePairs(count, pairs) {
+    const n = clamp(Math.round(Number(count) || 0), 0, 1000);
+    const normalized = [];
+    const edgeSet = new Set();
+    (pairs || []).forEach(function normalizePair(pair) {
+      if (!pair || pair.length < 2) return;
+      const source = Number(pair[0]);
+      const target = Number(pair[1]);
+      if (!Number.isInteger(source) || !Number.isInteger(target)) return;
+      if (source < 0 || target < 0 || source >= n || target >= n) return;
+      addEdge(edgeSet, normalized, source, target);
+    });
+    normalized.sort(function sortPairs(first, second) {
+      return first[0] - second[0] || first[1] - second[1];
+    });
+    return { pairs: normalized, edgeSet: edgeSet };
+  }
+
+  function partialShuffle(values, count, random) {
+    const limit = Math.min(count, values.length);
+    for (let index = 0; index < limit; index += 1) {
+      const swapIndex = index + Math.floor(random() * (values.length - index));
+      const held = values[index];
+      values[index] = values[swapIndex];
+      values[swapIndex] = held;
+    }
+    return values.slice(0, limit);
+  }
+
+  /*
+   * Remove or add a share of the base edge count while choosing affected pairs
+   * uniformly. An intensity of -1 removes every edge, 0 leaves the graph
+   * unchanged, and 1 adds as many non-edges as there are base edges (or all
+   * remaining non-edges when fewer are available).
+   */
+  function adjustEdgePairs(count, pairs, intensity, randomSource) {
+    const n = clamp(Math.round(Number(count) || 0), 0, 1000);
+    const normalized = simplePairs(n, pairs);
+    const random = typeof randomSource === "function" ? randomSource : mulberry32(1);
+    const numericIntensity = Number(intensity);
+    const amount = Number.isFinite(numericIntensity) ? clamp(numericIntensity, -1, 1) : 0;
+
+    if (amount < 0) {
+      const removalCount = Math.round(-amount * normalized.pairs.length);
+      const removed = new Set(
+        partialShuffle(normalized.pairs.slice(), removalCount, random).map(function key(pair) {
+          return edgeKey(pair[0], pair[1]);
+        })
+      );
+      return normalized.pairs.filter(function keepPair(pair) {
+        return !removed.has(edgeKey(pair[0], pair[1]));
+      });
+    }
+
+    if (amount > 0) {
+      const missing = [];
+      for (let source = 0; source < n; source += 1) {
+        for (let target = source + 1; target < n; target += 1) {
+          if (!normalized.edgeSet.has(edgeKey(source, target))) missing.push([source, target]);
+        }
+      }
+      const additionCount = Math.round(amount * Math.min(normalized.pairs.length, missing.length));
+      const adjusted = normalized.pairs.concat(partialShuffle(missing, additionCount, random));
+      adjusted.sort(function sortPairs(first, second) {
+        return first[0] - second[0] || first[1] - second[1];
+      });
+      return adjusted;
+    }
+
+    return normalized.pairs;
+  }
+
+  function adjustGraphEdges(graph, intensity, random) {
+    const sourceGraph = graph || {};
+    const sourceNodes = Array.isArray(sourceGraph.nodes) ? sourceGraph.nodes : [];
+    const pairs = adjustEdgePairs(sourceNodes.length, sourceGraph.pairs || [], intensity, random);
+    const degrees = degreesFromPairs(sourceNodes.length, pairs);
+    const nodes = sourceNodes.map(function copyNode(node, id) {
+      return Object.assign({}, node, { id: id, degree: degrees[id] });
+    });
+    return Object.assign({}, sourceGraph, { nodes: nodes, pairs: pairs, degrees: degrees });
+  }
+
   function torusGraph(side) {
     const q = clamp(Math.round(side), 4, 60);
     const count = q * q;
@@ -226,6 +309,176 @@
     return graphFromPairs(n, pairs);
   }
 
+  function balancedClusters(count, clusterCount) {
+    const memberships = new Uint16Array(count);
+    const groups = Array.from({ length: clusterCount }, function makeGroup() { return []; });
+    for (let vertex = 0; vertex < count; vertex += 1) {
+      const cluster = Math.min(clusterCount - 1, Math.floor((vertex * clusterCount) / count));
+      memberships[vertex] = cluster;
+      groups[cluster].push(vertex);
+    }
+    return { memberships: memberships, groups: groups };
+  }
+
+  function clusteredPositions(groups) {
+    const positions = [];
+    const totalClusters = groups.length;
+    const centerRadius = totalClusters === 1 ? 0 : 118;
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+    groups.forEach(function positionCluster(vertices, cluster) {
+      const centerY = totalClusters === 1 ? 0 : 1 - (2 * (cluster + 0.5)) / totalClusters;
+      const centerPlaneRadius = Math.sqrt(Math.max(0, 1 - centerY * centerY));
+      const centerAngle = cluster * goldenAngle;
+      const centerX = centerRadius * centerPlaneRadius * Math.cos(centerAngle);
+      const centerZ = centerRadius * centerPlaneRadius * Math.sin(centerAngle);
+      const clusterY = centerRadius * centerY;
+      const spread = 16 + 1.7 * Math.sqrt(vertices.length);
+
+      vertices.forEach(function positionVertex(vertex, localIndex) {
+        if (vertices.length === 1) {
+          positions[vertex] = { x: centerX, y: clusterY, z: centerZ };
+          return;
+        }
+        const localY = 1 - (2 * (localIndex + 0.5)) / vertices.length;
+        const localPlaneRadius = Math.sqrt(Math.max(0, 1 - localY * localY));
+        const localAngle = (localIndex + cluster * 0.37) * goldenAngle;
+        const shell = 0.68 + 0.32 * ((localIndex * 37) % vertices.length) / (vertices.length - 1);
+        positions[vertex] = {
+          x: centerX + spread * shell * localPlaneRadius * Math.cos(localAngle),
+          y: clusterY + spread * shell * localY,
+          z: centerZ + spread * shell * localPlaneRadius * Math.sin(localAngle)
+        };
+      });
+    });
+
+    return positions;
+  }
+
+  function finishClusteredGraph(count, pairs, structure, clusterTopology) {
+    const graph = graphFromPairs(count, pairs, clusteredPositions(structure.groups));
+    graph.nodes.forEach(function labelCluster(node) {
+      node.cluster = structure.memberships[node.id];
+    });
+    graph.memberships = structure.memberships;
+    graph.clusterCount = structure.groups.length;
+    graph.clusterTopology = clusterTopology;
+    return graph;
+  }
+
+  function clusterGraph(count, clusterCount, withinProbability, crossProbability, randomSource) {
+    const n = clamp(Math.round(Number(count) || 90), 2, 1000);
+    const requestedClusters = Number(clusterCount);
+    const totalClusters = clamp(
+      Number.isFinite(requestedClusters) ? Math.round(requestedClusters) : 4,
+      1,
+      n
+    );
+    const withinValue = Number(withinProbability);
+    const crossValue = Number(crossProbability);
+    const within = Number.isFinite(withinValue) ? clamp(withinValue, 0, 1) : 0.18;
+    const cross = Number.isFinite(crossValue) ? clamp(crossValue, 0, 1) : 0.02;
+    const random = typeof randomSource === "function" ? randomSource : mulberry32(1);
+    const structure = balancedClusters(n, totalClusters);
+    const pairs = [];
+
+    for (let source = 0; source < n; source += 1) {
+      for (let target = source + 1; target < n; target += 1) {
+        const probability = structure.memberships[source] === structure.memberships[target] ? within : cross;
+        if (random() < probability) pairs.push([source, target]);
+      }
+    }
+
+    return finishClusteredGraph(n, pairs, structure, "erdos");
+  }
+
+  function smallRegularPairs(count) {
+    if (count < 2) return [];
+    if (count === 2) return [[0, 1]];
+    return [[0, 1], [0, 2], [1, 2]];
+  }
+
+  function localClusterPairs(count, topology, settings, random) {
+    if (count < 2) return [];
+    if (topology === "regular") {
+      if (count < 4) return smallRegularPairs(count);
+      return randomRegularGraph(count, settings.degree == null ? 8 : settings.degree, random).pairs;
+    }
+    if (topology === "erdos") {
+      const withinValue = Number(settings.withinProbability);
+      if (Number.isFinite(withinValue)) {
+        const probability = clamp(withinValue, 0, 1);
+        const pairs = [];
+        for (let source = 0; source < count; source += 1) {
+          for (let target = source + 1; target < count; target += 1) {
+            if (random() < probability) pairs.push([source, target]);
+          }
+        }
+        return pairs;
+      }
+      return erdosRenyiGraph(
+        count,
+        settings.meanDegree == null ? 8 : settings.meanDegree,
+        random
+      ).pairs;
+    }
+    if (topology === "preferential") {
+      if (count === 2) return [[0, 1]];
+      return preferentialGraph(
+        count,
+        settings.attachments == null ? 3 : settings.attachments,
+        random
+      ).pairs;
+    }
+    throw new Error("Unknown cluster topology: " + topology);
+  }
+
+  function clusteredGraph(count, clusterCount, options, randomSource) {
+    const n = clamp(Math.round(Number(count) || 90), 2, 1000);
+    const requestedClusters = Number(clusterCount);
+    const totalClusters = clamp(
+      Number.isFinite(requestedClusters) ? Math.round(requestedClusters) : 4,
+      1,
+      n
+    );
+    const settings = typeof options === "string" ? { clusterTopology: options } : (options || {});
+    const requestedTopology = String(settings.clusterTopology || "erdos").toLowerCase();
+    const topology = requestedTopology === "erdős–rényi" || requestedTopology === "erdos-renyi"
+      ? "erdos"
+      : requestedTopology;
+    if (!["regular", "erdos", "preferential"].includes(topology)) {
+      throw new Error("Unknown cluster topology: " + requestedTopology);
+    }
+    const crossValue = Number(settings.crossProbability);
+    const crossProbability = Number.isFinite(crossValue) ? clamp(crossValue, 0, 1) : 0.02;
+    const random = typeof randomSource === "function"
+      ? randomSource
+      : (typeof settings.random === "function" ? settings.random : mulberry32(1));
+    const structure = balancedClusters(n, totalClusters);
+    const pairs = [];
+    const edgeSet = new Set();
+
+    structure.groups.forEach(function generateCluster(vertices) {
+      const localPairs = localClusterPairs(vertices.length, topology, settings, random);
+      localPairs.forEach(function mapPair(pair) {
+        addEdge(edgeSet, pairs, vertices[pair[0]], vertices[pair[1]]);
+      });
+    });
+
+    for (let source = 0; source < n; source += 1) {
+      for (let target = source + 1; target < n; target += 1) {
+        if (structure.memberships[source] !== structure.memberships[target] && random() < crossProbability) {
+          addEdge(edgeSet, pairs, source, target);
+        }
+      }
+    }
+
+    pairs.sort(function sortPairs(first, second) {
+      return first[0] - second[0] || first[1] - second[1];
+    });
+    return finishClusteredGraph(n, pairs, structure, topology);
+  }
+
   function generateGraph(topology, options) {
     const settings = options || {};
     const random = settings.random || mulberry32(settings.seed || 1);
@@ -233,6 +486,14 @@
     if (topology === "regular") return randomRegularGraph(settings.count || 90, settings.degree || 8, random);
     if (topology === "erdos") return erdosRenyiGraph(settings.count || 90, settings.meanDegree || 8, random);
     if (topology === "preferential") return preferentialGraph(settings.count || 90, settings.attachments || 3, random);
+    if (topology === "clusters" || topology === "cluster") {
+      return clusteredGraph(
+        settings.count || 90,
+        settings.clusterCount == null ? settings.clusters : settings.clusterCount,
+        settings,
+        random
+      );
+    }
     throw new Error("Unknown graph topology: " + topology);
   }
 
@@ -287,11 +548,16 @@
     clamp: clamp,
     mulberry32: mulberry32,
     degreesFromPairs: degreesFromPairs,
+    adjustEdgePairs: adjustEdgePairs,
+    adjustGraphEdges: adjustGraphEdges,
     isConnected: isConnected,
     torusGraph: torusGraph,
     randomRegularGraph: randomRegularGraph,
     erdosRenyiGraph: erdosRenyiGraph,
     preferentialGraph: preferentialGraph,
+    clusterGraph: clusterGraph,
+    stochasticBlockGraph: clusterGraph,
+    clusteredGraph: clusteredGraph,
     generateGraph: generateGraph,
     randomState: randomState,
     stepInto: stepInto,

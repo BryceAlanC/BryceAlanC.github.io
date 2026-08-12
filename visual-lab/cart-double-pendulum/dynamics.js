@@ -13,6 +13,9 @@
     link2Mass: 0.2,
     link1Length: 0.9,
     link2Length: 0.72,
+    // Revolute-joint viscous damping coefficients, in N·m·s/rad.
+    pivotDamping: 0.035,
+    elbowDamping: 0.0175,
     gravity: 9.81,
     forceLimit: 30,
     accelerationLimit: 16
@@ -102,15 +105,25 @@
     const secondMoment = p.link2Mass * p.link2Length;
     const coupling = p.link2Mass * p.link1Length * p.link2Length;
     const difference = theta1 - theta2;
+    // Viscous losses at the two physical revolute joints. Because theta1 and
+    // theta2 are absolute angles, the elbow's relative angular rate is
+    // omega2 - omega1. These terms are the generalized torques obtained from
+    // R = 1/2 * pivotDamping * omega1^2
+    //   + 1/2 * elbowDamping * (omega2 - omega1)^2.
+    const elbowRelativeRate = omega2 - omega1;
+    const pivotDampingTorque = -p.pivotDamping * omega1;
+    const elbowDampingTorque = -p.elbowDamping * elbowRelativeRate;
 
     const acceleration = solve3(massMatrix(state, p), [
       appliedForce
         + firstMoment * Math.sin(theta1) * omega1 * omega1
         + secondMoment * Math.sin(theta2) * omega2 * omega2,
       firstMoment * p.gravity * Math.sin(theta1)
-        - coupling * Math.sin(difference) * omega2 * omega2,
+        - coupling * Math.sin(difference) * omega2 * omega2
+        + pivotDampingTorque - elbowDampingTorque,
       secondMoment * p.gravity * Math.sin(theta2)
         + coupling * Math.sin(difference) * omega1 * omega1
+        + elbowDampingTorque
     ]);
 
     return new Float64Array([
