@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An interactive cart–double-pendulum simulation with trajectory tracking for swing-up and LQR balance.">
+  <meta name="author" content="Bryce A. Christopherson">
+  <meta name="theme-color" content="#0b5748">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Swing up, catch, balance | Bryce Christopherson">
+  <meta property="og:description" content="Drive a serial double pendulum upright with planned trajectory tracking, then disturb its LQR balance.">
+  <title>Swing up, catch, balance · Bryce A. Christopherson</title>
+  <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/styles.css">
+  <link rel="stylesheet" href="../assets/lab.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="dynamics.js" defer></script>
+  <script src="controller.js" defer></script>
+  <script src="demo.js" defer></script>
+</head>
+<body class="visual-lab-page">
+  <a class="skip-link" href="#main-content">Skip to simulation</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+        <span class="wordmark-mark" aria-hidden="true">BC</span>
+        <span class="wordmark-name">Bryce Christopherson</span>
+      </a>
+
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a href="../../research/">Research</a>
+        <a href="../../teaching/">Teaching</a>
+        <a href="../../service/">Service</a>
+        <a href="../../presentations/">Presentations</a>
+        <a href="../" aria-current="page">Visual Lab</a>
+        <a href="../../#about">About</a>
+      </nav>
+
+      <a class="header-cta" href="../../files/Bryce-Christopherson-CV.pdf" target="_blank" rel="noreferrer">CV <span aria-hidden="true">↗</span></a>
+
+      <details class="mobile-menu">
+        <summary>Menu</summary>
+        <nav aria-label="Mobile navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+      </details>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="app-hero" id="top">
+      <div class="section-shell">
+        <a class="app-back" href="../">← Back to Visual Lab</a>
+        <div class="app-hero-grid">
+          <p class="section-kicker">Control playground · 02</p>
+          <h1>Swing up,<br>catch, balance.</h1>
+          <p class="app-hero-copy">A cart drives two serial links from the hanging equilibrium toward upright. A trajectory-optimized swing-up with feedback tracking does the approach; an upright LQR controller catches the remaining motion.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lab-app" aria-labelledby="simulation-title">
+      <div class="lab-stage-shell app-layout">
+        <aside class="control-panel" aria-label="Simulation controls">
+          <h2>Controller desk</h2>
+          <p>Start from rest, interrupt the run, or remove feedback to watch the open-loop plant fall away.</p>
+
+          <fieldset class="control-group">
+            <legend>Feedback</legend>
+            <label class="check-row">
+              <input id="controller-enabled" type="checkbox" checked>
+              <span>Controller enabled</span>
+            </label>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Playback</legend>
+            <div class="field-label"><label for="playback-speed">Speed</label> <output id="playback-speed-value" for="playback-speed">1×</output></div>
+            <input id="playback-speed" type="range" min="0.5" max="2" step="0.5" value="1">
+            <div class="control-row">
+              <button class="lab-button lab-button-primary" id="play-pause" type="button">Start</button>
+              <button class="lab-button" id="step" type="button">Step 0.02 s</button>
+            </div>
+            <div class="control-row">
+              <button class="lab-button" id="reset" type="button">Reset</button>
+            </div>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Disturbance after catch</legend>
+            <div class="control-row">
+              <button class="lab-button lab-button-danger" id="shove-left" type="button" disabled>← −2 N·s</button>
+              <button class="lab-button lab-button-danger" id="shove-right" type="button" disabled>+2 N·s →</button>
+            </div>
+            <p class="shove-help">The shove buttons unlock at the two-second controller handoff.</p>
+          </fieldset>
+        </aside>
+
+        <div class="stage-stack">
+          <section class="stage-panel">
+            <div class="stage-heading">
+              <div>
+                <p class="section-kicker">Live model</p>
+                <h2 id="simulation-title">Serial double pendulum</h2>
+              </div>
+              <div class="phase-readout" aria-live="polite">
+                <output class="pendulum-status" id="controller-mode">Ready · trajectory tracking</output>
+                <output id="simulation-time">t = 0.00 s</output>
+              </div>
+            </div>
+
+            <div class="pendulum-stage">
+              <canvas id="pendulum-canvas" role="img" aria-label="Animated cart with two serial pendulum links swinging from downward to upright under feedback control"></canvas>
+              <div class="canvas-note" aria-hidden="true">Arrow shows actuator force</div>
+            </div>
+          </section>
+
+          <section class="telemetry-panel" aria-label="Live simulation telemetry">
+            <div class="telemetry-item">
+              <span>Cart position</span>
+              <strong><output id="cart-position">0.00 m</output></strong>
+            </div>
+            <div class="telemetry-item">
+              <span>Link 1 angle</span>
+              <strong><output id="link-one-angle">180.0°</output></strong>
+            </div>
+            <div class="telemetry-item">
+              <span>Link 2 angle</span>
+              <strong><output id="link-two-angle">180.0°</output></strong>
+            </div>
+            <div class="telemetry-item">
+              <span>Actuator force</span>
+              <strong><output id="actuator-force">0.0 N</output></strong>
+            </div>
+          </section>
+
+          <p class="app-note"><strong>What this demonstrates.</strong> The first two seconds track one precomputed swing-up trajectory with time-varying feedback; the handoff then uses a local upright LQR law. The controller recovers from the offered ±2 N·s impulses in this model, but it is not a globally stabilizing autonomous swing-up law.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer" id="page-footer">
+    <div>
+      <p>© <span id="current-year">2026</span> Bryce A. Christopherson</p>
+      <p>University of North Dakota</p>
+    </div>
+    <a class="footer-email" href="mailto:bryce.christopherson@UND.edu">bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a>
+    <a href="#top">Back to top ↑</a>
+  </footer>
+
+  <div class="sr-only" id="simulation-announcer" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visual Lab | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Interactive mathematical and computational visualizations by Bryce Christopherson."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Visual Lab | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="A growing collection of interactive sketches in graphs, dynamics, and computation."
+    />
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../assets/styles.css" />
+    <link rel="stylesheet" href="assets/lab.css" />
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../research/">Research</a
+          ><a href="../teaching/">Teaching</a
+          ><a href="../service/">Service</a
+          ><a href="../presentations/">Presentations</a
+          ><a href="./" aria-current="page">Visual Lab</a
+          ><a href="../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../research/">Research</a>
+            <a href="../teaching/">Teaching</a>
+            <a href="../service/">Service</a>
+            <a href="../presentations/">Presentations</a>
+            <a href="./" aria-current="page">Visual Lab</a>
+            <a href="../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="lab-intro" id="top">
+        <div class="section-shell lab-intro-grid">
+          <p class="section-kicker">Visual Lab</p>
+          <h1>Things worth playing with</h1>
+          <p class="lab-intro-copy">
+            A growing collection of interactive sketches in graphs, dynamics,
+            and computation—small mathematical worlds to prod, perturb, and
+            watch unfold.
+          </p>
+        </div>
+      </section>
+
+      <section class="lab-gallery" aria-labelledby="gallery-title">
+        <div class="section-shell">
+          <div class="gallery-heading">
+            <div>
+              <p class="section-kicker">Current experiments</p>
+              <h2 id="gallery-title">Choose a system and change the rules.</h2>
+            </div>
+            <p>
+              Each visualizer is a live model, not a prerecorded animation.
+              Adjust its parameters, introduce a disturbance, or simply let it
+              run and see what structure emerges.
+            </p>
+          </div>
+
+          <div class="lab-card-grid">
+            <a class="lab-card lab-card-life" href="game-of-life-on-graphs/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="life-bg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#071e19" />
+                      <stop offset="1" stop-color="#17211d" />
+                    </linearGradient>
+                    <radialGradient id="life-glow">
+                      <stop offset="0" stop-color="#ffd6a5" stop-opacity="0.88" />
+                      <stop offset="0.38" stop-color="#f0b18b" stop-opacity="0.34" />
+                      <stop offset="1" stop-color="#f0b18b" stop-opacity="0" />
+                    </radialGradient>
+                    <pattern id="life-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                      <path d="M32 0H0V32" fill="none" stroke="#fffdf7" stroke-opacity="0.045" />
+                    </pattern>
+                  </defs>
+                  <rect width="640" height="390" fill="url(#life-bg)" />
+                  <rect width="640" height="390" fill="url(#life-grid)" />
+
+                  <g fill="none" stroke="#8aa098" stroke-opacity="0.31" stroke-width="1.35">
+                    <path d="M85 116 179 73 278 122 384 75 496 124 564 76" />
+                    <path d="M85 116 151 201 278 122 309 222 384 75 459 203 564 76" />
+                    <path d="M151 201 75 282 215 317 309 222 397 318 459 203 570 285" />
+                    <path d="M75 282 177 246 215 317 309 222 397 318 492 271 570 285" />
+                    <path d="M179 73 177 246M278 122l-63 195M384 75l13 243M496 124l-4 147" />
+                    <path d="M85 116 177 246 278 122 397 318 459 203 570 285" />
+                  </g>
+
+                  <g fill="#718079" stroke="#c6d0cb" stroke-opacity="0.48">
+                    <circle cx="85" cy="116" r="6" />
+                    <circle cx="179" cy="73" r="5" />
+                    <circle cx="278" cy="122" r="6" />
+                    <circle cx="384" cy="75" r="5" />
+                    <circle cx="496" cy="124" r="6" />
+                    <circle cx="564" cy="76" r="5" />
+                    <circle cx="151" cy="201" r="6" />
+                    <circle cx="309" cy="222" r="6" />
+                    <circle cx="459" cy="203" r="6" />
+                    <circle cx="75" cy="282" r="5" />
+                    <circle cx="215" cy="317" r="6" />
+                    <circle cx="397" cy="318" r="5" />
+                    <circle cx="492" cy="271" r="5" />
+                    <circle cx="570" cy="285" r="6" />
+                  </g>
+
+                  <g>
+                    <circle cx="177" cy="246" r="42" fill="url(#life-glow)" />
+                    <circle cx="177" cy="246" r="9" fill="#f0b18b" stroke="#fff0e6" stroke-width="2" />
+                    <circle cx="278" cy="122" r="34" fill="url(#life-glow)" />
+                    <circle cx="278" cy="122" r="9" fill="#f0b18b" stroke="#fff0e6" stroke-width="2" />
+                    <circle cx="397" cy="318" r="36" fill="url(#life-glow)" />
+                    <circle cx="397" cy="318" r="9" fill="#f0b18b" stroke="#fff0e6" stroke-width="2" />
+                    <circle cx="459" cy="203" r="40" fill="url(#life-glow)" />
+                    <circle cx="459" cy="203" r="9" fill="#f0b18b" stroke="#fff0e6" stroke-width="2" />
+                  </g>
+
+                  <g font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="1.2">
+                    <rect x="24" y="24" width="116" height="31" fill="#071e19" stroke="#fffdf7" stroke-opacity="0.2" />
+                    <text x="39" y="44" fill="#fffdf7" fill-opacity="0.76">GENERATION 042</text>
+                    <rect x="478" y="335" width="138" height="31" fill="#071e19" stroke="#fffdf7" stroke-opacity="0.2" />
+                    <text x="495" y="355" fill="#f0b18b">B3 / S23 · 3D</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>01 · Graph dynamics</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Game of Life on graphs</h3>
+              <p class="lab-card-copy">
+                Put a Life-like cellular automaton on a toroidal grid, a random
+                regular graph, an Erdős–Rényi graph, or a preferential-attachment
+                network. Change the rule, seed a population, and follow it
+                through three dimensions.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · WebGL</span>
+                <strong>Open visualizer <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+
+            <a class="lab-card lab-card-pendulum" href="cart-double-pendulum/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="pendulum-bg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#102b35" />
+                      <stop offset="1" stop-color="#17211d" />
+                    </linearGradient>
+                    <pattern id="pendulum-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                      <path d="M32 0H0V32" fill="none" stroke="#fffdf7" stroke-opacity="0.045" />
+                    </pattern>
+                    <filter id="pendulum-shadow" x="-40%" y="-40%" width="180%" height="180%">
+                      <feGaussianBlur stdDeviation="8" />
+                    </filter>
+                  </defs>
+                  <rect width="640" height="390" fill="url(#pendulum-bg)" />
+                  <rect width="640" height="390" fill="url(#pendulum-grid)" />
+
+                  <path d="M78 307H566" fill="none" stroke="#fffdf7" stroke-opacity="0.48" stroke-width="2" />
+                  <path d="M112 322H532" fill="none" stroke="#fffdf7" stroke-opacity="0.13" stroke-dasharray="5 8" />
+                  <path d="M194 307c18-96 61-151 130-166 70-15 124-1 168 45" fill="none" stroke="#f0b18b" stroke-opacity="0.24" stroke-dasharray="5 9" />
+                  <path d="M243 285c17-76 42-129 78-160 42-35 84-46 126-31" fill="none" stroke="#6bcdbf" stroke-opacity="0.22" stroke-dasharray="4 8" />
+
+                  <ellipse cx="329" cy="292" rx="78" ry="25" fill="#000" opacity="0.28" filter="url(#pendulum-shadow)" />
+                  <rect x="268" y="268" width="122" height="48" rx="4" fill="#f5f2e9" stroke="#fffdf7" stroke-width="2" />
+                  <rect x="284" y="277" width="90" height="13" fill="#345f73" opacity="0.82" />
+                  <circle cx="289" cy="320" r="13" fill="#17211d" stroke="#c9d4cf" />
+                  <circle cx="369" cy="320" r="13" fill="#17211d" stroke="#c9d4cf" />
+
+                  <g fill="none" stroke-linecap="round">
+                    <path d="M329 268 279 174" stroke="#f0b18b" stroke-width="8" />
+                    <path d="M279 174 344 79" stroke="#6bcdbf" stroke-width="7" />
+                  </g>
+                  <g>
+                    <circle cx="329" cy="268" r="9" fill="#fffdf7" stroke="#17211d" stroke-width="2" />
+                    <circle cx="279" cy="174" r="12" fill="#f0b18b" stroke="#fff0e6" stroke-width="2" />
+                    <circle cx="344" cy="79" r="13" fill="#6bcdbf" stroke="#dffaf4" stroke-width="2" />
+                  </g>
+
+                  <g fill="none" stroke="#f0b18b" stroke-width="2">
+                    <path d="M402 268h70" />
+                    <path d="m464 260 10 8-10 8" />
+                  </g>
+                  <text x="411" y="252" fill="#f0b18b" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1">CONTROL</text>
+
+                  <g font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="1.2">
+                    <rect x="24" y="24" width="127" height="31" fill="#102b35" stroke="#fffdf7" stroke-opacity="0.2" />
+                    <text x="39" y="44" fill="#fffdf7" fill-opacity="0.76">MODE · BALANCE</text>
+                    <rect x="478" y="335" width="138" height="31" fill="#102b35" stroke="#fffdf7" stroke-opacity="0.2" />
+                    <text x="494" y="355" fill="#6bcdbf">TRACKING · LQR</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>02 · Nonlinear control</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Cart–double-pendulum swing-up</h3>
+              <p class="lab-card-copy">
+                Watch a cart drive two linked pendulums toward the unstable
+                upright position, hand off to a balancing controller, and react
+                when you kick the system away from equilibrium.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · Simulation</span>
+                <strong>Open visualizer <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-future" aria-labelledby="future-title">
+        <div class="section-shell lab-future-grid">
+          <p class="section-kicker">An open shelf</p>
+          <h2 id="future-title">More strange little systems will live here.</h2>
+          <p>
+            This lab is intentionally unfinished. New visualizers will be added
+            whenever a mathematical object, algorithm, or control problem seems
+            more illuminating when it can be touched.
+          </p>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>

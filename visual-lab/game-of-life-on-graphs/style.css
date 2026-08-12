@@ -1,0 +1,50 @@
+.field-label-spaced {
+  margin-top: 1rem;
+}
+
+.control-help {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.5;
+}
+
+.stage-message {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  padding: 2rem;
+  background: var(--ink);
+  color: rgba(255, 253, 247, 0.72);
+  place-items: center;
+  text-align: center;
+}
+
+.stage-message[hidden] {
+  display: none;
+}
+
+.stage-message.is-error {
+  color: #ffd8c4;
+}
+
+.control-panel input:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.control-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+#life-state {
+  color: #f0b18b;
+}
+
+@media (max-width: 700px) {
+  .stage-heading h2 {
+    font-size: 1.45rem;
+  }
+}

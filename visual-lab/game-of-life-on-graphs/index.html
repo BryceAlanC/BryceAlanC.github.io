@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Life on Graphs | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="An interactive 3D visualization of Life-like cellular automata on tori, random regular graphs, Erdős–Rényi graphs, and preferential-attachment networks."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Life on Graphs | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Run Life-like rules on finite graphs and watch the topology change what survives."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"
+      integrity="sha384-Y7bC2PBKu8ujxtvo5+Z61OeGdSVRzFsYWBK4i5dnL/U6aFDTodk61qOUkTfInaxS"
+      crossorigin="anonymous"
+      defer
+    ></script>
+    <script src="./simulation.js" defer></script>
+    <script src="./demo.js" defer></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../">← Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Cellular automata · finite graphs</p>
+            <h1>Life on graphs</h1>
+            <p class="app-hero-copy">
+              Put a living-or-dead state on every vertex, update all vertices at once,
+              and rotate the graph in three dimensions while the population evolves.
+              The familiar square-grid rule becomes a different dynamical system when
+              the network has irregular degrees.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-app" aria-labelledby="controls-title">
+        <div class="lab-stage-shell app-layout">
+          <aside class="control-panel" aria-label="Life simulation controls">
+            <h2 id="controls-title">Choose the experiment</h2>
+            <p>Changing the graph controls builds a fresh network. Click any vertex to toggle its state.</p>
+
+            <fieldset class="control-group">
+              <legend>Graph</legend>
+              <label class="field-label" for="life-topology">Topology</label>
+              <select id="life-topology">
+                <option value="torus">Moore torus</option>
+                <option value="regular">Random regular</option>
+                <option value="erdos">Erdős–Rényi</option>
+                <option value="preferential">Preferential attachment</option>
+              </select>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Dynamics</legend>
+              <label class="field-label" for="life-rule">Life-like rule</label>
+              <select id="life-rule">
+                <option value="conway">Conway · B3/S23</option>
+                <option value="highlife">HighLife · B36/S23</option>
+                <option value="seeds">Seeds · B2/S</option>
+              </select>
+              <p class="control-help" id="life-rule-help">
+                A dead vertex is born with 3 living neighbors; a living vertex survives with 2 or 3.
+              </p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Scale</legend>
+              <div class="field-label">
+                <label id="life-size-name" for="life-size">Side length</label>
+                <output id="life-size-value" for="life-size">9</output>
+              </div>
+              <input id="life-size" type="range" min="6" max="14" value="9" step="1" />
+
+              <div class="field-label field-label-spaced">
+                <label id="life-degree-name" for="life-degree">Degree</label>
+                <output id="life-degree-value" for="life-degree">8</output>
+              </div>
+              <input id="life-degree" type="range" min="2" max="10" value="8" step="2" disabled />
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Initial state and time</legend>
+              <div class="field-label">
+                <label for="life-density">Initial density</label>
+                <output id="life-density-value" for="life-density">32%</output>
+              </div>
+              <input id="life-density" type="range" min="5" max="75" value="32" step="1" />
+
+              <div class="field-label field-label-spaced">
+                <label for="life-speed">Speed</label>
+                <output id="life-speed-value" for="life-speed">5 gen/s</output>
+              </div>
+              <input id="life-speed" type="range" min="1" max="12" value="5" step="1" />
+            </fieldset>
+
+            <div class="control-row">
+              <button class="lab-button lab-button-primary" id="life-play" type="button">Play</button>
+              <button class="lab-button" id="life-step" type="button">Step</button>
+            </div>
+            <div class="control-row">
+              <button class="lab-button" id="life-reset" type="button">Reset state</button>
+              <button class="lab-button" id="life-randomize" type="button">Randomize state</button>
+            </div>
+            <div class="control-row">
+              <button class="lab-button" id="life-new-graph" type="button">New graph</button>
+              <button class="lab-button" id="life-fit" type="button">Fit view</button>
+            </div>
+          </aside>
+
+          <div class="stage-stack">
+            <section class="stage-panel" aria-labelledby="stage-title">
+              <div class="stage-heading">
+                <div>
+                  <p class="section-kicker">Current state</p>
+                  <h2 id="stage-title">Rotate the graph. Select a vertex.</h2>
+                </div>
+                <p id="life-status" aria-live="off">Generation 0 · preparing graph</p>
+              </div>
+              <div
+                class="stage-viewport"
+                id="life-stage"
+                role="img"
+                aria-label="Three-dimensional graph showing living vertices as larger peach marks and dead vertices as smaller gray marks"
+              >
+                <div class="stage-message" id="life-message" role="status">Loading the 3D graph…</div>
+                <div class="stage-overlay">
+                  <div class="legend" role="group" aria-label="Graph legend">
+                    <span><i class="is-live" aria-hidden="true"></i>Alive</span>
+                    <span><i aria-hidden="true"></i>Dead</span>
+                  </div>
+                  <span id="life-state">Paused</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="telemetry-panel" aria-label="Simulation measurements">
+              <div class="telemetry-item">
+                <span>Generation</span>
+                <strong id="life-generation">0</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Living vertices</span>
+                <strong id="life-alive">0 / 0</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Edges</span>
+                <strong id="life-edges">0</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Average degree</span>
+                <strong id="life-average-degree">0.0</strong>
+              </div>
+            </section>
+
+            <p class="app-note">
+              The rule uses absolute neighbor counts. On the Moore torus every vertex has
+              eight neighbors, so Conway’s B3/S23 rule is exactly the usual finite periodic
+              Game of Life. On an irregular graph, hubs and low-degree vertices obey the same
+              numerical thresholds despite having different numbers of neighbors; that is why
+              changing the topology can change the behavior so sharply.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="sr-only" id="life-announcer" aria-live="polite" aria-atomic="true"></div>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>
