@@ -482,8 +482,6 @@
         Math.max(
           elements.shell.scrollHeight,
           elements.shell.getBoundingClientRect().height,
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
         ) + 4,
       );
       if (height > 0) {
