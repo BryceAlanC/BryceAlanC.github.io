@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="An exact interactive visualization of K4 copies anchored at one critical edge, counted through a complete bipartite common neighborhood."
+      content="An interactive R(3,3) cloning construction: start from a triangle-free red-blue K5, clone one vertex, and color the final edge."
     />
-    <title>One edge carries every forced clique</title>
+    <title>Clone one vertex. Color one final edge.</title>
     <link rel="stylesheet" href="./style.css" />
     <script src="./demo.js" defer></script>
   </head>
@@ -15,127 +15,115 @@
     <main class="demo-shell" id="demo-shell">
       <header class="demo-header">
         <div>
-          <p class="eyebrow">Threshold Ramsey multiplicity</p>
-          <h1>One edge carries every forced clique.</h1>
+          <p class="eyebrow">The cloning construction for R(3,3)</p>
+          <h1>Clone one vertex. Color one final edge.</h1>
         </div>
         <p class="intro">
-          Every displayed <span class="math">K<sub>4</sub></span> is the
-          backbone edge <span class="math">e = uv</span> together with one
-          vertex from each part of the common neighborhood.
+          Begin with a triangle-free red–blue coloring of
+          <span class="math">K<sub>5</sub></span
+          >: a red 5-cycle and its blue complement. Clone vertex 1, leave
+          <span class="math">e = 11′</span> uncolored, then choose its color.
         </p>
       </header>
 
       <section class="lemma-rail" aria-labelledby="lemma-rail-title">
-        <h2 class="sr-only" id="lemma-rail-title">The last-edge cloning construction</h2>
+        <h2 class="sr-only" id="lemma-rail-title">
+          Three steps in the cloning construction
+        </h2>
         <article>
-          <span>01 · begin below the threshold</span>
-          <div class="mini-graph mini-original" aria-hidden="true">
-            <i class="mini-node n1"></i><i class="mini-node n2"></i><i class="mini-node n3"></i><i class="mini-node n4"></i>
-            <b class="mini-edge e1"></b><b class="mini-edge e2"></b><b class="mini-edge e3"></b><b class="mini-edge e4"></b>
-          </div>
-          <strong>A target-free coloring of K<sub>R−1</sub></strong>
-          <p>Mark a vertex <i>u</i> whose colored neighborhood will be copied.</p>
+          <span>01 · start below the threshold</span>
+          <strong>A target-free coloring of K<sub>5</sub></strong>
+          <p>
+            The red cycle and blue complementary cycle contain no monochromatic
+            triangle.
+          </p>
         </article>
         <i class="rail-arrow" aria-hidden="true">→</i>
         <article>
-          <span>02 · clone u</span>
-          <div class="mini-graph mini-clone" aria-hidden="true">
-            <i class="mini-node clone-u">u</i><i class="mini-node clone-v">v</i><b class="mini-edge clone-gap"></b>
-            <i class="clone-spokes"></i>
-          </div>
-          <strong>Copy every incident color; leave uv missing</strong>
-          <p>The partial coloring on K<sub>R</sub>−e is still target-free.</p>
+          <span>02 · clone vertex 1</span>
+          <strong>Copy every incident color</strong>
+          <p>
+            Give 1′ the same colored neighbors as 1 and leave only e = 11′
+            missing.
+          </p>
         </article>
         <i class="rail-arrow" aria-hidden="true">→</i>
         <article class="rail-final">
           <span>03 · color the final edge</span>
-          <div class="mini-graph mini-anchor" aria-hidden="true">
-            <i class="mini-node anchor-u">u</i><i class="mini-node anchor-v">v</i><b class="mini-edge anchor-edge-mini"></b>
-            <i class="copy-fan fan-one"></i><i class="copy-fan fan-two"></i><i class="copy-fan fan-three"></i>
-          </div>
-          <strong>Every newly forced copy passes through e</strong>
-          <p>The global count now hinges on one two-vertex backbone.</p>
+          <strong>Every new triangle passes through e</strong>
+          <p>
+            Red or blue, the last edge creates exactly two monochromatic
+            triangles.
+          </p>
         </article>
       </section>
 
-      <section class="control-panel" aria-labelledby="controls-title">
+      <section class="control-panel" aria-labelledby="construction-state-title">
         <div class="control-heading">
           <div>
-            <p class="section-label" id="controls-title">Build the example</p>
+            <p class="section-label">Follow the construction</p>
             <p class="control-note">
-              Change the two Turán-part sizes, then remove or restore the last
-              edge.
+              Move from the original <span class="math">K<sub>5</sub></span>
+              to either completion of the cloned graph.
             </p>
           </div>
-
-          <button
-            class="edge-toggle"
-            id="edge-toggle"
-            type="button"
-            aria-pressed="true"
-            aria-controls="graph copy-grid count-panel"
-          >
-            <span class="toggle-track" aria-hidden="true">
-              <span class="toggle-knob"></span>
-            </span>
-            <span>
-              <small>Backbone edge <i>e</i></small>
-              <strong id="edge-toggle-label">Present</strong>
-            </span>
-          </button>
         </div>
 
-        <div class="range-controls">
-          <label class="range-control" for="part-a-size">
-            <span>
-              <strong>Part <i>A</i></strong>
-              <output id="part-a-output" for="part-a-size">3 vertices</output>
-            </span>
-            <input
-              id="part-a-size"
-              type="range"
-              min="1"
-              max="4"
-              step="1"
-              value="3"
-            />
-            <span class="range-ticks" aria-hidden="true">
-              <i>1</i><i>2</i><i>3</i><i>4</i>
-            </span>
+        <fieldset class="state-controls" id="construction-controls">
+          <legend class="sr-only" id="construction-state-title">
+            Construction state
+          </legend>
+          <label class="state-option">
+            <input type="radio" name="construction-state" value="k5" />
+            <span
+              ><small>01 · start</small
+              ><strong>Original K<sub>5</sub></strong></span
+            >
           </label>
-
-          <label class="range-control range-control-b" for="part-b-size">
-            <span>
-              <strong>Part <i>B</i></strong>
-              <output id="part-b-output" for="part-b-size">3 vertices</output>
-            </span>
+          <label class="state-option">
             <input
-              id="part-b-size"
-              type="range"
-              min="1"
-              max="4"
-              step="1"
-              value="3"
+              type="radio"
+              name="construction-state"
+              value="clone"
+              checked
             />
-            <span class="range-ticks" aria-hidden="true">
-              <i>1</i><i>2</i><i>3</i><i>4</i>
-            </span>
+            <span
+              ><small>02 · clone</small><strong>Leave e missing</strong></span
+            >
           </label>
-        </div>
+          <label class="state-option state-option-red">
+            <input type="radio" name="construction-state" value="red" />
+            <span
+              ><small>03 · complete</small><strong>Color e red</strong></span
+            >
+          </label>
+          <label class="state-option state-option-blue">
+            <input type="radio" name="construction-state" value="blue" />
+            <span
+              ><small>03 · complete</small><strong>Color e blue</strong></span
+            >
+          </label>
+        </fieldset>
       </section>
 
-      <section class="visual-layout" aria-label="Anchored clique construction">
+      <section
+        class="visual-layout"
+        aria-label="Interactive vertex-cloning construction"
+      >
         <figure class="graph-card">
           <figcaption>
             <div>
-              <p class="section-label">The anchored graph</p>
-              <h2>
-                <span class="math">H[C] = K<sub id="part-label-a">3</sub>,<sub id="part-label-b">3</sub></span>
+              <p class="section-label" id="graph-step">
+                Step 2 · clone vertex 1
+              </p>
+              <h2 id="graph-heading">
+                <span class="math">K<sub>6</sub> − e</span> is still
+                target-free.
               </h2>
             </div>
             <p id="graph-caption">
-              Hover a cross-edge or focus a grid cell to isolate one anchored
-              <span class="math">K<sub>4</sub></span>.
+              The colored edges from 1′ copy the corresponding edges from 1;
+              only <span class="math">e = 11′</span> is missing.
             </p>
           </figcaption>
 
@@ -143,106 +131,121 @@
             <svg
               id="graph"
               class="graph"
-              viewBox="0 0 820 540"
+              viewBox="0 0 760 560"
               role="img"
               aria-labelledby="graph-title graph-description"
             >
               <title id="graph-title">
-                Complete bipartite common neighborhood anchored at edge u v
+                Triangle-free red-blue coloring of K6 minus one edge
               </title>
               <desc id="graph-description">
-                The edge u v, when present, combines with every cross-edge
-                between parts A and B to form one K4. With three vertices in
-                each part there are nine such copies.
+                Vertex 1 prime is a clone of vertex 1. Their connecting edge is
+                uncolored, and the graph has no monochromatic triangles.
               </desc>
             </svg>
           </div>
 
-          <p class="graph-key" aria-hidden="true">
-            <span><i class="key-dot key-backbone"></i>critical edge</span>
-            <span><i class="key-dot key-a"></i>part <i>A</i></span>
-            <span><i class="key-dot key-b"></i>part <i>B</i></span>
-          </p>
+          <div class="graph-key" aria-label="Graph legend">
+            <span><i class="key-line key-red"></i>red edge</span>
+            <span><i class="key-line key-blue"></i>blue edge</span>
+            <span
+              ><i class="key-line key-missing"></i>uncolored final edge</span
+            >
+            <span><i class="key-node key-clone"></i>cloned vertex</span>
+          </div>
         </figure>
 
-        <aside class="count-card" id="count-panel" aria-labelledby="count-title">
-          <p class="section-label">Exact count</p>
-          <h2 id="count-title">Every cross-edge gives one copy.</h2>
+        <aside
+          class="count-card"
+          id="count-panel"
+          aria-labelledby="count-title"
+        >
+          <p class="section-label">What the last edge forces</p>
+          <h2 id="count-title">One edge short: no monochromatic triangles.</h2>
 
-          <div class="equivalence" aria-label="Clique counting equivalence">
+          <div class="triangle-total" id="triangle-total-panel">
+            <strong id="triangle-count">0</strong>
+            <span id="triangle-count-label">monochromatic triangles</span>
+          </div>
+
+          <div
+            class="equivalence"
+            id="equivalence"
+            aria-label="Triangle-counting correspondence"
+          >
             <span>
-              <strong id="cross-edge-count">9</strong>
-              <small>edges in <span class="math">H[C]</span></small>
+              <strong id="neighbor-count">—</strong>
+              <small id="neighbor-label">final-edge color not chosen</small>
             </span>
             <i aria-hidden="true">↔</i>
             <span>
-              <strong id="anchored-copy-count">9</strong>
-              <small>anchored <span class="math">K<sub>4</sub></span>s</small>
+              <strong id="copy-count">0</strong>
+              <small>new triangles through e</small>
             </span>
           </div>
 
-          <div class="formula-card" aria-label="Counting formula">
-            <p>
-              <span class="math">#K<sub>4</sub>(H)</span>
-              <span aria-hidden="true">=</span>
-              <span class="indicator" id="edge-indicator">1</span>
-              <span aria-hidden="true">·</span>
-              <span class="factor factor-a" id="formula-a">3</span>
-              <span aria-hidden="true">·</span>
-              <span class="factor factor-b" id="formula-b">3</span>
-              <span aria-hidden="true">=</span>
-              <strong id="formula-total">9</strong>
-            </p>
-            <small>
-              <span class="math">1<sub>{uv ∈ E(H)}</sub> |A| |B|</span>
-            </small>
+          <div class="formula-card" id="formula-card">
+            <p class="math" id="formula-main">c(1′w) = c(1w)</p>
+            <small id="formula-note"
+              >The clone reproduces every colored incidence of vertex 1.</small
+            >
           </div>
 
-          <div class="status-box" id="status-box" aria-live="polite">
-            <strong id="status-title">The final edge is present.</strong>
+          <div
+            class="status-box"
+            id="status-box"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <strong id="status-title">The final edge is uncolored.</strong>
             <span id="status-text">
-              Deleting <i>e</i> destroys all 9 anchored copies at once.
+              Any triangle using 1′ mirrors one using 1, so none is
+              monochromatic.
             </span>
           </div>
         </aside>
       </section>
 
-      <section class="grid-section" aria-labelledby="grid-title">
-        <div class="grid-copy">
+      <section class="witness-section" aria-labelledby="witness-title">
+        <div class="witness-copy">
           <p class="section-label">Copy-by-copy correspondence</p>
-          <h2 id="grid-title">
-            Choose <span class="factor-a">one vertex from <i>A</i></span> and
-            <span class="factor-b">one from <i>B</i></span>.
+          <h2 id="witness-title">
+            The clone has the same colored neighbors as vertex 1.
           </h2>
-          <p>
-            Each cell represents the four vertices
-            <span class="math">{u, v, a<sub>i</sub>, b<sub>j</sub>}</span>.
-            The matching cross-edge and clique highlight together.
+          <p id="witness-intro">
+            Before e is colored, those matching neighborhoods do not close a
+            triangle. Choose red or blue above to see the two witnesses.
           </p>
         </div>
-
-        <div class="copy-grid-wrap">
-          <div
-            class="copy-grid"
-            id="copy-grid"
-            role="group"
-            aria-label="Pairs of common-neighborhood vertices"
-          ></div>
+        <div class="witness-list" id="witness-list">
+          <article class="witness-card witness-card-red">
+            <span>red neighbors</span>
+            <strong class="math">N<sub>red</sub>(1) = {2, 5}</strong>
+            <p>Both red incidences are copied from 1 to 1′.</p>
+          </article>
+          <article class="witness-card witness-card-blue">
+            <span>blue neighbors</span>
+            <strong class="math">N<sub>blue</sub>(1) = {3, 4}</strong>
+            <p>Both blue incidences are copied from 1 to 1′.</p>
+          </article>
         </div>
       </section>
 
       <footer class="demo-footer">
         <p>
-          Removing <span class="math">e</span> leaves no
-          <span class="math">K<sub>4</sub></span>: the common-neighborhood graph
-          is bipartite and therefore triangle-free.
+          Before <span class="math">e</span> is colored, every triangle using 1′
+          mirrors a triangle using 1 in the target-free
+          <span class="math">K<sub>5</sub></span
+          >; a triangle containing both vertices cannot close because
+          <span class="math">e</span> is missing.
         </p>
         <p class="general-formula">
-          In general:
-          <span class="math">
-            #K<sub>s</sub>(H) = #K<sub>s−2</sub>(H[C]),
-            &nbsp; C = N(u) ∩ N(v).
-          </span>
+          In general, if <span class="math">e</span> receives color
+          <span class="math">i</span>, new monochromatic
+          <span class="math">K<sub>sᵢ</sub></span
+          >s through <span class="math">e</span> correspond to monochromatic
+          <span class="math">K<sub>sᵢ−2</sub></span
+          >s in the common color-i neighborhood.
         </p>
       </footer>
     </main>

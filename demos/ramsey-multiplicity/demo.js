@@ -3,42 +3,88 @@
 
   const SVG_NS = "http://www.w3.org/2000/svg";
   const resizeMessageType = "paper-concept-demo-height";
-  const subscripts = ["₁", "₂", "₃", "₄"];
+
+  const vertices = {
+    clone: { key: "clone", label: "1′", x: 58, y: 280 },
+    one: { key: "one", label: "1", x: 178, y: 280 },
+    two: { key: "two", label: "2", x: 350, y: 72 },
+    three: { key: "three", label: "3", x: 674, y: 158 },
+    four: { key: "four", label: "4", x: 674, y: 402 },
+    five: { key: "five", label: "5", x: 350, y: 488 },
+  };
+
+  const originalEdges = [
+    { from: "one", to: "two", color: "red" },
+    { from: "two", to: "three", color: "red" },
+    { from: "three", to: "four", color: "red" },
+    { from: "four", to: "five", color: "red" },
+    { from: "five", to: "one", color: "red" },
+    { from: "one", to: "three", color: "blue" },
+    { from: "one", to: "four", color: "blue" },
+    { from: "two", to: "four", color: "blue" },
+    { from: "two", to: "five", color: "blue" },
+    { from: "three", to: "five", color: "blue" },
+  ];
+
+  const cloneEdges = [
+    { from: "clone", to: "two", color: "red" },
+    { from: "clone", to: "five", color: "red" },
+    { from: "clone", to: "three", color: "blue" },
+    { from: "clone", to: "four", color: "blue" },
+  ];
+
+  const outcomes = {
+    red: {
+      colorName: "red",
+      neighbors: ["two", "five"],
+      neighborLabels: ["2", "5"],
+      triangles: [
+        ["clone", "one", "two"],
+        ["clone", "one", "five"],
+      ],
+      triangleLabels: ["{1, 1′, 2}", "{1, 1′, 5}"],
+    },
+    blue: {
+      colorName: "blue",
+      neighbors: ["three", "four"],
+      neighborLabels: ["3", "4"],
+      triangles: [
+        ["clone", "one", "three"],
+        ["clone", "one", "four"],
+      ],
+      triangleLabels: ["{1, 1′, 3}", "{1, 1′, 4}"],
+    },
+  };
 
   const elements = {
     shell: byId("demo-shell"),
     graph: byId("graph"),
-    graphDescription: byId("graph-description"),
+    graphStep: byId("graph-step"),
+    graphHeading: byId("graph-heading"),
     graphCaption: byId("graph-caption"),
-    edgeToggle: byId("edge-toggle"),
-    edgeToggleLabel: byId("edge-toggle-label"),
-    partASize: byId("part-a-size"),
-    partBSize: byId("part-b-size"),
-    partAOutput: byId("part-a-output"),
-    partBOutput: byId("part-b-output"),
-    partLabelA: byId("part-label-a"),
-    partLabelB: byId("part-label-b"),
-    crossEdgeCount: byId("cross-edge-count"),
-    anchoredCopyCount: byId("anchored-copy-count"),
-    edgeIndicator: byId("edge-indicator"),
-    formulaA: byId("formula-a"),
-    formulaB: byId("formula-b"),
-    formulaTotal: byId("formula-total"),
     countTitle: byId("count-title"),
+    triangleTotalPanel: byId("triangle-total-panel"),
+    triangleCount: byId("triangle-count"),
+    triangleCountLabel: byId("triangle-count-label"),
+    equivalence: byId("equivalence"),
+    neighborCount: byId("neighbor-count"),
+    neighborLabel: byId("neighbor-label"),
+    copyCount: byId("copy-count"),
+    formulaCard: byId("formula-card"),
+    formulaMain: byId("formula-main"),
+    formulaNote: byId("formula-note"),
     statusBox: byId("status-box"),
     statusTitle: byId("status-title"),
     statusText: byId("status-text"),
-    copyGrid: byId("copy-grid"),
+    witnessTitle: byId("witness-title"),
+    witnessIntro: byId("witness-intro"),
+    witnessList: byId("witness-list"),
+    controls: Array.from(
+      document.querySelectorAll('input[name="construction-state"]'),
+    ),
   };
 
-  const state = {
-    aSize: Number(elements.partASize.value),
-    bSize: Number(elements.partBSize.value),
-    edgePresent: true,
-    hoverPair: null,
-    selectedPair: null,
-  };
-
+  let state = "clone";
   let heightFrame = 0;
 
   initializeEmbedSizing();
@@ -46,413 +92,339 @@
   render();
 
   function bindControls() {
-    elements.edgeToggle.addEventListener("click", () => {
-      state.edgePresent = !state.edgePresent;
-      render();
+    elements.controls.forEach((control) => {
+      control.addEventListener("change", () => {
+        if (!control.checked) return;
+        state = control.value;
+        render();
+      });
     });
-
-    elements.partASize.addEventListener("input", () => {
-      state.aSize = Number(elements.partASize.value);
-      discardUnavailablePair();
-      render();
-    });
-
-    elements.partBSize.addEventListener("input", () => {
-      state.bSize = Number(elements.partBSize.value);
-      discardUnavailablePair();
-      render();
-    });
-  }
-
-  function discardUnavailablePair() {
-    if (
-      state.selectedPair &&
-      (state.selectedPair.a >= state.aSize || state.selectedPair.b >= state.bSize)
-    ) {
-      state.selectedPair = null;
-    }
-    state.hoverPair = null;
   }
 
   function render() {
-    renderControls();
     renderGraph();
-    renderGrid();
-    renderCounts();
-    renderGraphState();
-    renderGridState();
+    renderCopy();
     scheduleHeightMessage();
-  }
-
-  function renderControls() {
-    const aLabel = vertexCountLabel(state.aSize);
-    const bLabel = vertexCountLabel(state.bSize);
-
-    elements.partAOutput.value = aLabel;
-    elements.partAOutput.textContent = aLabel;
-    elements.partBOutput.value = bLabel;
-    elements.partBOutput.textContent = bLabel;
-    elements.partASize.setAttribute("aria-valuetext", aLabel);
-    elements.partBSize.setAttribute("aria-valuetext", bLabel);
-    elements.partLabelA.textContent = String(state.aSize);
-    elements.partLabelB.textContent = String(state.bSize);
-  }
-
-  function renderCounts() {
-    const crossEdges = state.aSize * state.bSize;
-    const anchoredCopies = state.edgePresent ? crossEdges : 0;
-
-    elements.edgeToggle.setAttribute("aria-pressed", String(state.edgePresent));
-    elements.edgeToggleLabel.textContent = state.edgePresent ? "Present" : "Missing";
-    elements.crossEdgeCount.textContent = String(crossEdges);
-    elements.anchoredCopyCount.textContent = String(anchoredCopies);
-    elements.edgeIndicator.textContent = state.edgePresent ? "1" : "0";
-    elements.formulaA.textContent = String(state.aSize);
-    elements.formulaB.textContent = String(state.bSize);
-    elements.formulaTotal.textContent = String(anchoredCopies);
-    elements.statusBox.classList.toggle("is-missing", !state.edgePresent);
-
-    if (state.edgePresent) {
-      elements.countTitle.textContent = "Every cross-edge gives one copy.";
-      elements.statusTitle.textContent = "The final edge is present.";
-      elements.statusText.replaceChildren(
-        textNode("Deleting "),
-        italicNode("e"),
-        textNode(` destroys all ${anchoredCopies} anchored ${plural("copy", anchoredCopies, "copies")} at once.`),
-      );
-      elements.graphCaption.innerHTML =
-        "Hover a cross-edge or focus a grid cell to isolate one anchored " +
-        '<span class="math">K<sub>4</sub></span>.';
-    } else {
-      elements.countTitle.textContent = "The missing edge breaks every copy.";
-      elements.statusTitle.textContent = "The backbone is missing.";
-      elements.statusText.replaceChildren(
-        textNode(`The ${crossEdges} cross-${plural("edge", crossEdges)} remain, but none completes a `),
-        kFourNode(),
-        textNode("."),
-      );
-      elements.graphCaption.innerHTML =
-        "Inspect a pair to see the four potential vertices and the one missing connection.";
-    }
-
-    const description = state.edgePresent
-      ? `The edge u v combines with each of the ${crossEdges} cross-edges between parts A and B to form ${anchoredCopies} anchored K4 ${plural("copy", anchoredCopies, "copies")}.`
-      : `The edge u v is missing. The complete bipartite common neighborhood has ${crossEdges} cross-edges, but there are no anchored K4 copies.`;
-    elements.graphDescription.textContent = description;
   }
 
   function renderGraph() {
     const graph = elements.graph;
+    const resolved = state === "red" || state === "blue";
+    const outcome = resolved ? outcomes[state] : null;
+    const witnessVertices = outcome
+      ? new Set(["clone", "one", ...outcome.neighbors])
+      : new Set();
+
+    graph.classList.toggle("is-resolved", resolved);
+    graph.classList.toggle("is-red", state === "red");
+    graph.classList.toggle("is-blue", state === "blue");
+
     const title = svgElement("title", { id: "graph-title" });
-    title.textContent = "Complete bipartite common neighborhood anchored at edge u v";
     const description = svgElement("desc", { id: "graph-description" });
+    title.textContent = graphTitle();
+    description.textContent = graphDescription();
     graph.replaceChildren(title, description);
-    elements.graphDescription = description;
 
-    const coordinates = makeCoordinates();
+    const triangleLayer = svgElement("g", { class: "triangle-layer" });
+    const edgeLayer = svgElement("g", { class: "edge-layer" });
+    const annotationLayer = svgElement("g", { class: "annotation-layer" });
+    const nodeLayer = svgElement("g", { class: "node-layer" });
+    graph.append(triangleLayer, edgeLayer, annotationLayer, nodeLayer);
 
-    graph.append(
-      svgElement("rect", {
-        class: "common-region",
-        x: 270,
-        y: 55,
-        width: 510,
-        height: 430,
-        rx: 25,
-      }),
-    );
-
-    const regionLabel = svgElement("text", {
-      class: "region-label",
-      x: 295,
-      y: 88,
-    });
-    regionLabel.textContent = "C = N(u) ∩ N(v)";
-    graph.append(regionLabel);
-
-    const partALabel = svgElement("text", {
-      class: "part-label part-label-a",
-      x: 415,
-      y: 122,
-      "text-anchor": "middle",
-    });
-    partALabel.textContent = `A · ${vertexCountLabel(state.aSize)}`;
-    const partBLabel = svgElement("text", {
-      class: "part-label part-label-b",
-      x: 650,
-      y: 122,
-      "text-anchor": "middle",
-    });
-    partBLabel.textContent = `B · ${vertexCountLabel(state.bSize)}`;
-    graph.append(partALabel, partBLabel);
-
-    const edgesLayer = svgElement("g", { class: "edges-layer" });
-    const crossLayer = svgElement("g", { class: "cross-layer" });
-    const nodesLayer = svgElement("g", { class: "nodes-layer" });
-    graph.append(edgesLayer, crossLayer, nodesLayer);
-
-    for (const point of [...coordinates.a, ...coordinates.b]) {
-      for (const anchor of [coordinates.u, coordinates.v]) {
-        edgesLayer.append(
-          graphLine(anchor, point, "graph-edge anchor-edge", {
-            "data-edge-kind": "anchor",
-            "data-node": point.key,
-          }),
-        );
-      }
-    }
-
-    coordinates.a.forEach((aPoint, aIndex) => {
-      coordinates.b.forEach((bPoint, bIndex) => {
-        const group = svgElement("g", {
-          class: "cross-control",
-          tabindex: "0",
-          role: "button",
-          "aria-label": pairAriaLabel(aIndex, bIndex),
-          "data-a": String(aIndex),
-          "data-b": String(bIndex),
+    if (outcome) {
+      outcome.triangles.forEach((triangle, index) => {
+        const polygon = svgElement("polygon", {
+          class: `triangle-area triangle-area-${state}`,
+          points: triangle
+            .map((key) => `${vertices[key].x},${vertices[key].y}`)
+            .join(" "),
         });
-        group.append(
-          graphLine(aPoint, bPoint, "cross-hit", {}),
-          graphLine(aPoint, bPoint, "graph-edge cross-edge", {
-            "data-edge-kind": "cross",
-            "data-a": String(aIndex),
-            "data-b": String(bIndex),
-          }),
+        const triangleTitle = svgElement("title", {});
+        triangleTitle.textContent = `${state} triangle ${outcome.triangleLabels[index]}`;
+        polygon.append(triangleTitle);
+        triangleLayer.append(polygon);
+      });
+    }
+
+    originalEdges.forEach((edge) => {
+      edgeLayer.append(graphEdge(edge, isWitnessEdge(edge, outcome)));
+    });
+
+    if (state !== "k5") {
+      cloneEdges.forEach((edge) => {
+        edgeLayer.append(
+          graphEdge(edge, isWitnessEdge(edge, outcome), "clone-edge"),
         );
-        bindPairInteraction(group, aIndex, bIndex);
-        crossLayer.append(group);
       });
-    });
 
-    const backbone = graphLine(
-      coordinates.u,
-      coordinates.v,
-      `graph-edge backbone-edge${state.edgePresent ? "" : " is-missing"}`,
-      { "data-edge-kind": "backbone" },
-    );
-    edgesLayer.append(backbone);
+      const finalEdgeClass =
+        state === "clone" ? "edge-missing" : `edge-${state}`;
+      edgeLayer.append(
+        graphLine(
+          vertices.clone,
+          vertices.one,
+          `graph-edge final-edge ${finalEdgeClass} is-witness`,
+        ),
+      );
 
-    const edgeLabel = svgElement("text", {
-      class: "edge-label",
-      x: 84,
-      y: 275,
-      "text-anchor": "end",
-    });
-    edgeLabel.textContent = state.edgePresent ? "e = uv" : "missing e";
-    edgesLayer.append(edgeLabel);
-
-    nodesLayer.append(
-      graphNode(coordinates.u, "node node-anchor", "u"),
-      graphNode(coordinates.v, "node node-anchor", "v"),
-    );
-
-    coordinates.a.forEach((point, index) => {
-      nodesLayer.append(graphNode(point, "node node-a", `a${subscripts[index]}`));
-    });
-    coordinates.b.forEach((point, index) => {
-      nodesLayer.append(graphNode(point, "node node-b", `b${subscripts[index]}`));
-    });
-  }
-
-  function renderGrid() {
-    const grid = elements.copyGrid;
-    const fragment = document.createDocumentFragment();
-    grid.style.setProperty("--part-b-size", String(state.bSize));
-
-    const corner = document.createElement("span");
-    corner.className = "grid-corner";
-    corner.setAttribute("aria-hidden", "true");
-    corner.textContent = "A × B";
-    fragment.append(corner);
-
-    for (let b = 0; b < state.bSize; b += 1) {
-      const header = document.createElement("span");
-      header.className = "grid-axis grid-axis-b";
-      header.setAttribute("aria-hidden", "true");
-      header.textContent = `b${subscripts[b]}`;
-      fragment.append(header);
-    }
-
-    for (let a = 0; a < state.aSize; a += 1) {
-      const header = document.createElement("span");
-      header.className = "grid-axis grid-axis-a";
-      header.setAttribute("aria-hidden", "true");
-      header.textContent = `a${subscripts[a]}`;
-      fragment.append(header);
-
-      for (let b = 0; b < state.bSize; b += 1) {
-        const cell = document.createElement("button");
-        cell.className = "grid-cell";
-        cell.type = "button";
-        cell.setAttribute("aria-pressed", "false");
-        cell.setAttribute("aria-label", pairAriaLabel(a, b));
-        cell.dataset.a = String(a);
-        cell.dataset.b = String(b);
-
-        const label = document.createElement("span");
-        label.innerHTML = `<i>a</i><sub>${a + 1}</sub> + <i>b</i><sub>${b + 1}</sub>`;
-        cell.append(label);
-        bindPairInteraction(cell, a, b);
-        fragment.append(cell);
-      }
-    }
-
-    grid.replaceChildren(fragment);
-  }
-
-  function bindPairInteraction(target, a, b) {
-    target.addEventListener("pointerenter", () => {
-      state.hoverPair = { a, b };
-      renderPairState();
-    });
-    target.addEventListener("pointerleave", () => {
-      state.hoverPair = null;
-      renderPairState();
-    });
-    target.addEventListener("focus", () => {
-      state.hoverPair = { a, b };
-      renderPairState();
-    });
-    target.addEventListener("blur", () => {
-      state.hoverPair = null;
-      renderPairState();
-    });
-    target.addEventListener("click", () => toggleSelectedPair(a, b));
-    if (target instanceof SVGElement) {
-      target.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          toggleSelectedPair(a, b);
-        }
+      const edgeLabel = svgElement("text", {
+        class: `edge-label edge-label-${state}`,
+        x: 118,
+        y: 252,
+        "text-anchor": "middle",
       });
+      edgeLabel.textContent =
+        state === "clone" ? "e = 11′ · uncolored" : `e = 11′ · ${state}`;
+      annotationLayer.append(edgeLabel);
+
+      const cloneNote = svgElement("text", {
+        class: "clone-note",
+        x: 58,
+        y: 326,
+        "text-anchor": "middle",
+      });
+      cloneNote.textContent = "clone of 1";
+      annotationLayer.append(cloneNote);
     }
-  }
 
-  function toggleSelectedPair(a, b) {
-    const samePair =
-      state.selectedPair?.a === a && state.selectedPair?.b === b;
-    state.selectedPair = samePair ? null : { a, b };
-    state.hoverPair = null;
-    renderPairState();
-  }
-
-  function renderPairState() {
-    renderGraphState();
-    renderGridState();
-  }
-
-  function renderGraphState() {
-    const pair = effectivePair();
-    const graph = elements.graph;
-    graph.classList.toggle("has-selection", Boolean(pair));
-
-    graph.querySelectorAll(".is-active").forEach((element) => {
-      element.classList.remove("is-active");
-    });
-
-    if (!pair) return;
-
-    const activeNodeKeys = new Set(["u", "v", `a${pair.a}`, `b${pair.b}`]);
-    graph.querySelectorAll(".node").forEach((node) => {
-      node.classList.toggle("is-active", activeNodeKeys.has(node.dataset.key));
-    });
-
-    graph.querySelectorAll(".graph-edge").forEach((edge) => {
-      const kind = edge.dataset.edgeKind;
-      let active = kind === "backbone";
-      if (kind === "anchor") {
-        active = edge.dataset.node === `a${pair.a}` || edge.dataset.node === `b${pair.b}`;
-      }
-      if (kind === "cross") {
-        active = Number(edge.dataset.a) === pair.a && Number(edge.dataset.b) === pair.b;
-      }
-      edge.classList.toggle("is-active", active);
+    Object.values(vertices).forEach((vertex) => {
+      if (vertex.key === "clone" && state === "k5") return;
+      const active = !resolved || witnessVertices.has(vertex.key);
+      nodeLayer.append(graphNode(vertex, vertex.key === "clone", active));
     });
   }
 
-  function renderGridState() {
-    const pair = effectivePair();
-    elements.copyGrid.classList.toggle("is-missing", !state.edgePresent);
-    elements.copyGrid.querySelectorAll(".grid-cell").forEach((cell) => {
-      const a = Number(cell.dataset.a);
-      const b = Number(cell.dataset.b);
-      const active = pair?.a === a && pair?.b === b;
-      const selected = state.selectedPair?.a === a && state.selectedPair?.b === b;
-      cell.classList.toggle("is-active", active);
-      cell.setAttribute("aria-pressed", String(selected));
-      cell.setAttribute("aria-label", pairAriaLabel(a, b));
-    });
-    elements.graph.querySelectorAll(".cross-control").forEach((control) => {
-      const a = Number(control.dataset.a);
-      const b = Number(control.dataset.b);
-      const selected = state.selectedPair?.a === a && state.selectedPair?.b === b;
-      control.setAttribute("aria-pressed", String(selected));
-      control.setAttribute("aria-label", pairAriaLabel(a, b));
-    });
-  }
+  function renderCopy() {
+    elements.statusBox.className = "status-box";
+    elements.triangleTotalPanel.className = "triangle-total";
+    elements.formulaCard.className = "formula-card";
+    elements.equivalence.className = "equivalence";
 
-  function effectivePair() {
-    return state.hoverPair ?? state.selectedPair;
-  }
-
-  function pairAriaLabel(a, b) {
-    const vertices = `u, v, a ${a + 1}, and b ${b + 1}`;
-    if (state.edgePresent) {
-      return `Highlight the anchored K4 on ${vertices}`;
+    if (state === "k5") {
+      elements.graphStep.textContent = "Step 1 · start below the threshold";
+      elements.graphHeading.innerHTML =
+        '<span class="math">K<sub>5</sub></span> has no monochromatic triangle.';
+      elements.graphCaption.innerHTML =
+        "The red edges form the outer 5-cycle; the blue edges form its complement, another 5-cycle.";
+      elements.countTitle.textContent = "The starting coloring is target-free.";
+      setTriangleCount(0, null);
+      elements.neighborCount.textContent = "5 + 5";
+      elements.neighborLabel.textContent = "red edges + blue edges";
+      elements.copyCount.textContent = "0";
+      elements.formulaMain.innerHTML =
+        "E<sub>red</sub> = C<sub>5</sub>, &nbsp; E<sub>blue</sub> = C̅<sub>5</sub>";
+      elements.formulaNote.textContent =
+        "Both color classes are 5-cycles, so both are triangle-free.";
+      elements.statusTitle.textContent = "No monochromatic triangle exists.";
+      elements.statusText.textContent =
+        "This is a target-free coloring one vertex below R(3,3) = 6.";
+      elements.witnessTitle.textContent =
+        "The two color classes are complementary 5-cycles.";
+      elements.witnessIntro.textContent =
+        "Choose the cloning step above to duplicate the colored neighborhood of vertex 1.";
+      renderStartingWitnesses();
+      return;
     }
-    return `Inspect ${vertices}; these vertices do not form a K4 because edge u v is missing`;
+
+    if (state === "clone") {
+      elements.graphStep.textContent = "Step 2 · clone vertex 1";
+      elements.graphHeading.innerHTML =
+        '<span class="math">K<sub>6</sub> − e</span> is still target-free.';
+      elements.graphCaption.innerHTML =
+        'The colored edges from 1′ copy the corresponding edges from 1; only <span class="math">e = 11′</span> is missing.';
+      elements.countTitle.textContent =
+        "One edge short: no monochromatic triangles.";
+      setTriangleCount(0, null);
+      elements.neighborCount.textContent = "—";
+      elements.neighborLabel.textContent = "final-edge color not chosen";
+      elements.copyCount.textContent = "0";
+      elements.formulaMain.innerHTML = "c(1′w) = c(1w)";
+      elements.formulaNote.textContent =
+        "The clone reproduces every colored incidence of vertex 1.";
+      elements.statusTitle.textContent = "The final edge is uncolored.";
+      elements.statusText.textContent =
+        "Any triangle using 1′ mirrors one using 1, so none is monochromatic.";
+      elements.witnessTitle.textContent =
+        "The clone has the same colored neighbors as vertex 1.";
+      elements.witnessIntro.textContent =
+        "Before e is colored, those matching neighborhoods do not close a triangle. Choose red or blue above to see the two witnesses.";
+      renderCloneWitnesses();
+      return;
+    }
+
+    const outcome = outcomes[state];
+    const isRed = state === "red";
+    const colorClass = isRed ? "is-red" : "is-blue";
+    elements.statusBox.classList.add(colorClass);
+    elements.triangleTotalPanel.classList.add(colorClass);
+    elements.formulaCard.classList.add(colorClass);
+    elements.equivalence.classList.add(colorClass);
+    elements.graphStep.textContent = `Step 3 · color the final edge ${state}`;
+    elements.graphHeading.innerHTML = `Two <span class="color-word color-word-${state}">${state}</span> triangles appear.`;
+    elements.graphCaption.innerHTML = `Both new triangles contain <span class="math">e = 11′</span>; all unrelated edges are dimmed.`;
+    elements.countTitle.textContent = `Exactly two ${state} triangles are forced.`;
+    setTriangleCount(2, state);
+    elements.neighborCount.textContent = "2";
+    elements.neighborLabel.textContent = `${state} common neighbors of 1 and 1′`;
+    elements.copyCount.textContent = "2";
+    elements.formulaMain.innerHTML = `# new K<sub>3</sub><sup>${state}</sup> through e = |C<sub>${state}</sub>| = 2`;
+    elements.formulaNote.textContent = `C_${state} = {${outcome.neighborLabels.join(", ")}}; each common ${state} neighbor closes one triangle.`;
+    elements.statusTitle.textContent = `The final edge is ${state}.`;
+    elements.statusText.textContent = `Two ${state} triangles appear: ${outcome.triangleLabels[0]} and ${outcome.triangleLabels[1]}.`;
+    elements.witnessTitle.textContent = `Each common ${state} neighbor closes one triangle.`;
+    elements.witnessIntro.textContent = `Because 1′ copies the ${state} incidences of 1, coloring e ${state} completes exactly these two triangles.`;
+    renderResolvedWitnesses(outcome);
   }
 
-  function makeCoordinates() {
-    return {
-      u: { key: "u", x: 120, y: 210 },
-      v: { key: "v", x: 120, y: 330 },
-      a: distributedPoints(state.aSize, 420, "a"),
-      b: distributedPoints(state.bSize, 650, "b"),
-    };
+  function setTriangleCount(count, color) {
+    elements.triangleCount.textContent = String(count);
+    elements.triangleCountLabel.textContent = color
+      ? `${color} monochromatic triangles`
+      : "monochromatic triangles";
   }
 
-  function distributedPoints(count, x, prefix) {
-    const minY = 170;
-    const maxY = 410;
-    if (count === 1) return [{ key: `${prefix}0`, x, y: 290 }];
-    return Array.from({ length: count }, (_, index) => ({
-      key: `${prefix}${index}`,
-      x,
-      y: minY + (index * (maxY - minY)) / (count - 1),
-    }));
+  function renderStartingWitnesses() {
+    elements.witnessList.replaceChildren(
+      witnessCard(
+        "red 5-cycle",
+        "1–2–3–4–5–1",
+        "No three of these red edges form a triangle.",
+        "red",
+      ),
+      witnessCard(
+        "blue complement",
+        "1–3–5–2–4–1",
+        "The complementary blue graph is also a 5-cycle.",
+        "blue",
+      ),
+    );
   }
 
-  function graphLine(from, to, className, attributes) {
+  function renderCloneWitnesses() {
+    elements.witnessList.replaceChildren(
+      witnessCard(
+        "red neighbors",
+        "N<sub>red</sub>(1) = N<sub>red</sub>(1′) = {2, 5}",
+        "Both red incidences are copied from 1 to 1′.",
+        "red",
+        true,
+        true,
+      ),
+      witnessCard(
+        "blue neighbors",
+        "N<sub>blue</sub>(1) = N<sub>blue</sub>(1′) = {3, 4}",
+        "Both blue incidences are copied from 1 to 1′.",
+        "blue",
+        true,
+        true,
+      ),
+    );
+  }
+
+  function renderResolvedWitnesses(outcome) {
+    elements.witnessList.replaceChildren(
+      witnessCard(
+        `${outcome.colorName} witness 1`,
+        outcome.triangleLabels[0],
+        `The shared ${outcome.colorName} neighbor ${outcome.neighborLabels[0]} closes the first triangle.`,
+        outcome.colorName,
+        true,
+      ),
+      witnessCard(
+        `${outcome.colorName} witness 2`,
+        outcome.triangleLabels[1],
+        `The shared ${outcome.colorName} neighbor ${outcome.neighborLabels[1]} closes the second triangle.`,
+        outcome.colorName,
+        true,
+      ),
+    );
+  }
+
+  function witnessCard(
+    label,
+    formula,
+    copy,
+    color,
+    mathematical = false,
+    formulaIsHtml = false,
+  ) {
+    const card = document.createElement("article");
+    card.className = `witness-card witness-card-${color}`;
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    if (mathematical) strong.className = "math";
+    if (formulaIsHtml) {
+      strong.innerHTML = formula;
+    } else {
+      strong.textContent = formula;
+    }
+    const paragraph = document.createElement("p");
+    paragraph.textContent = copy;
+    card.append(span, strong, paragraph);
+    return card;
+  }
+
+  function graphTitle() {
+    if (state === "k5") return "Triangle-free red-blue coloring of K5";
+    if (state === "clone") {
+      return "Triangle-free red-blue coloring of K6 minus edge 1 1 prime, obtained by cloning vertex 1";
+    }
+    return `Cloned K6 construction after coloring edge 1 1 prime ${state}`;
+  }
+
+  function graphDescription() {
+    if (state === "k5") {
+      return "The red edges form cycle 1 2 3 4 5 1, and the blue edges form its complementary 5-cycle. There are no monochromatic triangles.";
+    }
+    if (state === "clone") {
+      return "Vertex 1 prime copies the red neighbors 2 and 5 and the blue neighbors 3 and 4 of vertex 1. Edge 1 1 prime is uncolored, so there are no monochromatic triangles.";
+    }
+    const outcome = outcomes[state];
+    return `Edge 1 1 prime is ${state}. Exactly two ${state} triangles appear: ${outcome.triangleLabels[0]} and ${outcome.triangleLabels[1]}. Both contain the final edge.`;
+  }
+
+  function graphEdge(edge, witness, extraClass = "") {
+    const classes = ["graph-edge", `edge-${edge.color}`];
+    if (extraClass) classes.push(extraClass);
+    if (witness) classes.push("is-witness");
+    return graphLine(vertices[edge.from], vertices[edge.to], classes.join(" "));
+  }
+
+  function isWitnessEdge(edge, outcome) {
+    if (!outcome || edge.color !== state) return false;
+    return outcome.triangles.some(
+      (triangle) => triangle.includes(edge.from) && triangle.includes(edge.to),
+    );
+  }
+
+  function graphLine(from, to, className) {
     return svgElement("line", {
       class: className,
       x1: from.x,
       y1: from.y,
       x2: to.x,
       y2: to.y,
-      ...attributes,
     });
   }
 
-  function graphNode(point, className, label) {
+  function graphNode(vertex, clone, active) {
     const group = svgElement("g", {
-      class: className,
-      transform: `translate(${point.x} ${point.y})`,
-      "data-key": point.key,
+      class: `node${clone ? " node-clone" : ""}${active ? " is-active" : ""}`,
+      transform: `translate(${vertex.x} ${vertex.y})`,
     });
     group.append(
-      svgElement("circle", { r: 23 }),
-      svgText("text", { x: 0, y: 7 }, label),
+      svgElement("circle", { r: clone ? 25 : 23 }),
+      svgText("text", { x: 0, y: 7 }, vertex.label),
     );
     return group;
   }
 
   function svgElement(name, attributes) {
     const element = document.createElementNS(SVG_NS, name);
-    for (const [key, value] of Object.entries(attributes)) {
+    Object.entries(attributes).forEach(([key, value]) => {
       element.setAttribute(key, String(value));
-    }
+    });
     return element;
   }
 
@@ -472,6 +444,7 @@
     window.addEventListener("resize", scheduleHeightMessage);
     requestAnimationFrame(scheduleHeightMessage);
     window.setTimeout(scheduleHeightMessage, 350);
+    document.fonts?.ready.then(scheduleHeightMessage);
   }
 
   function scheduleHeightMessage() {
@@ -491,34 +464,6 @@
         );
       }
     });
-  }
-
-  function vertexCountLabel(count) {
-    return `${count} ${plural("vertex", count, "vertices")}`;
-  }
-
-  function plural(singular, count, pluralForm = `${singular}s`) {
-    return count === 1 ? singular : pluralForm;
-  }
-
-  function textNode(value) {
-    return document.createTextNode(value);
-  }
-
-  function italicNode(value) {
-    const element = document.createElement("i");
-    element.textContent = value;
-    return element;
-  }
-
-  function kFourNode() {
-    const span = document.createElement("span");
-    span.className = "math";
-    span.append(textNode("K"));
-    const sub = document.createElement("sub");
-    sub.textContent = "4";
-    span.append(sub);
-    return span;
   }
 
   function byId(id) {
