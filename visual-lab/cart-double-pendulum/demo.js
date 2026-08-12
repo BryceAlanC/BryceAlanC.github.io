@@ -11,6 +11,8 @@
   const cameraLagSeconds = 0.24;
   const cameraMaxLag = 1.25;
   const cameraFollowFraction = 1 - Math.exp(-physicsStep / cameraLagSeconds);
+  const manualForceLimit = 24;
+  const manualForceSlew = 90;
 
   const canvas = document.getElementById("pendulum-canvas");
   const context = canvas.getContext("2d");
@@ -20,6 +22,10 @@
   const playPause = document.getElementById("play-pause");
   const stepButton = document.getElementById("step");
   const resetButton = document.getElementById("reset");
+  const manualModeButton = document.getElementById("manual-mode");
+  const manualControls = document.getElementById("manual-controls");
+  const manualLeft = document.getElementById("manual-left");
+  const manualRight = document.getElementById("manual-right");
   const shoveLeft = document.getElementById("shove-left");
   const shoveRight = document.getElementById("shove-right");
   const controllerMode = document.getElementById("controller-mode");
@@ -39,6 +45,12 @@
     accumulator: 0,
     lastFrame: 0,
     cameraX: 0,
+    manualMode: false,
+    manualInput: {
+      keyboardCodes: new Set(),
+      pointerLeft: false,
+      pointerRight: false
+    },
     trail: []
   };
 
@@ -75,8 +87,26 @@
       : dynamics.forceForAcceleration(simulation.state, desired, parameters);
   }
 
+  function updateManualForce() {
+    const leftHeld = keyboardDirectionHeld("left") || simulation.manualInput.pointerLeft;
+    const rightHeld = keyboardDirectionHeld("right") || simulation.manualInput.pointerRight;
+    const target = (Number(rightHeld) - Number(leftHeld)) * manualForceLimit;
+    const maximumChange = manualForceSlew * physicsStep;
+    simulation.force += dynamics.clamp(
+      target - simulation.force,
+      -maximumChange,
+      maximumChange
+    );
+    simulation.force = dynamics.clamp(
+      simulation.force,
+      -parameters.forceLimit,
+      parameters.forceLimit
+    );
+  }
+
   function advancePhysics() {
-    if (simulation.ticks % controlTicks === 0) updateForce();
+    if (simulation.manualMode) updateManualForce();
+    else if (simulation.ticks % controlTicks === 0) updateForce();
     simulation.state = dynamics.rk4Step(
       simulation.state,
       simulation.force,
@@ -255,13 +285,22 @@
 
   function updateStatus() {
     const enabled = controllerEnabled.checked;
-    let mode = controller.modeAt(simulation.time, enabled);
-    if (simulation.time === 0 && !simulation.running && enabled) mode = "Ready · trajectory tracking";
-    else if (!simulation.running && simulation.time > 0) mode = "Paused · " + mode;
+    let mode;
+    if (simulation.manualMode) {
+      mode = simulation.running ? "Manual · hold ← or →" : "Paused · manual control";
+    } else {
+      mode = controller.modeAt(simulation.time, enabled);
+      if (simulation.time === 0 && !simulation.running && enabled) mode = "Ready · trajectory tracking";
+      else if (!simulation.running && simulation.time > 0) mode = "Paused · " + mode;
+    }
 
     controllerMode.textContent = mode;
-    controllerMode.classList.toggle("is-balancing", enabled && simulation.time >= controller.SWING_DURATION);
-    controllerMode.classList.toggle("is-off", !enabled);
+    controllerMode.classList.toggle(
+      "is-balancing",
+      !simulation.manualMode && enabled && simulation.time >= controller.SWING_DURATION
+    );
+    controllerMode.classList.toggle("is-off", !simulation.manualMode && !enabled);
+    controllerMode.classList.toggle("is-manual", simulation.manualMode);
     simulationTime.textContent = "t = " + simulation.time.toFixed(2) + " s";
     cartPosition.textContent = simulation.state[0].toFixed(2) + " m";
     linkOneAngle.textContent = (displayAngle(simulation.state[2]) * 180 / Math.PI).toFixed(1) + "°";
@@ -269,11 +308,51 @@
     actuatorForce.textContent = simulation.force.toFixed(1) + " N";
 
     const caught = simulation.time >= controller.SWING_DURATION;
-    shoveLeft.disabled = !caught;
-    shoveRight.disabled = !caught;
+    shoveLeft.disabled = simulation.manualMode || !caught;
+    shoveRight.disabled = simulation.manualMode || !caught;
+  }
+
+  function clearManualInput(update) {
+    simulation.manualInput.keyboardCodes.clear();
+    simulation.manualInput.pointerLeft = false;
+    simulation.manualInput.pointerRight = false;
+    manualLeft.classList.remove("is-held");
+    manualRight.classList.remove("is-held");
+    if (update === "immediate" && simulation.manualMode) simulation.force = 0;
+  }
+
+  function syncManualInputButton(direction) {
+    const button = direction === "left" ? manualLeft : manualRight;
+    const held = direction === "left"
+      ? keyboardDirectionHeld("left") || simulation.manualInput.pointerLeft
+      : keyboardDirectionHeld("right") || simulation.manualInput.pointerRight;
+    button.classList.toggle("is-held", held);
+  }
+
+  function keyboardDirectionHeld(direction) {
+    if (direction === "left") {
+      return simulation.manualInput.keyboardCodes.has("ArrowLeft") ||
+        simulation.manualInput.keyboardCodes.has("KeyA");
+    }
+    return simulation.manualInput.keyboardCodes.has("ArrowRight") ||
+      simulation.manualInput.keyboardCodes.has("KeyD");
+  }
+
+  function setPointerInput(direction, held) {
+    if (!simulation.manualMode) return;
+    simulation.manualInput[direction === "left" ? "pointerLeft" : "pointerRight"] = held;
+    syncManualInputButton(direction);
+  }
+
+  function setKeyboardInput(code, direction, held) {
+    if (!simulation.manualMode) return;
+    if (held) simulation.manualInput.keyboardCodes.add(code);
+    else simulation.manualInput.keyboardCodes.delete(code);
+    syncManualInputButton(direction);
   }
 
   function reset() {
+    clearManualInput(false);
     simulation.state = new Float64Array([0, 0, Math.PI, 0, Math.PI, 0]);
     simulation.time = 0;
     simulation.force = 0;
@@ -288,8 +367,37 @@
     updateStatus();
   }
 
+  function setManualMode(enabled) {
+    clearManualInput(false);
+    if (enabled) {
+      simulation.manualMode = true;
+      controllerEnabled.checked = false;
+      controllerEnabled.disabled = true;
+      manualControls.hidden = false;
+      manualModeButton.textContent = "Return to automatic demo";
+      manualModeButton.setAttribute("aria-pressed", "true");
+      reset();
+      simulation.running = true;
+      playPause.textContent = "Pause";
+      updateStatus();
+      manualControls.focus();
+      announce("Manual control started. Hold the left or right arrow key, or A or D, to apply force.");
+      return;
+    }
+
+    simulation.manualMode = false;
+    controllerEnabled.disabled = false;
+    controllerEnabled.checked = true;
+    manualControls.hidden = true;
+    manualModeButton.textContent = "Try it yourself!";
+    manualModeButton.setAttribute("aria-pressed", "false");
+    reset();
+    manualModeButton.focus();
+    announce("Returned to the automatic demonstration.");
+  }
+
   function applyImpulse(impulse) {
-    if (simulation.time < controller.SWING_DURATION) return;
+    if (simulation.manualMode || simulation.time < controller.SWING_DURATION) return;
     simulation.state = dynamics.applyCartImpulse(simulation.state, impulse, parameters);
     updateForce();
     draw();
@@ -319,12 +427,17 @@
 
   playPause.addEventListener("click", function () {
     simulation.running = !simulation.running;
+    if (!simulation.running && simulation.manualMode) clearManualInput("immediate");
     playPause.textContent = simulation.running ? "Pause" : "Start";
+    draw();
+    updateStatus();
+    if (simulation.manualMode && simulation.running) manualControls.focus();
     announce(simulation.running ? "Simulation started." : "Simulation paused.");
   });
 
   stepButton.addEventListener("click", function () {
     simulation.running = false;
+    if (simulation.manualMode) clearManualInput("immediate");
     playPause.textContent = "Start";
     for (let i = 0; i < controlTicks; i += 1) advancePhysics();
     draw();
@@ -334,6 +447,7 @@
 
   resetButton.addEventListener("click", function () {
     reset();
+    if (simulation.manualMode) manualControls.focus();
     announce("Simulation reset.");
   });
 
@@ -349,6 +463,72 @@
 
   shoveLeft.addEventListener("click", function () { applyImpulse(-2); });
   shoveRight.addEventListener("click", function () { applyImpulse(2); });
+
+  manualModeButton.addEventListener("click", function () {
+    setManualMode(!simulation.manualMode);
+  });
+
+  function bindManualHoldButton(button, direction) {
+    button.addEventListener("pointerdown", function beginManualHold(event) {
+      if (!simulation.manualMode) return;
+      event.preventDefault();
+      button.setPointerCapture(event.pointerId);
+      setPointerInput(direction, true);
+    });
+    button.addEventListener("pointerup", function endManualHold(event) {
+      if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+      setPointerInput(direction, false);
+    });
+    button.addEventListener("pointercancel", function cancelManualHold() {
+      setPointerInput(direction, false);
+    });
+    button.addEventListener("lostpointercapture", function loseManualHold() {
+      setPointerInput(direction, false);
+    });
+  }
+
+  bindManualHoldButton(manualLeft, "left");
+  bindManualHoldButton(manualRight, "right");
+
+  function isTypingTarget(target) {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest("input, select, textarea, button, [contenteditable='true']"));
+  }
+
+  function manualDirectionForCode(code) {
+    if (code === "ArrowLeft" || code === "KeyA") return "left";
+    if (code === "ArrowRight" || code === "KeyD") return "right";
+    return null;
+  }
+
+  window.addEventListener("keydown", function beginKeyboardManualInput(event) {
+    if (!simulation.manualMode) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setManualMode(false);
+      return;
+    }
+    const direction = manualDirectionForCode(event.code);
+    if (!direction || isTypingTarget(event.target)) return;
+    event.preventDefault();
+    setKeyboardInput(event.code, direction, true);
+  });
+
+  window.addEventListener("keyup", function endKeyboardManualInput(event) {
+    if (!simulation.manualMode) return;
+    const direction = manualDirectionForCode(event.code);
+    if (!direction) return;
+    event.preventDefault();
+    setKeyboardInput(event.code, direction, false);
+  });
+
+  window.addEventListener("blur", function releaseManualInputOnBlur() {
+    clearManualInput("immediate");
+  });
+
+  document.addEventListener("visibilitychange", function releaseManualInputWhenHidden() {
+    if (document.hidden) clearManualInput("immediate");
+  });
 
   if ("ResizeObserver" in window) {
     const observer = new ResizeObserver(draw);

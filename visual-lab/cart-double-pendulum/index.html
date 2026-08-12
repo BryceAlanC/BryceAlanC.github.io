@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="An interactive cart–double-pendulum simulation with trajectory tracking for swing-up and LQR balance.">
+  <meta name="description" content="An interactive cart–double-pendulum simulation with automatic swing-up, LQR balance, and hands-on keyboard or touch control.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#0b5748">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Swing up, catch, balance | Bryce Christopherson">
-  <meta property="og:description" content="Drive a serial double pendulum upright with planned trajectory tracking, then disturb its LQR balance.">
+  <meta property="og:description" content="Watch an automatic swing-up, then take the actuator and try to balance the double pendulum yourself.">
   <title>Swing up, catch, balance · Bryce A. Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,7 +63,7 @@
         <div class="app-hero-grid">
           <p class="section-kicker">Control playground · 02</p>
           <h1>Swing up,<br>catch, balance.</h1>
-          <p class="app-hero-copy">A cart drives two serial links from the hanging equilibrium toward upright. A trajectory-optimized swing-up with feedback tracking does the approach; an upright LQR controller catches the remaining motion.</p>
+          <p class="app-hero-copy">A cart drives two serial links from the hanging equilibrium toward upright. Watch a trajectory-optimized controller catch the remaining motion—or take over the actuator and attempt the swing-up yourself.</p>
         </div>
       </div>
     </section>
@@ -80,6 +80,18 @@
               <input id="controller-enabled" type="checkbox" checked>
               <span>Controller enabled</span>
             </label>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Manual control</legend>
+            <button class="lab-button lab-button-primary manual-mode-button" id="manual-mode" type="button" aria-pressed="false" aria-controls="manual-controls">Try it yourself!</button>
+            <div class="manual-controls" id="manual-controls" role="group" aria-label="Manual cart controls" aria-describedby="manual-instructions" tabindex="-1" hidden>
+              <p class="shove-help" id="manual-instructions">Hold ←/→ or A/D on your keyboard, or hold a button below. Force builds smoothly while held and eases back to zero when released. Try 0.5× speed while learning; press Escape to return to the automatic demo.</p>
+              <div class="control-row">
+                <button class="lab-button manual-hold-button" id="manual-left" type="button" aria-describedby="manual-instructions">Hold ← left</button>
+                <button class="lab-button manual-hold-button" id="manual-right" type="button" aria-describedby="manual-instructions">Hold right →</button>
+              </div>
+            </div>
           </fieldset>
 
           <fieldset class="control-group">
@@ -112,14 +124,14 @@
                 <p class="section-kicker">Live model</p>
                 <h2 id="simulation-title">Serial double pendulum</h2>
               </div>
-              <div class="phase-readout" aria-live="polite">
+              <div class="phase-readout">
                 <output class="pendulum-status" id="controller-mode">Ready · trajectory tracking</output>
                 <output id="simulation-time">t = 0.00 s</output>
               </div>
             </div>
 
             <div class="pendulum-stage">
-              <canvas id="pendulum-canvas" role="img" aria-label="Animated cart with two serial pendulum links swinging from downward to upright under feedback control"></canvas>
+              <canvas id="pendulum-canvas" role="img" aria-label="Animated cart with two serial pendulum links moving under automatic or user-applied force"></canvas>
               <div class="canvas-note" aria-hidden="true">Arrow shows actuator force</div>
             </div>
           </section>
@@ -143,7 +155,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>What this demonstrates.</strong> The first two seconds track one precomputed swing-up trajectory with time-varying feedback; the handoff then uses a local upright LQR law. The controller recovers from the offered ±2 N·s impulses in this model, but it is not a globally stabilizing autonomous swing-up law. With feedback off, modest viscous friction at both joints dissipates the links’ motion toward the hanging configuration.</p>
+          <p class="app-note"><strong>What this demonstrates.</strong> The automatic run tracks one precomputed swing-up trajectory for two seconds, then hands off to a local upright LQR law. Manual mode exposes the same force-limited plant without feedback so you can attempt the swing-up directly. The automatic controller recovers from the offered ±2 N·s impulses in this model, but it is not a globally stabilizing swing-up law. With feedback off, modest viscous friction at both joints dissipates the links’ motion toward the hanging configuration.</p>
         </div>
       </div>
     </section>
