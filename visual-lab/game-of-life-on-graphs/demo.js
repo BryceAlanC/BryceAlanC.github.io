@@ -135,6 +135,15 @@
       });
   }
 
+  function prepareRenderer(graph) {
+    const prepared = configureRenderer(graph);
+    const renderer = prepared.renderer();
+    if (renderer && renderer.setPixelRatio) {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    }
+    return prepared;
+  }
+
   function configureInputs() {
     const topology = elements.topology.value;
     if (topology === "torus") {
@@ -412,19 +421,18 @@
       let graph;
       if (typeof window.ForceGraph3D === "function") {
         try {
-          graph = new window.ForceGraph3D(elements.renderer, { controlType: "orbit" });
+          graph = prepareRenderer(
+            new window.ForceGraph3D(elements.renderer, { controlType: "orbit" })
+          );
         } catch (webGlError) {
-          graph = createCanvasRenderer(webGlError);
+          graph = prepareRenderer(createCanvasRenderer(webGlError));
         }
       } else {
-        graph = createCanvasRenderer(new Error("The third-party 3D renderer did not load."));
+        graph = prepareRenderer(
+          createCanvasRenderer(new Error("The third-party 3D renderer did not load."))
+        );
       }
-      simulation.graph = configureRenderer(graph);
-
-      const renderer = simulation.graph.renderer();
-      if (renderer && renderer.setPixelRatio) {
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-      }
+      simulation.graph = graph;
       elements.message.hidden = true;
       bindControls();
       buildGraph(false);
