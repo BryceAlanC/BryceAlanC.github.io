@@ -39,6 +39,8 @@
     selectedPair: null,
   };
 
+  let heightFrame = 0;
+
   initializeEmbedSizing();
   bindControls();
   render();
@@ -472,7 +474,6 @@
     window.setTimeout(scheduleHeightMessage, 350);
   }
 
-  let heightFrame = 0;
   function scheduleHeightMessage() {
     if (window.self === window.top) return;
     cancelAnimationFrame(heightFrame);
