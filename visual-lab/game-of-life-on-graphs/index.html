@@ -14,7 +14,7 @@
     <meta property="og:title" content="Life on Graphs | Bryce Christopherson" />
     <meta
       property="og:description"
-      content="Run Life-like rules on finite graphs and watch the topology change what survives."
+      content="Run Life-like rules on finite graphs and watch the population and topology evolve together."
     />
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -95,7 +95,7 @@
         <div class="lab-stage-shell app-layout">
           <aside class="control-panel" aria-label="Life simulation controls">
             <h2 id="controls-title">Choose the experiment</h2>
-            <p>Changing the graph controls builds a fresh network. Click or tap any dead vertex to make it alive.</p>
+            <p>Changing the topology, size, or cluster settings builds a fresh network. Click or tap any dead vertex to make it alive.</p>
 
             <fieldset class="control-group">
               <legend>Graph</legend>
@@ -112,13 +112,13 @@
             <fieldset class="control-group">
               <legend>Edges</legend>
               <div class="field-label">
-                <label for="life-edge-noise">Random perturbation</label>
-                <output id="life-edge-noise-value" for="life-edge-noise">Base graph</output>
+                <label for="life-edge-turnover">Edge turnover</label>
+                <output id="life-edge-turnover-value" for="life-edge-turnover">Off</output>
               </div>
-              <input id="life-edge-noise" type="range" min="-100" max="100" value="0" step="5" />
+              <input id="life-edge-turnover" type="range" min="0" max="25" value="0" step="1" />
               <p class="control-help">
-                Move left to remove a share of the base edges or right to add that
-                share as randomly chosen non-edges.
+                After each Life update, this share of the current edges is replaced
+                by randomly chosen non-edges. The edge count stays fixed.
               </p>
 
               <div id="life-cluster-controls" hidden>
@@ -205,7 +205,7 @@
               <button class="lab-button" id="life-step" type="button">Step</button>
             </div>
             <div class="control-row">
-              <button class="lab-button" id="life-reset" type="button">Reset state</button>
+              <button class="lab-button" id="life-reset" type="button">Reset run</button>
               <button class="lab-button" id="life-randomize" type="button">Randomize state</button>
             </div>
             <div class="control-row">
@@ -267,7 +267,8 @@
               Game of Life. On an irregular graph, hubs and low-degree vertices obey the same
               numerical thresholds despite having different numbers of neighbors; that is why
               changing the topology—or separating vertices into weakly joined clusters—can
-              change the behavior so sharply.
+              change the behavior so sharply. With edge turnover enabled, the displayed graph
+              determines the next state before rewiring prepares the following generation.
             </p>
           </div>
         </div>

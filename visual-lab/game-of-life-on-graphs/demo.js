@@ -13,8 +13,8 @@
     degreeControl: document.getElementById("life-degree-control"),
     degreeName: document.getElementById("life-degree-name"),
     degreeValue: document.getElementById("life-degree-value"),
-    edgeNoise: document.getElementById("life-edge-noise"),
-    edgeNoiseValue: document.getElementById("life-edge-noise-value"),
+    edgeTurnover: document.getElementById("life-edge-turnover"),
+    edgeTurnoverValue: document.getElementById("life-edge-turnover-value"),
     clusterControls: document.getElementById("life-cluster-controls"),
     clusterTopology: document.getElementById("life-cluster-topology"),
     clusters: document.getElementById("life-clusters"),
@@ -50,6 +50,7 @@
   const simulation = {
     graph: null,
     baseGraph: null,
+    activePairs: [],
     nodes: [],
     links: [],
     edgePairs: new Uint16Array(0),
@@ -162,7 +163,7 @@
       elements.rule,
       elements.size,
       elements.degree,
-      elements.edgeNoise,
+      elements.edgeTurnover,
       elements.clusterTopology,
       elements.clusters,
       elements.withinProbability,
@@ -320,10 +321,9 @@
     elements.crossProbabilityValue.textContent = elements.crossProbability.value + "%";
   }
 
-  function edgeNoiseLabel() {
-    const value = Number(elements.edgeNoise.value);
-    if (value === 0) return "Base graph";
-    return Math.abs(value) + "% " + (value < 0 ? "removed" : "added");
+  function edgeTurnoverLabel() {
+    const value = Number(elements.edgeTurnover.value);
+    return value === 0 ? "Off" : value + "% / generation";
   }
 
   function selectRule() {
@@ -376,7 +376,7 @@
     elements.averageDegree.textContent = average.toFixed(1);
   }
 
-  function makeInitialState(incrementSeed) {
+  function makeInitialState(incrementSeed, render) {
     if (incrementSeed) simulation.stateSeed += 1;
     const random = Life.mulberry32(simulation.stateSeed);
     simulation.state = Life.randomState(
@@ -389,8 +389,10 @@
     simulation.neighborCounts = new Uint16Array(simulation.nodes.length);
     simulation.generation = 0;
     applyStateToNodes();
-    if (simulation.graph) simulation.graph.refresh();
-    updateStatus();
+    if (render !== false) {
+      if (simulation.graph) simulation.graph.refresh();
+      updateStatus();
+    }
   }
 
   function fitGraph(duration) {
@@ -411,6 +413,23 @@
     if (simulation.graph.d3ReheatSimulation) simulation.graph.d3ReheatSimulation();
   }
 
+  function setActivePairs(pairs, updateRenderer) {
+    simulation.activePairs = pairs.map(function copyPair(pair) {
+      return [pair[0], pair[1]];
+    });
+    const degrees = Life.degreesFromPairs(simulation.nodes.length, simulation.activePairs);
+    simulation.nodes.forEach(function updateDegree(node, index) {
+      node.degree = degrees[index];
+    });
+    simulation.links = simulation.activePairs.map(function makeLink(pair) {
+      return { source: pair[0], target: pair[1] };
+    });
+    simulation.edgePairs = Uint16Array.from(simulation.activePairs.flat());
+    if (updateRenderer) {
+      simulation.graph.graphData({ nodes: simulation.nodes, links: simulation.links });
+    }
+  }
+
   function installGraph(generated, resetState) {
     if (!resetState && simulation.nodes.length === generated.nodes.length) {
       generated.nodes.forEach(function preservePosition(node, index) {
@@ -422,26 +441,39 @@
     }
 
     simulation.nodes = generated.nodes;
-    simulation.links = generated.pairs.map(function makeLink(pair) {
-      return { source: pair[0], target: pair[1] };
-    });
-    simulation.edgePairs = Uint16Array.from(generated.pairs.flat());
-    if (resetState) makeInitialState(false);
+    setActivePairs(generated.pairs, false);
+    if (resetState) makeInitialState(false, false);
     else applyStateToNodes();
     simulation.graph.graphData({ nodes: simulation.nodes, links: simulation.links });
     configureGraphLayout();
     updateStatus();
   }
 
-  function applyEdgeNoise() {
+  function restoreBaseEdges() {
     if (!simulation.baseGraph) return;
-    setPaused("Paused");
-    const generated = Life.adjustGraphEdges(
-      simulation.baseGraph,
-      Number(elements.edgeNoise.value) / 100,
-      Life.mulberry32(simulation.graphSeed ^ 0x9e3779b9)
+    setActivePairs(simulation.baseGraph.pairs, true);
+  }
+
+  function turnOverEdges() {
+    const rate = Number(elements.edgeTurnover.value) / 100;
+    const edgeCount = simulation.activePairs.length;
+    const possibleEdges = (simulation.nodes.length * (simulation.nodes.length - 1)) / 2;
+    const replacementCount = Math.min(Math.round(rate * edgeCount), possibleEdges - edgeCount);
+    if (replacementCount <= 0) return false;
+
+    const turnoverSeed = (
+      simulation.graphSeed ^
+      Math.imul(simulation.generation, 0x85ebca6b) ^
+      0x9e3779b9
+    ) >>> 0;
+    const pairs = Life.turnoverEdgePairs(
+      simulation.nodes.length,
+      simulation.activePairs,
+      rate,
+      Life.mulberry32(turnoverSeed)
     );
-    installGraph(generated, false);
+    setActivePairs(pairs, true);
+    return true;
   }
 
   function buildGraph(incrementSeed) {
@@ -455,12 +487,7 @@
 
     try {
       simulation.baseGraph = Life.generateGraph(elements.topology.value, graphOptions());
-      const generated = Life.adjustGraphEdges(
-        simulation.baseGraph,
-        Number(elements.edgeNoise.value) / 100,
-        Life.mulberry32(simulation.graphSeed ^ 0x9e3779b9)
-      );
-      installGraph(generated, true);
+      installGraph(simulation.baseGraph, true);
       const wait = elements.topology.value === "torus" ? 80 : 650;
       window.setTimeout(function fitAfterLayout() {
         if (!document.hidden) fitGraph(450);
@@ -485,7 +512,7 @@
     simulation.next = previous;
     simulation.generation += 1;
     applyStateToNodes(previous);
-    simulation.graph.refresh();
+    if (!turnOverEdges()) simulation.graph.refresh();
     updateStatus();
 
     if (Life.countAlive(simulation.state) === 0 && simulation.playing) {
@@ -540,12 +567,11 @@
       elements.degreeValue.textContent = elements.degree.value;
     });
     elements.degree.addEventListener("change", function changeDegree() { buildGraph(false); });
-    elements.edgeNoise.addEventListener("input", function showEdgeNoise() {
-      elements.edgeNoiseValue.textContent = edgeNoiseLabel();
+    elements.edgeTurnover.addEventListener("input", function showEdgeTurnover() {
+      elements.edgeTurnoverValue.textContent = edgeTurnoverLabel();
     });
-    elements.edgeNoise.addEventListener("change", function changeEdgeNoise() {
-      applyEdgeNoise();
-      announce("Edge perturbation changed to " + edgeNoiseLabel() + ".");
+    elements.edgeTurnover.addEventListener("change", function changeEdgeTurnover() {
+      announce("Edge turnover changed to " + edgeTurnoverLabel() + "; it applies on the next generation.");
     });
     elements.clusterTopology.addEventListener("change", function changeClusterTopology() {
       configureInputs();
@@ -572,8 +598,13 @@
     });
     elements.density.addEventListener("change", function changeDensity() {
       setPaused("Paused");
+      restoreBaseEdges();
       makeInitialState(true);
-      announce("Randomized the state at " + elements.density.value + " percent density.");
+      announce(
+        "Restored the base graph and randomized the state at " +
+        elements.density.value +
+        " percent density."
+      );
     });
     elements.speed.addEventListener("input", function showSpeed() {
       elements.speedValue.textContent = elements.speed.value + " gen/s";
@@ -595,14 +626,15 @@
       simulation.state.set(simulation.initialState);
       simulation.generation = 0;
       applyStateToNodes();
-      simulation.graph.refresh();
+      restoreBaseEdges();
       updateStatus();
-      announce("Restored the initial state.");
+      announce("Restored the initial graph and state.");
     });
     elements.randomize.addEventListener("click", function randomizeState() {
       setPaused("Paused");
+      restoreBaseEdges();
       makeInitialState(true);
-      announce("Generated a new initial state.");
+      announce("Restored the base graph and generated a new initial state.");
     });
     elements.newGraph.addEventListener("click", function newGraph() {
       buildGraph(true);

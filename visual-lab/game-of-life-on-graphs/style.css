@@ -60,6 +60,10 @@
   pointer-events: none;
 }
 
+#life-stage .stage-overlay {
+  pointer-events: none;
+}
+
 .life-canvas-renderer {
   position: absolute;
   inset: 0;

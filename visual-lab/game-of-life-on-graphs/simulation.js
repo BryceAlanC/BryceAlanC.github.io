@@ -90,52 +90,53 @@
   }
 
   /*
-   * Remove or add a share of the base edge count while choosing affected pairs
-   * uniformly. An intensity of -1 removes every edge, 0 leaves the graph
-   * unchanged, and 1 adds as many non-edges as there are base edges (or all
-   * remaining non-edges when fewer are available).
+   * Replace a rate-controlled fraction of the current edges with previously
+   * missing edges. Capping by the number of nonedges makes every counted
+   * replacement a genuine change while preserving the total edge count.
    */
-  function adjustEdgePairs(count, pairs, intensity, randomSource) {
+  function turnoverEdgePairs(count, pairs, rate, randomSource) {
     const n = clamp(Math.round(Number(count) || 0), 0, 1000);
     const normalized = simplePairs(n, pairs);
     const random = typeof randomSource === "function" ? randomSource : mulberry32(1);
-    const numericIntensity = Number(intensity);
-    const amount = Number.isFinite(numericIntensity) ? clamp(numericIntensity, -1, 1) : 0;
+    const numericRate = Number(rate);
+    const amount = Number.isFinite(numericRate) ? clamp(numericRate, 0, 1) : 0;
+    const maximumEdges = (n * (n - 1)) / 2;
+    const missingCount = maximumEdges - normalized.pairs.length;
+    const replacementCount = Math.min(
+      Math.round(amount * normalized.pairs.length),
+      missingCount
+    );
 
-    if (amount < 0) {
-      const removalCount = Math.round(-amount * normalized.pairs.length);
-      const removed = new Set(
-        partialShuffle(normalized.pairs.slice(), removalCount, random).map(function key(pair) {
-          return edgeKey(pair[0], pair[1]);
-        })
-      );
-      return normalized.pairs.filter(function keepPair(pair) {
-        return !removed.has(edgeKey(pair[0], pair[1]));
-      });
-    }
+    if (replacementCount === 0) return normalized.pairs;
 
-    if (amount > 0) {
-      const missing = [];
-      for (let source = 0; source < n; source += 1) {
-        for (let target = source + 1; target < n; target += 1) {
-          if (!normalized.edgeSet.has(edgeKey(source, target))) missing.push([source, target]);
+    const removed = new Set(
+      partialShuffle(normalized.pairs.slice(), replacementCount, random).map(function key(pair) {
+        return edgeKey(pair[0], pair[1]);
+      })
+    );
+    const missing = [];
+    for (let source = 0; source < n; source += 1) {
+      for (let target = source + 1; target < n; target += 1) {
+        if (!normalized.edgeSet.has(edgeKey(source, target))) {
+          missing.push([source, target]);
         }
       }
-      const additionCount = Math.round(amount * Math.min(normalized.pairs.length, missing.length));
-      const adjusted = normalized.pairs.concat(partialShuffle(missing, additionCount, random));
-      adjusted.sort(function sortPairs(first, second) {
-        return first[0] - second[0] || first[1] - second[1];
-      });
-      return adjusted;
     }
 
-    return normalized.pairs;
+    const replacements = partialShuffle(missing, replacementCount, random);
+    const turnedOver = normalized.pairs.filter(function keepPair(pair) {
+      return !removed.has(edgeKey(pair[0], pair[1]));
+    }).concat(replacements);
+    turnedOver.sort(function sortPairs(first, second) {
+      return first[0] - second[0] || first[1] - second[1];
+    });
+    return turnedOver;
   }
 
-  function adjustGraphEdges(graph, intensity, random) {
+  function turnoverGraphEdges(graph, rate, random) {
     const sourceGraph = graph || {};
     const sourceNodes = Array.isArray(sourceGraph.nodes) ? sourceGraph.nodes : [];
-    const pairs = adjustEdgePairs(sourceNodes.length, sourceGraph.pairs || [], intensity, random);
+    const pairs = turnoverEdgePairs(sourceNodes.length, sourceGraph.pairs || [], rate, random);
     const degrees = degreesFromPairs(sourceNodes.length, pairs);
     const nodes = sourceNodes.map(function copyNode(node, id) {
       return Object.assign({}, node, { id: id, degree: degrees[id] });
@@ -548,8 +549,8 @@
     clamp: clamp,
     mulberry32: mulberry32,
     degreesFromPairs: degreesFromPairs,
-    adjustEdgePairs: adjustEdgePairs,
-    adjustGraphEdges: adjustGraphEdges,
+    turnoverEdgePairs: turnoverEdgePairs,
+    turnoverGraphEdges: turnoverGraphEdges,
     isConnected: isConnected,
     torusGraph: torusGraph,
     randomRegularGraph: randomRegularGraph,
