@@ -33,6 +33,7 @@
       defer
     ></script>
     <script src="./simulation.js" defer></script>
+    <script src="./canvas-renderer.js" defer></script>
     <script src="./demo.js" defer></script>
   </head>
   <body class="visual-lab-page">
@@ -179,6 +180,7 @@
                 role="img"
                 aria-label="Three-dimensional graph showing living vertices as larger peach marks and dead vertices as smaller gray marks"
               >
+                <div class="life-renderer" id="life-renderer" aria-hidden="true"></div>
                 <div class="stage-message" id="life-message" role="status">Loading the 3D graph…</div>
                 <div class="stage-overlay">
                   <div class="legend" role="group" aria-label="Graph legend">

@@ -23,6 +23,7 @@
     newGraph: document.getElementById("life-new-graph"),
     fit: document.getElementById("life-fit"),
     stage: document.getElementById("life-stage"),
+    renderer: document.getElementById("life-renderer"),
     message: document.getElementById("life-message"),
     stateLabel: document.getElementById("life-state"),
     status: document.getElementById("life-status"),
@@ -98,8 +99,40 @@
     elements.message.hidden = false;
     elements.message.classList.add("is-error");
     elements.message.textContent = message;
-    elements.status.textContent = "The interactive renderer is unavailable.";
+    elements.status.textContent = message;
     disableControls();
+  }
+
+  function createCanvasRenderer(reason) {
+    if (typeof window.LifeCanvasGraph !== "function") throw reason;
+    elements.renderer.replaceChildren();
+    window.console.warn("Using the canvas graph renderer because WebGL was unavailable.", reason);
+    return new window.LifeCanvasGraph(elements.renderer);
+  }
+
+  function configureRenderer(graph) {
+    return graph
+      .showNavInfo(false)
+      .enableNodeDrag(false)
+      .nodeId("id")
+      .nodeColor(function nodeColor(node) { return node.alive ? "#f0b18b" : "#68766f"; })
+      .nodeVal(function nodeSize(node) { return node.alive ? 2.1 : 0.42; })
+      .nodeResolution(8)
+      .nodeLabel(function nodeLabel(node) {
+        return "Vertex " + node.id + ": " + (node.alive ? "alive" : "dead") + "; degree " + node.degree;
+      })
+      .linkColor(function linkColor() { return "#65736c"; })
+      .linkOpacity(0.22)
+      .linkWidth(0.55)
+      .backgroundColor("#17211d")
+      .onNodeClick(function toggleNode(node) {
+        setPaused("Paused");
+        simulation.state[node.id] = simulation.state[node.id] ? 0 : 1;
+        applyStateToNodes();
+        simulation.graph.refresh();
+        updateStatus();
+        announce("Vertex " + node.id + " is now " + (simulation.state[node.id] ? "alive" : "dead") + ".");
+      });
   }
 
   function configureInputs() {
@@ -375,34 +408,18 @@
       fail("The simulation code could not load. Please reload the page.");
       return;
     }
-    if (typeof window.ForceGraph3D !== "function") {
-      fail("The 3D renderer could not load. Check your connection, then reload the page.");
-      return;
-    }
-
     try {
-      simulation.graph = new window.ForceGraph3D(elements.stage, { controlType: "orbit" })
-        .showNavInfo(false)
-        .enableNodeDrag(false)
-        .nodeId("id")
-        .nodeColor(function nodeColor(node) { return node.alive ? "#f0b18b" : "#68766f"; })
-        .nodeVal(function nodeSize(node) { return node.alive ? 2.1 : 0.42; })
-        .nodeResolution(8)
-        .nodeLabel(function nodeLabel(node) {
-          return "Vertex " + node.id + ": " + (node.alive ? "alive" : "dead") + "; degree " + node.degree;
-        })
-        .linkColor(function linkColor() { return "#65736c"; })
-        .linkOpacity(0.22)
-        .linkWidth(0.55)
-        .backgroundColor("#17211d")
-        .onNodeClick(function toggleNode(node) {
-          setPaused("Paused");
-          simulation.state[node.id] = simulation.state[node.id] ? 0 : 1;
-          applyStateToNodes();
-          simulation.graph.refresh();
-          updateStatus();
-          announce("Vertex " + node.id + " is now " + (simulation.state[node.id] ? "alive" : "dead") + ".");
-        });
+      let graph;
+      if (typeof window.ForceGraph3D === "function") {
+        try {
+          graph = new window.ForceGraph3D(elements.renderer, { controlType: "orbit" });
+        } catch (webGlError) {
+          graph = createCanvasRenderer(webGlError);
+        }
+      } else {
+        graph = createCanvasRenderer(new Error("The third-party 3D renderer did not load."));
+      }
+      simulation.graph = configureRenderer(graph);
 
       const renderer = simulation.graph.renderer();
       if (renderer && renderer.setPixelRatio) {
@@ -424,7 +441,7 @@
       });
       simulation.frameId = window.requestAnimationFrame(lifeFrame);
     } catch (error) {
-      fail("The 3D renderer could not start in this browser.");
+      fail("Neither the 3D renderer nor the compatibility renderer could start in this browser.");
       window.console.error(error);
     }
   }

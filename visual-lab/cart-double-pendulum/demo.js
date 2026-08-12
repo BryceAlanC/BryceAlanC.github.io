@@ -8,6 +8,9 @@
   const physicsStep = 0.0025;
   const controlTicks = Math.round(controller.SAMPLE_TIME / physicsStep);
   const parameters = dynamics.createParameters();
+  const cameraLagSeconds = 0.24;
+  const cameraMaxLag = 1.25;
+  const cameraFollowFraction = 1 - Math.exp(-physicsStep / cameraLagSeconds);
 
   const canvas = document.getElementById("pendulum-canvas");
   const context = canvas.getContext("2d");
@@ -35,6 +38,7 @@
     running: false,
     accumulator: 0,
     lastFrame: 0,
+    cameraX: 0,
     trail: []
   };
 
@@ -81,6 +85,13 @@
     );
     simulation.ticks += 1;
     simulation.time = simulation.ticks * physicsStep;
+    const cartX = simulation.state[0];
+    simulation.cameraX += (cartX - simulation.cameraX) * cameraFollowFraction;
+    simulation.cameraX = dynamics.clamp(
+      simulation.cameraX,
+      cartX - cameraMaxLag,
+      cartX + cameraMaxLag
+    );
 
     if (simulation.ticks % controlTicks === 0) {
       const points = mechanismPoints(simulation.state);
@@ -137,7 +148,7 @@
     const points = mechanismPoints(simulation.state);
 
     const screen = function (x, y) {
-      return [centerX + x * scale, pivotY + y * scale];
+      return [centerX + (x - simulation.cameraX) * scale, pivotY + y * scale];
     };
     const pivot = screen(points.pivotX, points.pivotY);
     const joint = screen(points.jointX, points.jointY);
@@ -145,21 +156,29 @@
 
     context.strokeStyle = "rgba(255, 253, 247, 0.28)";
     context.lineWidth = 2;
+    const trackLeft = width * 0.035;
+    const trackRight = width * 0.965;
     context.beginPath();
-    context.moveTo(width * 0.035, pivotY + 27);
-    context.lineTo(width * 0.965, pivotY + 27);
+    context.moveTo(trackLeft, pivotY + 27);
+    context.lineTo(trackRight, pivotY + 27);
     context.stroke();
 
     context.fillStyle = "rgba(255, 253, 247, 0.62)";
     context.font = "11px IBM Plex Mono, monospace";
     context.textAlign = "center";
-    for (let meter = -3; meter <= 3; meter += 1) {
-      const x = centerX + meter * scale;
+    const firstMeter = Math.ceil(simulation.cameraX + (trackLeft - centerX) / scale);
+    const lastMeter = Math.floor(simulation.cameraX + (trackRight - centerX) / scale);
+    for (let meter = firstMeter; meter <= lastMeter; meter += 1) {
+      const label = meter + " m";
+      const x = screen(meter, 0)[0];
+      const labelWidth = context.measureText(label).width;
       context.beginPath();
       context.moveTo(x, pivotY + 20);
       context.lineTo(x, pivotY + 34);
       context.stroke();
-      context.fillText(meter + " m", x, pivotY + 50);
+      if (x - labelWidth / 2 >= 4 && x + labelWidth / 2 <= width - 4) {
+        context.fillText(label, x, pivotY + 50);
+      }
     }
 
     if (simulation.trail.length > 1) {
@@ -262,6 +281,7 @@
     simulation.running = false;
     simulation.accumulator = 0;
     simulation.lastFrame = 0;
+    simulation.cameraX = 0;
     simulation.trail = [];
     playPause.textContent = "Start";
     draw();

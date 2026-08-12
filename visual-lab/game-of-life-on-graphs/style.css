@@ -29,6 +29,26 @@
   color: #ffd8c4;
 }
 
+.life-renderer {
+  position: absolute;
+  inset: 0;
+}
+
+.life-canvas-renderer {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.life-canvas-renderer.is-dragging {
+  cursor: grabbing;
+}
+
+.life-canvas-renderer.has-node {
+  cursor: pointer;
+}
+
 .control-panel input:disabled {
   cursor: not-allowed;
   opacity: 0.52;
