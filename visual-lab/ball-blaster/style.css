@@ -278,15 +278,15 @@
 
 .power-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(58px, auto);
   align-items: center;
   gap: 0.45rem;
-  padding: 0.55rem 0;
+  padding: 0.62rem 0;
   border-bottom: 1px solid var(--hairline);
   font-size: 0.75rem;
 }
 
-.power-row > span {
+.power-icon {
   display: grid;
   width: 24px;
   height: 24px;
@@ -296,10 +296,32 @@
   font-family: var(--mono);
 }
 
+.power-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.power-copy small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.power-help {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
 .power-row .power-value {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.66rem;
+  line-height: 1.25;
+  text-align: right;
 }
 
 .power-row.is-active .power-value {
@@ -307,9 +329,9 @@
   font-weight: 500;
 }
 
-.power-rapid > span { color: #b7791f; }
-.power-giant > span { color: var(--teal); }
-.power-splat > span { color: var(--orange); }
+.power-rapid .power-icon { color: #b7791f; }
+.power-giant .power-icon { color: var(--teal); }
+.power-splat .power-icon { color: var(--orange); }
 
 .noscript-note {
   width: min(1180px, calc(100% - 3rem));
@@ -353,6 +375,10 @@
 
   .gate-actions > * {
     width: 100%;
+  }
+
+  .power-row {
+    grid-template-columns: 28px minmax(0, 1fr) minmax(54px, auto);
   }
 
   .game-gate {

@@ -1,16 +1,18 @@
 import * as THREE from "./vendor/three.module.min.js";
 import {
   ARENA,
+  PLAYER_PHYSICS,
   PROJECTILE,
   clamp,
-  movePlayer,
   sphereIntersectsBox,
+  sphereIntersectsRamp,
+  stepPlayer,
   stepProjectile
 } from "./physics.mjs";
 
 const FIXED_STEP = 1 / 120;
 const MAX_SUBSTEPS = 8;
-const PLAYER_HEIGHT = 1.6;
+const PLAYER_HEIGHT = PLAYER_PHYSICS.eyeHeight;
 const PLAYER_RADIUS = 0.36;
 const WALK_SPEED = 5.2;
 const LOOK_SPEEDS = [0.00115, 0.0018, 0.0026];
@@ -18,13 +20,16 @@ const KEYBOARD_LOOK_SPEEDS = [1.05, 1.65, 2.35];
 const MAX_BALLS = 150;
 const MAX_SPLATS = 180;
 const BASE_BALL_RADIUS = 0.18;
-const GIANT_BALL_RADIUS = 0.38;
 const BALL_SPEED = 17;
 const BASE_FIRE_INTERVAL = 0.28;
-const RAPID_FIRE_INTERVAL = 0.085;
-const POWER_DURATION = 10;
-const PICKUP_RESPAWN = 12;
-const SPLAT_LIFETIME = 14;
+const RAPID_FIRE_INTERVALS = [0.28, 0.09, 0.065, 0.05, 0.04];
+const GIANT_BALL_RADII = [BASE_BALL_RADIUS, 0.38, 0.65, 1, 1.4];
+const SPLAT_SCALE_MULTIPLIERS = [1, 1, 1.45, 1.9, 2.4];
+const MAX_POWER_LEVEL = 4;
+const POWER_DURATION = 14;
+const PICKUP_RESPAWN = 3.5;
+const SPLAT_LIFETIME = 8;
+const BALL_FADE_TIME = 0.45;
 
 const elements = {
   stage: document.getElementById("ball-stage"),
@@ -63,9 +68,9 @@ const elements = {
 
 const palette = [0xffa45b, 0xff6b6b, 0xffd166, 0x5ed6c0, 0x72a0ff, 0xb886ff];
 const powerDefinitions = {
-  rapid: { label: "Rapid fire", color: 0xffb347, symbol: "⚡" },
-  giant: { label: "Jumbo balls", color: 0x48c9b0, symbol: "◉" },
-  splat: { label: "Splat shot", color: 0xff6f61, symbol: "✹" }
+  rapid: { label: "Rapid fire", hud: "FAST", color: 0xffb347, symbol: "⚡" },
+  giant: { label: "Jumbo balls", hud: "BIG", color: 0x48c9b0, symbol: "◉" },
+  splat: { label: "Splat shot", hud: "SPLAT", color: 0xff6f61, symbol: "✹" }
 };
 
 const simulation = {
@@ -79,12 +84,14 @@ const simulation = {
   fireHeld: false,
   keyboardFire: false,
   mouseFire: false,
+  jumpQueued: false,
   yaw: 0,
   pitch: 0,
   keys: new Set(),
   player: {
-    position: { x: 0, y: PLAYER_HEIGHT, z: 7.5 },
-    velocity: { x: 0, y: 0, z: 0 }
+    position: { x: 0, y: PLAYER_HEIGHT, z: 12 },
+    velocity: { x: 0, y: 0, z: 0 },
+    grounded: true
   },
   balls: [],
   splats: [],
@@ -92,7 +99,11 @@ const simulation = {
   nextSplatId: 1,
   bounceCount: 0,
   splatCount: 0,
-  powers: { rapid: 0, giant: 0, splat: 0 },
+  powers: {
+    rapid: { level: 0, remaining: 0 },
+    giant: { level: 0, remaining: 0 },
+    splat: { level: 0, remaining: 0 }
+  },
   pickupRespawns: { rapid: 0, giant: 0, splat: 0 },
   pickupObjects: {},
   toastTimeout: 0,
@@ -103,17 +114,31 @@ const simulation = {
 };
 
 const obstacleDefinitions = [
-  { id: "center", min: { x: -1.8, y: 0, z: -1.5 }, max: { x: 1.8, y: 2.5, z: 1.5 }, color: 0x236b73 },
-  { id: "left-block", min: { x: -9.6, y: 0, z: -6.2 }, max: { x: -6.3, y: 3.5, z: -2.8 }, color: 0xd76d4c },
-  { id: "right-block", min: { x: 6.2, y: 0, z: 2.2 }, max: { x: 9.7, y: 4.2, z: 5.7 }, color: 0xb68bd1 },
-  { id: "low-block", min: { x: 4.5, y: 0, z: -8.3 }, max: { x: 8.8, y: 1.35, z: -5.2 }, color: 0xd1a54a },
-  { id: "back-block", min: { x: -7.5, y: 0, z: 4.2 }, max: { x: -4.2, y: 2.1, z: 7.8 }, color: 0x3f8f77 }
+  { id: "center-column", min: { x: -1.25, y: 2.4, z: -1.1 }, max: { x: 1.25, y: 6.7, z: 1.1 }, color: 0x236b73 },
+  { id: "left-tower", min: { x: -16.8, y: 0, z: -6.1 }, max: { x: -13, y: 4.4, z: -2.2 }, color: 0xd76d4c },
+  { id: "right-block", min: { x: 11.5, y: 0, z: 3.7 }, max: { x: 16, y: 2.4, z: 8.2 }, color: 0xb68bd1 },
+  { id: "back-step", min: { x: -6.8, y: 0, z: -13 }, max: { x: -2.8, y: 1.25, z: -9.2 }, color: 0xd1a54a }
 ];
 
+const platformDefinitions = [
+  { id: "center-deck", min: { x: -5, y: 0, z: -4 }, max: { x: 5, y: 2.4, z: 2.5 }, color: 0x3f8f77 },
+  { id: "east-deck", min: { x: 9, y: 0, z: -12.5 }, max: { x: 16.5, y: 3.2, z: -6 }, color: 0x4e7fb2 },
+  { id: "west-deck", min: { x: -16.5, y: 0, z: 7 }, max: { x: -10, y: 1.8, z: 12.5 }, color: 0xc98752 }
+];
+
+const rampDefinitions = [
+  { id: "center-ramp-west", minX: -10, maxX: -5, minZ: -3.1, maxZ: 1.6, lowY: 0, highY: 2.4, axis: "x", direction: 1, color: 0x65a486 },
+  { id: "center-ramp-north", minX: -2, maxX: 2, minZ: 2.5, maxZ: 9, lowY: 0, highY: 2.4, axis: "z", direction: -1, color: 0x6cae91 },
+  { id: "east-ramp", minX: 3.5, maxX: 9, minZ: -11.2, maxZ: -7.3, lowY: 0, highY: 3.2, axis: "x", direction: 1, color: 0x709ac4 },
+  { id: "west-ramp", minX: -10, maxX: -4.8, minZ: 8, maxZ: 11.4, lowY: 0, highY: 1.8, axis: "x", direction: -1, color: 0xd29a67 }
+];
+
+const solidDefinitions = obstacleDefinitions.concat(platformDefinitions);
+
 const pickupSpawns = {
-  rapid: new THREE.Vector3(-10.5, 1, 7.5),
-  giant: new THREE.Vector3(10.6, 1, -7.2),
-  splat: new THREE.Vector3(9.8, 1, 8.2)
+  rapid: new THREE.Vector3(-13.1, 2.8, 10),
+  giant: new THREE.Vector3(13, 4.2, -9),
+  splat: new THREE.Vector3(0, 3.4, -1.8)
 };
 
 const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xddeee8, roughness: 0.82, metalness: 0 });
@@ -136,6 +161,18 @@ function announce(message) {
 
 function setText(element, text) {
   if (element.textContent !== text) element.textContent = text;
+}
+
+function powerLevel(type) {
+  return simulation.powers[type].remaining > 0 ? simulation.powers[type].level : 0;
+}
+
+function currentFireInterval() {
+  return RAPID_FIRE_INTERVALS[powerLevel("rapid")];
+}
+
+function currentBallRadius() {
+  return GIANT_BALL_RADII[powerLevel("giant")];
 }
 
 function setStatus(text, className) {
@@ -272,6 +309,54 @@ function makeBox(scene, definition) {
   scene.add(mesh);
 }
 
+function rampRenderHeight(definition, x, z) {
+  const coordinate = definition.axis === "x" ? x : z;
+  const minimum = definition.axis === "x" ? definition.minX : definition.minZ;
+  const maximum = definition.axis === "x" ? definition.maxX : definition.maxZ;
+  let fraction = clamp((coordinate - minimum) / Math.max(1e-6, maximum - minimum), 0, 1);
+  if (definition.direction < 0) fraction = 1 - fraction;
+  return definition.lowY + (definition.highY - definition.lowY) * fraction;
+}
+
+function makeRamp(scene, definition) {
+  const corners = [
+    [definition.minX, definition.minZ],
+    [definition.maxX, definition.minZ],
+    [definition.maxX, definition.maxZ],
+    [definition.minX, definition.maxZ]
+  ];
+  const positions = [];
+  corners.forEach(function (corner) {
+    positions.push(corner[0], ARENA.floorY, corner[1]);
+  });
+  corners.forEach(function (corner) {
+    positions.push(corner[0], rampRenderHeight(definition, corner[0], corner[1]), corner[1]);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex([
+    0, 2, 1, 0, 3, 2,
+    4, 6, 5, 4, 7, 6,
+    0, 1, 5, 0, 5, 4,
+    1, 2, 6, 1, 6, 5,
+    2, 3, 7, 2, 7, 6,
+    3, 0, 4, 3, 4, 7
+  ]);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: definition.color,
+      roughness: 0.72,
+      metalness: 0.01,
+      side: THREE.DoubleSide
+    })
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
 function createArena(scene) {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ARENA.maxX - ARENA.minX, ARENA.maxZ - ARENA.minZ),
@@ -312,18 +397,19 @@ function createArena(scene) {
   frontWall.receiveShadow = true;
   scene.add(frontWall);
 
-  const grid = new THREE.GridHelper(28, 28, 0x2f776c, 0xc8b67f);
+  const grid = new THREE.GridHelper(40, 40, 0x2f776c, 0xc8b67f);
   grid.position.y = 0.004;
   scene.add(grid);
 
-  obstacleDefinitions.forEach(function (definition) { makeBox(scene, definition); });
+  solidDefinitions.forEach(function (definition) { makeBox(scene, definition); });
+  rampDefinitions.forEach(function (definition) { makeRamp(scene, definition); });
 
   for (let index = 0; index < 6; index += 1) {
     const target = new THREE.Mesh(
       new THREE.RingGeometry(0.5, 0.72, 24),
       new THREE.MeshBasicMaterial({ color: palette[index % palette.length], side: THREE.DoubleSide })
     );
-    target.position.set(-10 + index * 4, 3.1 + (index % 2) * 1.25, ARENA.minZ + 0.015);
+    target.position.set(-15 + index * 6, 4 + (index % 2) * 1.5, ARENA.minZ + 0.015);
     scene.add(target);
   }
 }
@@ -445,21 +531,21 @@ function initializeScene() {
   simulation.renderer = createWebGLRenderer();
   simulation.scene = new THREE.Scene();
   simulation.scene.background = new THREE.Color(0x8dd7e8);
-  simulation.scene.fog = new THREE.Fog(0x8dd7e8, 22, 44);
-  simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 80);
+  simulation.scene.fog = new THREE.Fog(0x8dd7e8, 34, 68);
+  simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 110);
   simulation.camera.rotation.order = "YXZ";
   simulation.scene.add(simulation.camera);
 
   const hemisphere = new THREE.HemisphereLight(0xeafcff, 0x775534, 2.7);
   simulation.scene.add(hemisphere);
   const sun = new THREE.DirectionalLight(0xfff2d4, 3.1);
-  sun.position.set(5, 10, 7);
+  sun.position.set(8, 17, 10);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -18;
-  sun.shadow.camera.right = 18;
-  sun.shadow.camera.top = 15;
-  sun.shadow.camera.bottom = -15;
+  sun.shadow.camera.left = -25;
+  sun.shadow.camera.right = 25;
+  sun.shadow.camera.top = 22;
+  sun.shadow.camera.bottom = -22;
   simulation.scene.add(sun);
 
   createArena(simulation.scene);
@@ -503,6 +589,7 @@ function clearInput() {
   simulation.keyboardFire = false;
   simulation.mouseFire = false;
   simulation.fireHeld = false;
+  simulation.jumpQueued = false;
   simulation.player.velocity.x = 0;
   simulation.player.velocity.z = 0;
 }
@@ -523,7 +610,7 @@ function beginKeyboardMode() {
   hideGate();
   elements.canvas.focus();
   setStatus("Playing · keyboard look", "playing");
-  announce("Keyboard play started. Arrow keys move, I J K L look, and Space launches balls.");
+  announce("Keyboard play started. Arrow keys move, I J K L look, Space jumps, and F launches balls.");
 }
 
 function beginMouseMode() {
@@ -546,7 +633,7 @@ function showPointerLockFallback() {
   simulation.mode = "ready";
   setGate({
     title: "Mouse look did not start",
-    copy: "You can still play with the keyboard: use I, J, K, and L to look and Space to launch.",
+    copy: "You can still play with the keyboard: use I, J, K, and L to look, Space to jump, and F to launch.",
     controls: false,
     mouse: true,
     keyboard: true,
@@ -596,13 +683,16 @@ function resetGame(options = {}) {
   simulation.accumulator = 0;
   simulation.player.position.x = 0;
   simulation.player.position.y = PLAYER_HEIGHT;
-  simulation.player.position.z = 7.5;
+  simulation.player.position.z = 12;
   simulation.player.velocity.x = 0;
+  simulation.player.velocity.y = 0;
   simulation.player.velocity.z = 0;
+  simulation.player.grounded = true;
   simulation.yaw = 0;
   simulation.pitch = 0;
   Object.keys(simulation.powers).forEach(function (type) {
-    simulation.powers[type] = 0;
+    simulation.powers[type].level = 0;
+    simulation.powers[type].remaining = 0;
     simulation.pickupRespawns[type] = 0;
     simulation.pickupObjects[type].visible = true;
   });
@@ -653,8 +743,11 @@ function canSpawnBall(position, radius) {
   if (position.x - radius <= ARENA.minX || position.x + radius >= ARENA.maxX ||
       position.y - radius <= ARENA.floorY || position.y + radius >= ARENA.ceilingY ||
       position.z - radius <= ARENA.minZ || position.z + radius >= ARENA.maxZ) return false;
-  return !obstacleDefinitions.some(function (box) {
+  if (solidDefinitions.some(function (box) {
     return sphereIntersectsBox(position, radius, box);
+  })) return false;
+  return !rampDefinitions.some(function (ramp) {
+    return sphereIntersectsRamp(position, radius, ramp);
   });
 }
 
@@ -662,7 +755,7 @@ function fireBall() {
   if (!isPlaying()) return false;
   const direction = new THREE.Vector3();
   simulation.camera.getWorldDirection(direction);
-  const radius = simulation.powers.giant > 0 ? GIANT_BALL_RADIUS : BASE_BALL_RADIUS;
+  const radius = currentBallRadius();
   const spawnDistance = PLAYER_RADIUS + radius + 0.5;
   const position = {
     x: simulation.camera.position.x + direction.x * spawnDistance,
@@ -689,8 +782,7 @@ function fireBall() {
     radius,
     age: 0,
     color,
-    splat: simulation.powers.splat > 0,
-    lastSplatTime: -Infinity,
+    splatLevel: powerLevel("splat"),
     slot,
     released: false
   };
@@ -705,9 +797,7 @@ function fireBall() {
 }
 
 function addSplat(ball, collision) {
-  if (!ball.splat || collision.speed < PROJECTILE.splatThreshold ||
-      simulation.simulationTime - ball.lastSplatTime < PROJECTILE.splatCooldown) return;
-  ball.lastSplatTime = simulation.simulationTime;
+  if (ball.splatLevel <= 0 || collision.speed < PROJECTILE.splatThreshold) return false;
   if (simulation.splats.length >= MAX_SPLATS) {
     const oldest = simulation.splats.shift();
     removeSplatMesh(oldest);
@@ -721,7 +811,12 @@ function addSplat(ball, collision) {
     collision.point.y + normal.y * 0.012,
     collision.point.z + normal.z * 0.012
   );
-  const scale = clamp(ball.radius * (2.2 + collision.speed * 0.035), 0.34, 1.15);
+  const scaleMultiplier = SPLAT_SCALE_MULTIPLIERS[clamp(ball.splatLevel, 0, MAX_POWER_LEVEL)];
+  const scale = clamp(
+    ball.radius * (2.2 + collision.speed * 0.035) * scaleMultiplier,
+    0.34,
+    4.2
+  );
   quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(zAxis, (ball.id * 1.618 + simulation.splatCount * 0.7) % (Math.PI * 2)));
   const splat = { id: simulation.nextSplatId, age: 0, slot, position, quaternion, scale, released: false };
   setSplatInstance(splat, 1);
@@ -731,19 +826,22 @@ function addSplat(ball, collision) {
   simulation.splats.push(splat);
   simulation.nextSplatId += 1;
   simulation.splatCount += 1;
+  return true;
 }
 
 function activatePower(type) {
-  simulation.powers[type] = POWER_DURATION;
-  if (type === "rapid") simulation.fireCooldown = Math.min(simulation.fireCooldown, RAPID_FIRE_INTERVAL);
+  const power = simulation.powers[type];
+  power.level = Math.min(MAX_POWER_LEVEL, power.level + 1);
+  power.remaining = POWER_DURATION;
+  if (type === "rapid") simulation.fireCooldown = Math.min(simulation.fireCooldown, currentFireInterval());
   simulation.pickupRespawns[type] = PICKUP_RESPAWN;
   simulation.pickupObjects[type].visible = false;
   const label = powerDefinitions[type].label;
-  elements.toast.textContent = label + " — 10 seconds";
+  elements.toast.textContent = label + " — level " + power.level + "!";
   elements.toast.hidden = false;
   window.clearTimeout(simulation.toastTimeout);
   simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 1500);
-  announce(label + " active for 10 seconds.");
+  announce(label + " level " + power.level + ". Timer refreshed to " + POWER_DURATION + " seconds.");
   updateHud();
 }
 
@@ -763,15 +861,20 @@ function updatePickups(delta) {
         object.position.y = object.userData.baseY;
       }
       const x = simulation.player.position.x - object.position.x;
+      const y = simulation.player.position.y - object.position.y;
       const z = simulation.player.position.z - object.position.z;
-      if (x * x + z * z <= 0.85 * 0.85) activatePower(type);
+      if (x * x + y * y + z * z <= 1.05 * 1.05) activatePower(type);
     }
   });
 
   Object.keys(simulation.powers).forEach(function (type) {
-    if (simulation.powers[type] <= 0) return;
-    simulation.powers[type] = Math.max(0, simulation.powers[type] - delta);
-    if (simulation.powers[type] === 0) announce(powerDefinitions[type].label + " expired.");
+    const power = simulation.powers[type];
+    if (power.remaining <= 0) return;
+    power.remaining = Math.max(0, power.remaining - delta);
+    if (power.remaining === 0) {
+      power.level = 0;
+      announce(powerDefinitions[type].label + " expired.");
+    }
   });
 }
 
@@ -792,14 +895,25 @@ function updatePlayer(delta) {
   const blend = 1 - Math.exp(-14 * delta);
   simulation.player.velocity.x += (desiredX * WALK_SPEED - simulation.player.velocity.x) * blend;
   simulation.player.velocity.z += (desiredZ * WALK_SPEED - simulation.player.velocity.z) * blend;
-  movePlayer(
-    simulation.player.position,
-    simulation.player.velocity,
+  const result = stepPlayer(
+    simulation.player,
+    { jumpRequested: simulation.jumpQueued, eyeHeight: PLAYER_HEIGHT },
     delta,
     PLAYER_RADIUS,
     obstacleDefinitions,
+    rampDefinitions,
+    platformDefinitions,
     ARENA
   );
+  simulation.jumpQueued = false;
+  if (result.jumped) {
+    setStatus(simulation.mode === "mouse" ? "Playing · big jump" : "Playing · keyboard jump", "playing");
+  } else if (result.landed) {
+    setStatus(simulation.mode === "mouse" ? "Playing · mouse look" : "Playing · keyboard look", "playing");
+  }
+  /* stepPlayer owns vertical motion and terrain contacts; horizontal speed is
+     smoothed above so ramps stay playful rather than twitchy. */
+  return result;
 }
 
 function updateKeyboardLook(delta) {
@@ -816,7 +930,7 @@ function updateFiring(delta) {
   simulation.fireHeld = simulation.keyboardFire || simulation.mouseFire;
   if (!simulation.fireHeld || simulation.fireCooldown > 0) return;
   if (fireBall()) {
-    simulation.fireCooldown = simulation.powers.rapid > 0 ? RAPID_FIRE_INTERVAL : BASE_FIRE_INTERVAL;
+    simulation.fireCooldown = currentFireInterval();
   }
 }
 
@@ -829,14 +943,22 @@ function fixedUpdate(delta) {
 
   const survivingBalls = [];
   for (const ball of simulation.balls) {
-    const collisions = stepProjectile(ball, delta, obstacleDefinitions, ARENA);
+    const collisions = stepProjectile(ball, delta, solidDefinitions, ARENA, rampDefinitions);
+    let strongestSplatCollision = null;
     for (const collision of collisions) {
       if (collision.speed > 0.5) simulation.bounceCount += 1;
-      addSplat(ball, collision);
+      if (ball.splatLevel > 0 && collision.speed >= PROJECTILE.splatThreshold &&
+          (!strongestSplatCollision || collision.speed > strongestSplatCollision.speed)) {
+        strongestSplatCollision = collision;
+      }
+    }
+    if (strongestSplatCollision && addSplat(ball, strongestSplatCollision)) {
+      removeBallMesh(ball);
+      continue;
     }
     if (ball.age < PROJECTILE.lifetime) {
-      if (ball.age > PROJECTILE.lifetime - 0.7) {
-        const fade = clamp((PROJECTILE.lifetime - ball.age) / 0.7, 0, 1);
+      if (ball.age > PROJECTILE.lifetime - BALL_FADE_TIME) {
+        const fade = clamp((PROJECTILE.lifetime - ball.age) / BALL_FADE_TIME, 0, 1);
         setBallInstance(ball, fade);
       } else {
         setBallInstance(ball, 1);
@@ -874,11 +996,13 @@ function updateHud() {
   setText(elements.bounceCount, String(simulation.bounceCount));
   setText(elements.splatCount, String(simulation.splatCount));
   ["rapid", "giant", "splat"].forEach(function (type) {
-    const active = simulation.powers[type] > 0;
+    const power = simulation.powers[type];
+    const active = power.remaining > 0 && power.level > 0;
     const output = elements["power" + type.charAt(0).toUpperCase() + type.slice(1)];
     const row = elements["power" + type.charAt(0).toUpperCase() + type.slice(1) + "Row"];
     const hud = elements["hud" + type.charAt(0).toUpperCase() + type.slice(1)];
-    setText(output, active ? Math.ceil(simulation.powers[type]) + " s" : "Inactive");
+    setText(output, active ? "Level " + power.level + " · " + Math.ceil(power.remaining) + " s" : "Level 0");
+    setText(hud, active ? powerDefinitions[type].hud + " ×" + power.level : powerDefinitions[type].hud);
     row.classList.toggle("is-active", active);
     hud.classList.toggle("is-active", active);
   });
@@ -920,6 +1044,11 @@ window.addEventListener("keydown", function (event) {
   if (isFormTarget(event.target)) return;
   if (event.code === "Space") {
     event.preventDefault();
+    if (!event.repeat) simulation.jumpQueued = true;
+    return;
+  }
+  if (event.code === "KeyF") {
+    event.preventDefault();
     simulation.keyboardFire = true;
     if (simulation.fireCooldown <= 0) updateFiring(0);
     return;
@@ -930,9 +1059,11 @@ window.addEventListener("keydown", function (event) {
 });
 
 window.addEventListener("keyup", function (event) {
-  if (event.code === "Space") simulation.keyboardFire = false;
+  if (event.code === "KeyF") simulation.keyboardFire = false;
   simulation.keys.delete(event.code);
-  if (isPlaying() && (event.code === "Space" || keyDirectionHandled(event.code))) event.preventDefault();
+  if (isPlaying() && (event.code === "Space" || event.code === "KeyF" || keyDirectionHandled(event.code))) {
+    event.preventDefault();
+  }
 });
 
 elements.canvas.addEventListener("mousedown", function (event) {
@@ -961,7 +1092,7 @@ document.addEventListener("pointerlockchange", function () {
     hideGate();
     elements.canvas.focus();
     setStatus("Playing · mouse look", "playing");
-    announce("Mouse play started. Arrow keys move and clicking launches balls.");
+    announce("Mouse play started. Arrow keys move, Space jumps, and clicking launches balls.");
     return;
   }
   if (simulation.pointerLockPending) {
@@ -1044,6 +1175,10 @@ window.__ballBlasterDebug = {
     maxBalls: MAX_BALLS,
     maxSplats: MAX_SPLATS,
     baseFireInterval: BASE_FIRE_INTERVAL,
-    rapidFireInterval: RAPID_FIRE_INTERVAL
+    rapidFireIntervals: RAPID_FIRE_INTERVALS,
+    giantBallRadii: GIANT_BALL_RADII,
+    maxPowerLevel: MAX_POWER_LEVEL,
+    powerDuration: POWER_DURATION,
+    pickupRespawn: PICKUP_RESPAWN
   }
 };

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A playful Three.js arena where you launch bouncing balls and collect rapid-fire, jumbo-ball, and colorful splat power-ups.">
+  <meta name="description" content="A playful Three.js arena where you leap over ramps, launch bouncing balls, and stack rapid-fire, jumbo-ball, and colorful splat power-ups.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#0b5748">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Bouncy Ball Blaster | Bryce Christopherson">
-  <meta property="og:description" content="Roam a bright 3D arena, fill it with bouncing balls, and collect playful launcher power-ups.">
+  <meta property="og:description" content="Leap through a bright 3D arena, fill it with bouncing balls, and stack playful launcher power-ups.">
   <title>Bouncy Ball Blaster · Bryce A. Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -60,8 +60,8 @@
         <a class="app-back" href="../">← Back to Visual Lab</a>
         <div class="app-hero-grid">
           <p class="section-kicker">Physics playground · 03</p>
-          <h1>Run, launch,<br>ricochet.</h1>
-          <p class="app-hero-copy">Wander through a bright little arena and fill it with bouncing balls. Collect power-ups to launch faster, grow every ball, or leave colorful splats across the walls.</p>
+          <h1>Run, leap,<br>ricochet.</h1>
+          <p class="app-hero-copy">Bound through a roomy arena of ramps and platforms, then fill it with short-lived bouncing balls. Grab the same power-up again to stack its effect: launch faster, grow truly enormous balls, or make them splat on impact.</p>
         </div>
       </div>
     </section>
@@ -70,7 +70,7 @@
       <div class="lab-stage-shell ball-layout">
         <aside class="control-panel ball-desk" aria-label="Playground controls and status">
           <h2>Play desk</h2>
-          <p>Collect power-ups and make as much bouncing color as you like—there is no score and no way to lose.</p>
+          <p>Jump the ramps, stack power-ups, and make as much bouncing color as you like—there is no score and no way to lose.</p>
 
           <fieldset class="control-group">
             <legend>Controls</legend>
@@ -78,7 +78,8 @@
               <div><dt>↑ / ↓</dt><dd>Move forward / back</dd></div>
               <div><dt>← / →</dt><dd>Sidestep</dd></div>
               <div><dt>Mouse · I J K L</dt><dd>Look around</dd></div>
-              <div><dt>Click · Space</dt><dd>Launch a ball</dd></div>
+              <div><dt>Space</dt><dd>Take a big jump</dd></div>
+              <div><dt>Click · F</dt><dd>Launch a ball</dd></div>
               <div><dt>Esc</dt><dd>Pause</dd></div>
             </dl>
           </fieldset>
@@ -106,9 +107,22 @@
 
           <fieldset class="control-group power-list">
             <legend>Power-ups</legend>
-            <div class="power-row power-rapid" id="power-rapid"><span aria-hidden="true">⚡</span><strong>Rapid fire</strong><span class="power-value">Inactive</span></div>
-            <div class="power-row power-giant" id="power-giant"><span aria-hidden="true">◉</span><strong>Jumbo balls</strong><span class="power-value">Inactive</span></div>
-            <div class="power-row power-splat" id="power-splat"><span aria-hidden="true">✹</span><strong>Splat shot</strong><span class="power-value">Inactive</span></div>
+            <p class="power-help">Pick up another of the same kind before time runs out to add a level and refresh its timer.</p>
+            <div class="power-row power-rapid" id="power-rapid">
+              <span class="power-icon" aria-hidden="true">⚡</span>
+              <span class="power-copy"><strong>Rapid fire</strong><small>Each level fires faster</small></span>
+              <span class="power-value">Level 0</span>
+            </div>
+            <div class="power-row power-giant" id="power-giant">
+              <span class="power-icon" aria-hidden="true">◉</span>
+              <span class="power-copy"><strong>Jumbo balls</strong><small>Each level launches bigger</small></span>
+              <span class="power-value">Level 0</span>
+            </div>
+            <div class="power-row power-splat" id="power-splat">
+              <span class="power-icon" aria-hidden="true">✹</span>
+              <span class="power-copy"><strong>Splat shot</strong><small>Vanishes on the first hit</small></span>
+              <span class="power-value">Level 0</span>
+            </div>
           </fieldset>
         </aside>
 
@@ -117,13 +131,13 @@
             <div class="stage-heading">
               <div>
                 <p class="section-kicker">Live 3D playground</p>
-                <h2 id="playground-title">The ricochet room</h2>
+                <h2 id="playground-title">The ricochet range</h2>
               </div>
               <span class="ball-status" id="game-status">Building the playground…</span>
             </div>
 
             <div class="ball-stage" id="ball-stage" role="region" aria-label="Bouncy Ball Blaster 3D playground">
-              <canvas id="game-canvas" tabindex="-1" aria-label="First-person view of a bright arena with bouncing colored balls and collectible power-ups" aria-describedby="key-guide"></canvas>
+              <canvas id="game-canvas" tabindex="-1" aria-label="First-person view of a bright ramped arena with bouncing colored balls and collectible power-ups" aria-describedby="key-guide"></canvas>
 
               <div class="game-hud" id="game-hud" aria-hidden="true" hidden>
                 <div class="crosshair"></div>
@@ -142,7 +156,8 @@
                   <ul id="gate-controls" class="gate-controls" hidden>
                     <li><strong>Arrow keys</strong> move</li>
                     <li><strong>Mouse or I J K L</strong> look</li>
-                    <li><strong>Click or Space</strong> launch</li>
+                    <li><strong>Space</strong> jumps</li>
+                    <li><strong>Click or F</strong> launches</li>
                     <li><strong>Esc</strong> pauses</li>
                   </ul>
                   <div class="gate-actions" id="gate-actions" hidden>
@@ -159,7 +174,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>How it works.</strong> Each launched sphere follows gravity and loses a little energy whenever it strikes a wall, obstacle, floor, or ceiling. Power-ups temporarily change the launch rate or new projectiles; splat balls keep bouncing while leaving short-lived color marks at their impacts. Balls pass through one another so rapid fire remains smooth.</p>
+          <p class="app-note"><strong>How it works.</strong> Leap across ramps and platforms while each launched sphere follows gravity and loses a little energy on every bounce. Balls fade sooner so stacked rapid fire can get wonderfully chaotic without filling the arena forever. Repeated power-ups add levels and refresh their timers; splat balls leave a colorful mark and disappear on their first solid impact. Balls pass through one another so the mayhem stays smooth.</p>
         </div>
       </div>
     </section>
