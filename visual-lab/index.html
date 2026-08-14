@@ -232,12 +232,109 @@
               <h3>Cart–double-pendulum swing-up</h3>
               <p class="lab-card-copy">
                 Watch a cart drive two linked pendulums toward the unstable
-                upright position, hand off to a balancing controller, and react
-                when you kick the system away from equilibrium.
+                upright position, hand off to a balancing controller, or take
+                over the actuator and attempt the swing-up yourself.
               </p>
               <div class="card-meta">
                 <span>Interactive · Simulation</span>
                 <strong>Open visualizer <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+
+            <a class="lab-card lab-card-balls" href="ball-blaster/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="balls-bg" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#88d2df" />
+                      <stop offset="1" stop-color="#dff2ed" />
+                    </linearGradient>
+                    <linearGradient id="balls-floor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#f5e6bc" />
+                      <stop offset="1" stop-color="#d8c58f" />
+                    </linearGradient>
+                    <filter id="ball-shadow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="5" />
+                    </filter>
+                    <radialGradient id="ball-red" cx="32%" cy="27%">
+                      <stop offset="0" stop-color="#fff1e6" />
+                      <stop offset="0.2" stop-color="#ff9b88" />
+                      <stop offset="1" stop-color="#d84f50" />
+                    </radialGradient>
+                    <radialGradient id="ball-teal" cx="32%" cy="27%">
+                      <stop offset="0" stop-color="#e7fff8" />
+                      <stop offset="0.2" stop-color="#73ddc9" />
+                      <stop offset="1" stop-color="#188275" />
+                    </radialGradient>
+                    <radialGradient id="ball-purple" cx="32%" cy="27%">
+                      <stop offset="0" stop-color="#f7ecff" />
+                      <stop offset="0.2" stop-color="#c397ed" />
+                      <stop offset="1" stop-color="#7544a0" />
+                    </radialGradient>
+                  </defs>
+                  <rect width="640" height="390" fill="url(#balls-bg)" />
+                  <path d="M0 0h640v225L470 174 188 171 0 220Z" fill="#d9e6e1" />
+                  <path d="M0 220 188 171 470 174 640 225v165H0Z" fill="url(#balls-floor)" />
+                  <g fill="none" stroke="#6e8b82" stroke-opacity="0.22">
+                    <path d="M188 171 90 390M470 174l91 216M0 284h640M0 341h640" />
+                    <path d="M256 171 234 390M325 172v218M394 173l22 217" />
+                  </g>
+
+                  <path d="M61 238 199 202 263 227 122 274Z" fill="#1a7c79" />
+                  <path d="m122 274 141-47v79l-141 54Z" fill="#11605f" />
+                  <path d="M442 215 574 248 574 345 442 303Z" fill="#9069ad" />
+
+                  <g fill="#000" opacity="0.17" filter="url(#ball-shadow)">
+                    <ellipse cx="314" cy="332" rx="47" ry="11" />
+                    <ellipse cx="396" cy="283" rx="34" ry="9" />
+                    <ellipse cx="238" cy="298" rx="25" ry="7" />
+                  </g>
+                  <circle cx="314" cy="278" r="45" fill="url(#ball-purple)" />
+                  <circle cx="397" cy="248" r="31" fill="url(#ball-teal)" />
+                  <circle cx="238" cy="270" r="23" fill="url(#ball-red)" />
+                  <circle cx="365" cy="201" r="18" fill="#ffd166" />
+                  <circle cx="292" cy="189" r="14" fill="#72a0ff" />
+                  <circle cx="420" cy="148" r="12" fill="#ff7d70" />
+                  <circle cx="486" cy="193" r="9" fill="#5ed6c0" />
+
+                  <g fill="none" stroke-linecap="round">
+                    <path d="M291 189q-35-41-2-77" stroke="#72a0ff" stroke-opacity="0.55" stroke-width="3" stroke-dasharray="4 8" />
+                    <path d="M420 148q42-44 86-13" stroke="#ff7d70" stroke-opacity="0.55" stroke-width="3" stroke-dasharray="4 8" />
+                  </g>
+
+                  <g transform="translate(520 74)">
+                    <path d="M0 28 14 0l5 19 18-5-23 31-3-19Z" fill="#ffb347" stroke="#fff3db" stroke-width="2" />
+                    <text x="18" y="66" fill="#17211d" font-family="IBM Plex Mono, monospace" font-size="10" text-anchor="middle">FAST</text>
+                  </g>
+                  <g transform="translate(71 75)">
+                    <circle cx="22" cy="22" r="18" fill="none" stroke="#48c9b0" stroke-width="6" />
+                    <circle cx="22" cy="22" r="6" fill="#48c9b0" />
+                    <text x="22" y="62" fill="#17211d" font-family="IBM Plex Mono, monospace" font-size="10" text-anchor="middle">BIG</text>
+                  </g>
+
+                  <g stroke="#fffdf7" stroke-width="2">
+                    <path d="M308 195h13M314.5 188.5v13" />
+                  </g>
+                  <g font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="1.2">
+                    <rect x="24" y="338" width="154" height="31" fill="#073e35" stroke="#fffdf7" stroke-opacity="0.3" />
+                    <text x="39" y="358" fill="#fffdf7">BALLS BOUNCING · 42</text>
+                    <rect x="460" y="338" width="156" height="31" fill="#073e35" stroke="#fffdf7" stroke-opacity="0.3" />
+                    <text x="476" y="358" fill="#ffb347">FAST · BIG · SPLAT</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>03 · Physics playground</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Bouncy Ball Blaster</h3>
+              <p class="lab-card-copy">
+                Roam a bright 3D arena, launch short-lived bouncing balls, and
+                collect temporary upgrades for rapid fire, jumbo shots, and
+                colorful splats.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · Three.js</span>
+                <strong>Enter playground <span aria-hidden="true">→</span></strong>
               </div>
             </a>
           </div>

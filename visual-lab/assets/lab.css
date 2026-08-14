@@ -151,7 +151,7 @@ select:focus-visible {
   transition: background 180ms ease;
 }
 
-.lab-card:first-child {
+.lab-card:nth-child(odd) {
   border-left: 1px solid var(--hairline);
 }
 
@@ -555,7 +555,7 @@ select:focus-visible {
   }
 
   .lab-card,
-  .lab-card:first-child {
+  .lab-card:nth-child(odd) {
     min-height: 580px;
     border-left: 1px solid var(--hairline);
   }
