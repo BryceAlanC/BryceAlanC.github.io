@@ -400,15 +400,59 @@ function projectileSubstepCount(ball, delta) {
   return clamp(Math.ceil(speed * delta / safeDistance), 1, PROJECTILE.maxCollisionSubsteps);
 }
 
-export function stepProjectile(ball, delta, boxes = [], arena = ARENA, ramps = [], platforms = []) {
+export function projectileGravityVector(gravity = 1) {
+  if (typeof gravity === "number") {
+    const sign = Number.isFinite(gravity) && gravity < 0 ? -1 : 1;
+    return { x: 0, y: PROJECTILE.gravity * sign, z: 0 };
+  }
+
+  if (gravity && typeof gravity === "object") {
+    if (Number.isFinite(gravity.gravitySign) || Number.isFinite(gravity.sign)) {
+      const signValue = gravity.gravitySign ?? gravity.sign;
+      const sign = signValue < 0 ? -1 : 1;
+      return { x: 0, y: PROJECTILE.gravity * sign, z: 0 };
+    }
+
+    const direction = {
+      x: Number.isFinite(gravity.x) ? gravity.x : 0,
+      y: Number.isFinite(gravity.y) ? gravity.y : 0,
+      z: Number.isFinite(gravity.z) ? gravity.z : 0
+    };
+    const directionLength = Math.sqrt(lengthSquared(direction));
+    if (directionLength <= EPSILON) return { x: 0, y: 0, z: 0 };
+    const magnitude = Number.isFinite(gravity.magnitude)
+      ? Math.max(0, gravity.magnitude)
+      : Math.abs(PROJECTILE.gravity);
+    return {
+      x: direction.x / directionLength * magnitude,
+      y: direction.y / directionLength * magnitude,
+      z: direction.z / directionLength * magnitude
+    };
+  }
+
+  return { x: 0, y: PROJECTILE.gravity, z: 0 };
+}
+
+export function stepProjectile(
+  ball,
+  delta,
+  boxes = [],
+  arena = ARENA,
+  ramps = [],
+  platforms = [],
+  gravity = 1
+) {
   const solids = boxes === platforms ? boxes : [...boxes, ...platforms];
   const substeps = projectileSubstepCount(ball, delta);
   const substep = delta / substeps;
   const collisions = [];
+  const gravityVector = projectileGravityVector(gravity);
 
   for (let index = 0; index < substeps; index += 1) {
     const drag = Math.exp(-PROJECTILE.airDrag * substep);
-    ball.velocity.y += PROJECTILE.gravity * substep;
+    ball.velocity.x += gravityVector.x * substep;
+    ball.velocity.y += gravityVector.y * substep;
+    ball.velocity.z += gravityVector.z * substep;
     ball.velocity.x *= drag;
     ball.velocity.y *= drag;
     ball.velocity.z *= drag;
@@ -506,6 +550,47 @@ export function groundSurfaceAt(
   return surface;
 }
 
+export function ceilingSurfaceAt(
+  x,
+  z,
+  boxes = [],
+  ramps = [],
+  platforms = [],
+  arena = ARENA,
+  minimumY = -Infinity
+) {
+  let surface = {
+    height: arena.ceilingY,
+    normal: { x: 0, y: -1, z: 0 },
+    id: "ceiling",
+    type: "ceiling"
+  };
+  const solids = boxes === platforms ? boxes : [...boxes, ...platforms];
+  for (const box of solids) {
+    if (!horizontalContains(box, x, z) || box.min.y < minimumY - EPSILON) continue;
+    if (box.min.y <= surface.height) {
+      surface = {
+        height: box.min.y,
+        normal: { x: 0, y: -1, z: 0 },
+        id: box.id || "platform-underside",
+        type: "platform-underside"
+      };
+    }
+  }
+  for (const ramp of ramps) {
+    const bounds = rampBounds(ramp);
+    if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ ||
+        bounds.baseY < minimumY - EPSILON || bounds.baseY > surface.height) continue;
+    surface = {
+      height: bounds.baseY,
+      normal: { x: 0, y: -1, z: 0 },
+      id: ramp.id || "ramp-underside",
+      type: "ramp-underside"
+    };
+  }
+  return surface;
+}
+
 function volumeBlocksPlayer(volume, x, z, footY, headY, radius, grounded, currentSurface, settings) {
   if (!overlapsExpandedBox(x, z, volume, radius)) return false;
   if (footY >= volume.max.y - COLLISION_SLOP || headY <= volume.min.y + COLLISION_SLOP) return false;
@@ -549,7 +634,7 @@ function findCeiling(currentHead, nextHead, x, z, radius, solids, arena) {
   return ceiling;
 }
 
-export function stepPlayer(
+function stepPlayerNormal(
   player,
   input,
   delta,
@@ -558,11 +643,23 @@ export function stepPlayer(
   ramps = [],
   platforms = [],
   arena = ARENA,
-  settings = PLAYER_PHYSICS
+  settings = PLAYER_PHYSICS,
+  gravityChanged = false
 ) {
   const solids = boxes === platforms ? boxes : [...boxes, ...platforms];
   const eyeHeight = input?.eyeHeight ?? settings.eyeHeight;
   const headClearance = input?.headClearance ?? settings.headClearance;
+  if (gravityChanged) {
+    const flipSurface = groundSurfaceAt(
+      player.position.x,
+      player.position.z,
+      boxes,
+      ramps,
+      platforms,
+      arena
+    );
+    player.position.y = Math.max(player.position.y, flipSurface.height + eyeHeight);
+  }
   const initialFoot = player.position.y - eyeHeight;
   const initialSurface = groundSurfaceAt(
     player.position.x,
@@ -573,15 +670,15 @@ export function stepPlayer(
     arena,
     initialFoot + settings.maxStepHeight
   );
-  let grounded = player.grounded === true || (
+  let grounded = !gravityChanged && (player.grounded === true || (
     player.grounded === undefined && Math.abs(initialFoot - initialSurface.height) <= settings.groundSnap
-  );
+  ));
   const wasGrounded = grounded;
   let jumped = false;
   let landed = false;
 
   if (input?.jumpRequested && grounded) {
-    player.velocity.y = settings.jumpSpeed;
+    player.velocity.y = input.jumpSpeed ?? settings.jumpSpeed;
     grounded = false;
     jumped = true;
   }
@@ -683,6 +780,7 @@ export function stepPlayer(
   }
 
   player.grounded = grounded;
+  player.gravitySign = 1;
   const finalSurface = grounded
     ? groundSurfaceAt(
       player.position.x,
@@ -700,8 +798,260 @@ export function stepPlayer(
     jumped,
     surfaceY: finalSurface?.height ?? null,
     surfaceNormal: finalSurface?.normal ?? null,
-    surfaceId: finalSurface?.id ?? null
+    surfaceId: finalSurface?.id ?? null,
+    gravitySign: 1
   };
+}
+
+function invertedVolumeBlocksPlayer(volume, x, z, bodyMinimum, bodyMaximum, radius) {
+  if (!overlapsExpandedBox(x, z, volume, radius)) return false;
+  return bodyMaximum > volume.min.y + COLLISION_SLOP &&
+    bodyMinimum < volume.max.y - COLLISION_SLOP;
+}
+
+function invertedRampBlocksPlayer(ramp, x, z, bodyMinimum, bodyMaximum, radius) {
+  const bounds = rampBounds(ramp);
+  if (x <= bounds.minX - radius || x >= bounds.maxX + radius ||
+      z <= bounds.minZ - radius || z >= bounds.maxZ + radius) return false;
+  const maximum = Math.max(bounds.baseY, rampHeightAtXZ(ramp, x, z, true));
+  return bodyMaximum > bounds.baseY + COLLISION_SLOP &&
+    bodyMinimum < maximum - COLLISION_SLOP;
+}
+
+function invertedHorizontalMoveBlocked(
+  x,
+  z,
+  bodyMinimum,
+  bodyMaximum,
+  radius,
+  solids,
+  ramps
+) {
+  return solids.some((solid) => invertedVolumeBlocksPlayer(
+    solid, x, z, bodyMinimum, bodyMaximum, radius
+  )) || ramps.some((ramp) => invertedRampBlocksPlayer(
+    ramp, x, z, bodyMinimum, bodyMaximum, radius
+  ));
+}
+
+function stepPlayerInverted(
+  player,
+  input,
+  delta,
+  radius,
+  boxes = [],
+  ramps = [],
+  platforms = [],
+  arena = ARENA,
+  settings = PLAYER_PHYSICS,
+  gravityChanged = false
+) {
+  const solids = boxes === platforms ? boxes : [...boxes, ...platforms];
+  const eyeHeight = input?.eyeHeight ?? settings.eyeHeight;
+  const headClearance = input?.headClearance ?? settings.headClearance;
+  player.position.y = Math.min(player.position.y, arena.ceilingY - eyeHeight);
+  const initialSupportY = player.position.y + eyeHeight;
+  const initialSurface = ceilingSurfaceAt(
+    player.position.x,
+    player.position.z,
+    boxes,
+    ramps,
+    platforms,
+    arena,
+    initialSupportY - settings.maxStepHeight
+  );
+  const touchingInitialSurface =
+    Math.abs(initialSupportY - initialSurface.height) <= settings.groundSnap;
+  let grounded = !gravityChanged && player.grounded !== false && touchingInitialSurface;
+  const wasGrounded = grounded;
+  let jumped = false;
+  let landed = false;
+
+  if (input?.jumpRequested && grounded) {
+    player.velocity.y = -(input.jumpSpeed ?? settings.jumpSpeed);
+    grounded = false;
+    jumped = true;
+  }
+
+  const bodyMinimum = player.position.y - headClearance;
+  const bodyMaximum = player.position.y + eyeHeight;
+  let nextX = clamp(
+    player.position.x + player.velocity.x * delta,
+    arena.minX + radius,
+    arena.maxX - radius
+  );
+  if (invertedHorizontalMoveBlocked(
+    nextX,
+    player.position.z,
+    bodyMinimum,
+    bodyMaximum,
+    radius,
+    solids,
+    ramps
+  )) {
+    nextX = player.position.x;
+    player.velocity.x = 0;
+  }
+  player.position.x = nextX;
+
+  let nextZ = clamp(
+    player.position.z + player.velocity.z * delta,
+    arena.minZ + radius,
+    arena.maxZ - radius
+  );
+  if (invertedHorizontalMoveBlocked(
+    player.position.x,
+    nextZ,
+    bodyMinimum,
+    bodyMaximum,
+    radius,
+    solids,
+    ramps
+  )) {
+    nextZ = player.position.z;
+    player.velocity.z = 0;
+  }
+  player.position.z = nextZ;
+
+  const support = ceilingSurfaceAt(
+    player.position.x,
+    player.position.z,
+    boxes,
+    ramps,
+    platforms,
+    arena,
+    initialSupportY - settings.maxStepHeight
+  );
+
+  if (grounded && !jumped) {
+    const change = support.height - initialSupportY;
+    if (change <= settings.groundSnap + COLLISION_SLOP &&
+        change >= -settings.maxStepHeight - COLLISION_SLOP) {
+      player.position.y = support.height - eyeHeight;
+      player.velocity.y = 0;
+    } else {
+      grounded = false;
+    }
+  }
+
+  if (!grounded) {
+    const previousY = player.position.y;
+    const previousSupportY = previousY + eyeHeight;
+    const previousHeadY = previousY - headClearance;
+    const terminalSpeed = Math.abs(settings.terminalVelocity ?? Infinity);
+    player.velocity.y = Math.min(
+      terminalSpeed,
+      player.velocity.y + Math.abs(settings.gravity) * delta
+    );
+    let nextY = previousY + player.velocity.y * delta;
+
+    if (player.velocity.y < 0) {
+      const nextHeadY = nextY - headClearance;
+      const headSurface = groundSurfaceAt(
+        player.position.x,
+        player.position.z,
+        boxes,
+        ramps,
+        platforms,
+        arena,
+        previousHeadY + COLLISION_SLOP
+      );
+      if (previousHeadY >= headSurface.height - COLLISION_SLOP &&
+          nextHeadY <= headSurface.height + COLLISION_SLOP) {
+        nextY = headSurface.height + headClearance + COLLISION_SLOP;
+        player.velocity.y = 0;
+      }
+    }
+
+    player.position.y = nextY;
+    const nextSupportY = nextY + eyeHeight;
+    const landingSurface = ceilingSurfaceAt(
+      player.position.x,
+      player.position.z,
+      boxes,
+      ramps,
+      platforms,
+      arena,
+      previousSupportY - settings.maxStepHeight
+    );
+    if (player.velocity.y >= 0 &&
+        previousSupportY <= landingSurface.height + settings.maxStepHeight &&
+        nextSupportY >= landingSurface.height - COLLISION_SLOP) {
+      player.position.y = landingSurface.height - eyeHeight;
+      player.velocity.y = 0;
+      grounded = true;
+      landed = !wasGrounded || jumped;
+    }
+  }
+
+  player.grounded = grounded;
+  player.gravitySign = -1;
+  const finalSurface = grounded
+    ? ceilingSurfaceAt(
+      player.position.x,
+      player.position.z,
+      boxes,
+      ramps,
+      platforms,
+      arena,
+      player.position.y + eyeHeight - settings.maxStepHeight
+    )
+    : null;
+  return {
+    grounded,
+    landed,
+    jumped,
+    surfaceY: finalSurface?.height ?? null,
+    surfaceNormal: finalSurface?.normal ?? null,
+    surfaceId: finalSurface?.id ?? null,
+    gravitySign: -1
+  };
+}
+
+export function stepPlayer(
+  player,
+  input,
+  delta,
+  radius,
+  boxes = [],
+  ramps = [],
+  platforms = [],
+  arena = ARENA,
+  settings = PLAYER_PHYSICS
+) {
+  const config = settings === PLAYER_PHYSICS
+    ? PLAYER_PHYSICS
+    : { ...PLAYER_PHYSICS, ...(settings || {}) };
+  const requestedSign = input?.gravitySign ?? config.gravitySign ?? 1;
+  const gravitySign = Number.isFinite(requestedSign) && requestedSign < 0 ? -1 : 1;
+  const gravityChanged = player.gravitySign !== undefined &&
+    player.gravitySign !== gravitySign;
+  if (gravitySign < 0) {
+    return stepPlayerInverted(
+      player,
+      input,
+      delta,
+      radius,
+      boxes,
+      ramps,
+      platforms,
+      arena,
+      config,
+      gravityChanged
+    );
+  }
+  return stepPlayerNormal(
+    player,
+    input,
+    delta,
+    radius,
+    boxes,
+    ramps,
+    platforms,
+    arena,
+    config,
+    gravityChanged
+  );
 }
 
 export function sphereIntersectsBox(position, radius, box) {

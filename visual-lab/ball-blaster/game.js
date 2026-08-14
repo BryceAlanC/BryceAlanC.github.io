@@ -15,6 +15,8 @@ const MAX_SUBSTEPS = 8;
 const PLAYER_HEIGHT = PLAYER_PHYSICS.eyeHeight;
 const PLAYER_RADIUS = 0.36;
 const WALK_SPEED = 5.2;
+const WALK_SPEEDS = [WALK_SPEED, 6.15, 7.2, 8.45, 9.85];
+const JUMP_SPEEDS = [PLAYER_PHYSICS.jumpSpeed, 12.25, 13.5, 14.75, 16];
 const LOOK_SPEEDS = [0.00115, 0.0018, 0.0026];
 const KEYBOARD_LOOK_SPEEDS = [1.05, 1.65, 2.35];
 const MAX_BALLS = 150;
@@ -30,6 +32,15 @@ const POWER_DURATION = 14;
 const PICKUP_RESPAWN = 3.5;
 const SPLAT_LIFETIME = 8;
 const BALL_FADE_TIME = 0.45;
+const TARGET_RADIUS = 0.72;
+const TARGET_COOLDOWN = 0.65;
+const COMBO_WINDOW = 3.2;
+const MAX_COMBO = 10;
+const GRAVITY_FIRST_FLIP = 22;
+const GRAVITY_FLIP_INTERVAL = 26;
+const GRAVITY_WARNING_TIME = 3;
+const GRAVITY_ROLL_SPEED = 3.4;
+const DEFAULT_RANDOM_SEED = 0x52f15e3d;
 
 const elements = {
   stage: document.getElementById("ball-stage"),
@@ -49,20 +60,37 @@ const elements = {
   hudRapid: document.getElementById("hud-rapid"),
   hudGiant: document.getElementById("hud-giant"),
   hudSplat: document.getElementById("hud-splat"),
+  hudSpeed: document.getElementById("hud-speed"),
+  hudJump: document.getElementById("hud-jump"),
+  hudScore: document.getElementById("hud-score"),
+  hudCombo: document.getElementById("hud-combo"),
+  hudGravity: document.getElementById("hud-gravity"),
   toast: document.getElementById("pickup-toast"),
   comfort: document.getElementById("comfort-mode"),
   lookSpeed: document.getElementById("look-speed"),
   lookSpeedValue: document.getElementById("look-speed-value"),
   reset: document.getElementById("reset-game"),
+  scoreCount: document.getElementById("score-count"),
+  comboCount: document.getElementById("combo-count"),
+  comboMeterFill: document.getElementById("combo-meter-fill"),
+  gravityState: document.getElementById("gravity-state"),
   ballCount: document.getElementById("ball-count"),
   bounceCount: document.getElementById("bounce-count"),
   splatCount: document.getElementById("splat-count"),
   powerRapid: document.querySelector("#power-rapid .power-value"),
   powerGiant: document.querySelector("#power-giant .power-value"),
   powerSplat: document.querySelector("#power-splat .power-value"),
+  powerSpeed: document.querySelector("#power-speed .power-value"),
+  powerJump: document.querySelector("#power-jump .power-value"),
   powerRapidRow: document.getElementById("power-rapid"),
   powerGiantRow: document.getElementById("power-giant"),
   powerSplatRow: document.getElementById("power-splat"),
+  powerSpeedRow: document.getElementById("power-speed"),
+  powerJumpRow: document.getElementById("power-jump"),
+  callout: document.getElementById("event-callout"),
+  calloutKicker: document.getElementById("event-callout-kicker"),
+  calloutTitle: document.getElementById("event-callout-title"),
+  calloutPoints: document.getElementById("event-callout-points"),
   announcer: document.getElementById("game-announcer")
 };
 
@@ -70,8 +98,11 @@ const palette = [0xffa45b, 0xff6b6b, 0xffd166, 0x5ed6c0, 0x72a0ff, 0xb886ff];
 const powerDefinitions = {
   rapid: { label: "Rapid fire", hud: "FAST", color: 0xffb347, symbol: "⚡" },
   giant: { label: "Jumbo balls", hud: "BIG", color: 0x48c9b0, symbol: "◉" },
-  splat: { label: "Splat shot", hud: "SPLAT", color: 0xff6f61, symbol: "✹" }
+  splat: { label: "Splat shot", hud: "SPLAT", color: 0xff6f61, symbol: "✹" },
+  speed: { label: "Turbo boots", hud: "SPEED", color: 0x4a9ee8, symbol: "»" },
+  jump: { label: "Moon jump", hud: "JUMP", color: 0xa988ea, symbol: "↑" }
 };
+const powerTypes = Object.keys(powerDefinitions);
 
 const simulation = {
   mode: "loading",
@@ -91,7 +122,8 @@ const simulation = {
   player: {
     position: { x: 0, y: PLAYER_HEIGHT, z: 12 },
     velocity: { x: 0, y: 0, z: 0 },
-    grounded: true
+    grounded: true,
+    gravitySign: 1
   },
   balls: [],
   splats: [],
@@ -99,13 +131,30 @@ const simulation = {
   nextSplatId: 1,
   bounceCount: 0,
   splatCount: 0,
+  score: 0,
+  combo: 1,
+  comboRemaining: 0,
+  lastTargetId: null,
+  scoreMilestones: new Set(),
+  targets: [],
   powers: {
     rapid: { level: 0, remaining: 0 },
     giant: { level: 0, remaining: 0 },
-    splat: { level: 0, remaining: 0 }
+    splat: { level: 0, remaining: 0 },
+    speed: { level: 0, remaining: 0 },
+    jump: { level: 0, remaining: 0 }
   },
-  pickupRespawns: { rapid: 0, giant: 0, splat: 0 },
+  pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0 },
   pickupObjects: {},
+  randomState: DEFAULT_RANDOM_SEED,
+  gravitySign: 1,
+  gravity: {
+    nextFlipAt: GRAVITY_FIRST_FLIP,
+    warningIssued: false,
+    flipCount: 0
+  },
+  cameraRoll: 0,
+  callout: { remaining: 0, priority: 0 },
   toastTimeout: 0,
   resizeObserver: null,
   renderer: null,
@@ -135,11 +184,25 @@ const rampDefinitions = [
 
 const solidDefinitions = obstacleDefinitions.concat(platformDefinitions);
 
-const pickupSpawns = {
-  rapid: new THREE.Vector3(-13.1, 2.8, 10),
-  giant: new THREE.Vector3(13, 4.2, -9),
-  splat: new THREE.Vector3(0, 3.4, -1.8)
-};
+const pickupSpawnPoints = [
+  { x: -16, y: 1, z: -11, gravitySign: 1 },
+  { x: -8, y: 1, z: 13, gravitySign: 1 },
+  { x: 7, y: 1, z: 11.5, gravitySign: 1 },
+  { x: 16.5, y: 1, z: -1, gravitySign: 1 },
+  { x: -9, y: 1, z: -9.5, gravitySign: 1 },
+  { x: 6, y: 1, z: -12.5, gravitySign: 1 },
+  { x: 0, y: 3.4, z: -1.8, gravitySign: 1 },
+  { x: 13, y: 4.2, z: -9, gravitySign: 1 },
+  { x: -13.1, y: 2.8, z: 10, gravitySign: 1 },
+  { x: -16, y: 11, z: -11, gravitySign: -1 },
+  { x: -8, y: 11, z: 12, gravitySign: -1 },
+  { x: 0, y: 11, z: -8, gravitySign: -1 },
+  { x: 8, y: 11, z: 12, gravitySign: -1 },
+  { x: 16, y: 11, z: -10, gravitySign: -1 },
+  { x: -15, y: 11, z: 1, gravitySign: -1 },
+  { x: 15, y: 11, z: 2, gravitySign: -1 },
+  { x: 0, y: 11, z: 7, gravitySign: -1 }
+];
 
 const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xddeee8, roughness: 0.82, metalness: 0 });
 const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xf3ddaa, roughness: 0.86, metalness: 0 });
@@ -151,6 +214,7 @@ const pickupRingGeometry = new THREE.TorusGeometry(0.72, 0.08, 8, 24);
 const instanceDummy = new THREE.Object3D();
 const zAxis = new THREE.Vector3(0, 0, 1);
 const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const targetFlashColor = new THREE.Color(0xffffff);
 
 function announce(message) {
   elements.announcer.textContent = "";
@@ -163,6 +227,54 @@ function setText(element, text) {
   if (element.textContent !== text) element.textContent = text;
 }
 
+function formatNumber(value) {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+function setRandomSeed(seed = DEFAULT_RANDOM_SEED) {
+  const normalized = Number(seed) >>> 0;
+  simulation.randomState = normalized || DEFAULT_RANDOM_SEED;
+  return simulation.randomState;
+}
+
+function randomUnit() {
+  let state = simulation.randomState >>> 0;
+  state ^= state << 13;
+  state ^= state >>> 17;
+  state ^= state << 5;
+  simulation.randomState = state >>> 0;
+  return simulation.randomState / 0x100000000;
+}
+
+function hideCallout() {
+  simulation.callout.remaining = 0;
+  simulation.callout.priority = 0;
+  elements.callout.classList.remove("is-active", "is-visible", "is-gravity", "is-combo", "is-score");
+  elements.callout.hidden = true;
+}
+
+function showCallout(kind, kicker, title, points, duration = 1.25, priority = 1) {
+  if (simulation.callout.remaining > 0 && priority < simulation.callout.priority) return false;
+  simulation.callout.remaining = duration;
+  simulation.callout.priority = priority;
+  elements.callout.hidden = false;
+  elements.callout.dataset.kind = kind;
+  elements.calloutKicker.textContent = kicker;
+  elements.calloutTitle.textContent = title;
+  elements.calloutPoints.textContent = points || "";
+  elements.callout.classList.remove("is-active", "is-visible", "is-gravity", "is-combo", "is-score");
+  // Restart the short entrance animation when a bigger moment replaces another.
+  void elements.callout.offsetWidth;
+  elements.callout.classList.add("is-active", "is-" + kind);
+  return true;
+}
+
+function updateCallout(delta) {
+  if (simulation.callout.remaining <= 0) return;
+  simulation.callout.remaining = Math.max(0, simulation.callout.remaining - delta);
+  if (simulation.callout.remaining === 0) hideCallout();
+}
+
 function powerLevel(type) {
   return simulation.powers[type].remaining > 0 ? simulation.powers[type].level : 0;
 }
@@ -173,6 +285,14 @@ function currentFireInterval() {
 
 function currentBallRadius() {
   return GIANT_BALL_RADII[powerLevel("giant")];
+}
+
+function currentWalkSpeed() {
+  return WALK_SPEEDS[powerLevel("speed")];
+}
+
+function currentJumpSpeed() {
+  return JUMP_SPEEDS[powerLevel("jump")];
 }
 
 function setStatus(text, className) {
@@ -227,7 +347,7 @@ function showReadyGate() {
   }
   setGate({
     title: "Ready to bounce?",
-    copy: "Fill the room with color. There are no enemies, no score, and no way to lose. Walk through a glowing power-up to change your launcher for a little while.",
+    copy: "Bank bright shots into the six wall targets, chain different targets for combo points, and chase the power-ups that pop up around the arena. There is still no way to lose — even when gravity flips.",
     controls: true,
     mouse: true,
     keyboard: true,
@@ -404,13 +524,33 @@ function createArena(scene) {
   solidDefinitions.forEach(function (definition) { makeBox(scene, definition); });
   rampDefinitions.forEach(function (definition) { makeRamp(scene, definition); });
 
+  simulation.targets = [];
   for (let index = 0; index < 6; index += 1) {
-    const target = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, 0.72, 24),
-      new THREE.MeshBasicMaterial({ color: palette[index % palette.length], side: THREE.DoubleSide })
+    const color = palette[index % palette.length];
+    const group = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.48, TARGET_RADIUS, 28),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
     );
-    target.position.set(-15 + index * 6, 4 + (index % 2) * 1.5, ARENA.minZ + 0.015);
-    scene.add(target);
+    const center = new THREE.Mesh(
+      new THREE.CircleGeometry(0.38, 24),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.5), side: THREE.DoubleSide })
+    );
+    center.position.z = 0.001;
+    group.add(ring, center);
+    group.position.set(-15 + index * 6, 4 + (index % 2) * 1.5, ARENA.minZ + 0.018);
+    scene.add(group);
+    simulation.targets.push({
+      id: index,
+      position: group.position,
+      radius: TARGET_RADIUS,
+      baseColor: new THREE.Color(color),
+      group,
+      ring,
+      center,
+      cooldown: 0,
+      flash: 0
+    });
   }
 }
 
@@ -504,8 +644,59 @@ function createLabelSprite(text, color) {
   return sprite;
 }
 
+function pickupSpawnIsClear(point, type) {
+  const playerDistance = Math.hypot(
+    simulation.player.position.x - point.x,
+    simulation.player.position.y - point.y,
+    simulation.player.position.z - point.z
+  );
+  if (playerDistance < 4) return false;
+  return !powerTypes.some(function (otherType) {
+    if (otherType === type) return false;
+    const other = simulation.pickupObjects[otherType];
+    if (!other || !other.visible) return false;
+    return other.position.distanceToSquared(point) < 4.5 * 4.5;
+  });
+}
+
+function relocatePickup(type, gravitySign = simulation.gravitySign) {
+  const object = simulation.pickupObjects[type];
+  if (!object) return null;
+  const sign = gravitySign < 0 ? -1 : 1;
+  const candidates = pickupSpawnPoints.filter(function (point) {
+    return point.gravitySign === sign;
+  });
+  if (!candidates.length) return null;
+  const startIndex = Math.floor(randomUnit() * candidates.length);
+  let chosen = null;
+  for (let offset = 0; offset < candidates.length; offset += 1) {
+    const candidate = candidates[(startIndex + offset) % candidates.length];
+    if (pickupSpawnIsClear(candidate, type)) {
+      chosen = candidate;
+      break;
+    }
+  }
+  // Five pickups share at least eight well-spaced anchors per gravity side, so
+  // this should only be needed if a future arena layout removes valid spots.
+  if (!chosen) chosen = candidates[startIndex];
+  object.position.set(chosen.x, chosen.y, chosen.z);
+  object.userData.baseY = chosen.y;
+  object.userData.gravitySign = sign;
+  if (object.userData.label) object.userData.label.position.y = sign < 0 ? -1.35 : 1.35;
+  return { x: chosen.x, y: chosen.y, z: chosen.z, gravitySign: sign };
+}
+
+function relocateVisiblePickups(gravitySign = simulation.gravitySign) {
+  const placements = {};
+  powerTypes.forEach(function (type) {
+    const object = simulation.pickupObjects[type];
+    if (object?.visible) placements[type] = relocatePickup(type, gravitySign);
+  });
+  return placements;
+}
+
 function createPickups(scene) {
-  Object.keys(powerDefinitions).forEach(function (type) {
+  powerTypes.forEach(function (type) {
     const definition = powerDefinitions[type];
     const group = new THREE.Group();
     const material = new THREE.MeshStandardMaterial({
@@ -518,12 +709,13 @@ function createPickups(scene) {
     const ring = new THREE.Mesh(pickupRingGeometry, material);
     ring.rotation.x = Math.PI / 2;
     group.add(core, ring);
-    group.add(createLabelSprite(type === "rapid" ? "FAST" : type === "giant" ? "BIG" : "SPLAT", definition.color));
-    group.position.copy(pickupSpawns[type]);
+    const label = createLabelSprite(definition.hud, definition.color);
+    group.add(label);
     group.userData.type = type;
-    group.userData.baseY = group.position.y;
+    group.userData.label = label;
     scene.add(group);
     simulation.pickupObjects[type] = group;
+    relocatePickup(type, 1);
   });
 }
 
@@ -562,7 +754,53 @@ function updateCamera() {
     simulation.player.position.y,
     simulation.player.position.z
   );
-  simulation.camera.rotation.set(simulation.pitch, simulation.yaw, 0, "YXZ");
+  simulation.camera.rotation.set(simulation.pitch, simulation.yaw, simulation.cameraRoll, "YXZ");
+}
+
+function updateCameraRoll(delta) {
+  const target = simulation.gravitySign < 0 ? Math.PI : 0;
+  if (elements.comfort.checked) {
+    simulation.cameraRoll = target;
+    return;
+  }
+  const blend = 1 - Math.exp(-GRAVITY_ROLL_SPEED * delta);
+  simulation.cameraRoll += (target - simulation.cameraRoll) * blend;
+  if (Math.abs(target - simulation.cameraRoll) < 0.001) simulation.cameraRoll = target;
+}
+
+function screenControlSign() {
+  return Math.cos(simulation.cameraRoll) < 0 ? -1 : 1;
+}
+
+function gravityLabel() {
+  return simulation.gravitySign < 0 ? "Ceiling ↑" : "Floor ↓";
+}
+
+function forceGravityFlip(options = {}) {
+  simulation.gravitySign *= -1;
+  simulation.gravity.flipCount += 1;
+  simulation.gravity.warningIssued = false;
+  if (options.schedule !== false) {
+    simulation.gravity.nextFlipAt = simulation.simulationTime + GRAVITY_FLIP_INTERVAL;
+  }
+  simulation.player.grounded = false;
+  relocateVisiblePickups(simulation.gravitySign);
+  const destination = simulation.gravitySign < 0 ? "Ceiling is down now" : "Floor is down again";
+  showCallout("gravity", "Arena alert", "Gravity flip!", destination, 2.25, 3);
+  if (options.announceEvent !== false) announce("Gravity flip! " + destination + ".");
+  if (isPlaying()) setStatus("Playing · " + (simulation.gravitySign < 0 ? "ceiling gravity" : "floor gravity"), "playing");
+  updateHud();
+  return simulation.gravitySign;
+}
+
+function updateGravity() {
+  const warningAt = simulation.gravity.nextFlipAt - GRAVITY_WARNING_TIME;
+  if (!simulation.gravity.warningIssued && simulation.simulationTime >= warningAt) {
+    simulation.gravity.warningIssued = true;
+    showCallout("gravity", "Get ready", "Gravity flip incoming!", "3 seconds", 1.75, 3);
+    announce("Gravity flip incoming in three seconds.");
+  }
+  if (simulation.simulationTime >= simulation.gravity.nextFlipAt) forceGravityFlip();
 }
 
 function resizeRenderer() {
@@ -678,9 +916,19 @@ function resetGame(options = {}) {
   simulation.nextSplatId = 1;
   simulation.bounceCount = 0;
   simulation.splatCount = 0;
+  simulation.score = 0;
+  simulation.combo = 1;
+  simulation.comboRemaining = 0;
+  simulation.lastTargetId = null;
+  simulation.scoreMilestones.clear();
   simulation.simulationTime = 0;
   simulation.fireCooldown = 0;
   simulation.accumulator = 0;
+  simulation.gravitySign = 1;
+  simulation.gravity.nextFlipAt = GRAVITY_FIRST_FLIP;
+  simulation.gravity.warningIssued = false;
+  simulation.gravity.flipCount = 0;
+  simulation.cameraRoll = 0;
   simulation.player.position.x = 0;
   simulation.player.position.y = PLAYER_HEIGHT;
   simulation.player.position.z = 12;
@@ -688,14 +936,30 @@ function resetGame(options = {}) {
   simulation.player.velocity.y = 0;
   simulation.player.velocity.z = 0;
   simulation.player.grounded = true;
+  simulation.player.gravitySign = 1;
   simulation.yaw = 0;
   simulation.pitch = 0;
-  Object.keys(simulation.powers).forEach(function (type) {
+  setRandomSeed();
+  powerTypes.forEach(function (type) {
     simulation.powers[type].level = 0;
     simulation.powers[type].remaining = 0;
     simulation.pickupRespawns[type] = 0;
-    simulation.pickupObjects[type].visible = true;
+    simulation.pickupObjects[type].visible = false;
   });
+  powerTypes.forEach(function (type) {
+    simulation.pickupObjects[type].visible = true;
+    relocatePickup(type, 1);
+  });
+  simulation.targets.forEach(function (target) {
+    target.cooldown = 0;
+    target.flash = 0;
+    target.group.scale.setScalar(1);
+    target.ring.material.color.copy(target.baseColor);
+    target.center.material.color.copy(target.baseColor).multiplyScalar(0.5);
+  });
+  window.clearTimeout(simulation.toastTimeout);
+  elements.toast.hidden = true;
+  hideCallout();
   clearInput();
   updateCamera();
   updateHud();
@@ -783,6 +1047,8 @@ function fireBall() {
     age: 0,
     color,
     splatLevel: powerLevel("splat"),
+    ricochets: 0,
+    targetHits: new Set(),
     slot,
     released: false
   };
@@ -829,8 +1095,97 @@ function addSplat(ball, collision) {
   return true;
 }
 
+function comboTitle(combo) {
+  if (combo === 2) return "Double hit!";
+  if (combo === 3) return "Triple hit!";
+  if (combo === 5) return "High five!";
+  if (combo === 8) return "Ricochet rush!";
+  if (combo >= 10) return "Mega combo!";
+  return combo + "× combo!";
+}
+
+function scoreTargetHit(ball, target) {
+  if (!ball || !target || target.cooldown > 0) return 0;
+  if (!(ball.targetHits instanceof Set)) ball.targetHits = new Set();
+  if (ball.targetHits.has(target.id)) return 0;
+  ball.targetHits.add(target.id);
+  target.cooldown = TARGET_COOLDOWN;
+  target.flash = 0.48;
+
+  const continues = simulation.comboRemaining > 0 && simulation.lastTargetId !== target.id;
+  simulation.combo = continues ? Math.min(MAX_COMBO, simulation.combo + 1) : 1;
+  simulation.comboRemaining = COMBO_WINDOW;
+  simulation.lastTargetId = target.id;
+  const ricochetBonus = 25 * Math.min(Math.max(0, ball.ricochets || 0), 4);
+  const points = (100 + ricochetBonus) * simulation.combo;
+  const previousScore = simulation.score;
+  simulation.score += points;
+
+  const isCombo = simulation.combo > 1;
+  const title = isCombo ? comboTitle(simulation.combo) : "Target hit!";
+  const priority = simulation.combo >= 3 ? 2 : 1;
+  showCallout(
+    isCombo ? "combo" : "score",
+    isCombo ? "Combo chain" : (ricochetBonus ? "Bank shot" : "Bullseye"),
+    title,
+    "+" + formatNumber(points) + " points",
+    simulation.combo >= 3 ? 1.55 : 0.95,
+    priority
+  );
+
+  const crossedMilestone = [5000, 10000, 25000, 50000].find(function (milestone) {
+    return previousScore < milestone && simulation.score >= milestone && !simulation.scoreMilestones.has(milestone);
+  });
+  if (crossedMilestone) {
+    simulation.scoreMilestones.add(crossedMilestone);
+    showCallout("score", "Score milestone", formatNumber(crossedMilestone) + " points!", "Keep it bouncing", 1.8, 2);
+    announce(formatNumber(crossedMilestone) + " point milestone!");
+  } else if (simulation.combo >= 3) {
+    announce(title + " " + formatNumber(points) + " points.");
+  }
+  updateHud();
+  return points;
+}
+
+function scoreFirstTargetCollision(ball, collisions) {
+  if (!collisions?.length) return 0;
+  for (const collision of collisions) {
+    if (!collision.normal || !collision.point || collision.normal.z < 0.9 ||
+        Math.abs(collision.point.z - ARENA.minZ) > 0.1) continue;
+    for (const target of simulation.targets) {
+      const x = collision.point.x - target.position.x;
+      const y = collision.point.y - target.position.y;
+      const hitRadius = target.radius + Math.min(ball.radius * 0.55, 0.7);
+      if (x * x + y * y <= hitRadius * hitRadius) return scoreTargetHit(ball, target);
+    }
+  }
+  return 0;
+}
+
+function updateScoring(delta) {
+  if (simulation.comboRemaining <= 0) return;
+  simulation.comboRemaining = Math.max(0, simulation.comboRemaining - delta);
+  if (simulation.comboRemaining === 0) {
+    simulation.combo = 1;
+    simulation.lastTargetId = null;
+  }
+}
+
+function updateTargets(delta) {
+  simulation.targets.forEach(function (target) {
+    target.cooldown = Math.max(0, target.cooldown - delta);
+    target.flash = Math.max(0, target.flash - delta);
+    const flashAmount = clamp(target.flash / 0.48, 0, 1);
+    target.ring.material.color.copy(target.baseColor).lerp(targetFlashColor, flashAmount);
+    target.center.material.color.copy(target.baseColor).multiplyScalar(0.5).lerp(targetFlashColor, flashAmount * 0.82);
+    const pulse = elements.comfort.checked ? 0 : Math.sin(flashAmount * Math.PI) * 0.16;
+    target.group.scale.setScalar(1 + pulse);
+  });
+}
+
 function activatePower(type) {
   const power = simulation.powers[type];
+  if (!power || !simulation.pickupObjects[type]) return false;
   power.level = Math.min(MAX_POWER_LEVEL, power.level + 1);
   power.remaining = POWER_DURATION;
   if (type === "rapid") simulation.fireCooldown = Math.min(simulation.fireCooldown, currentFireInterval());
@@ -843,14 +1198,18 @@ function activatePower(type) {
   simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 1500);
   announce(label + " level " + power.level + ". Timer refreshed to " + POWER_DURATION + " seconds.");
   updateHud();
+  return true;
 }
 
 function updatePickups(delta) {
-  Object.keys(powerDefinitions).forEach(function (type, index) {
+  powerTypes.forEach(function (type, index) {
     const object = simulation.pickupObjects[type];
     if (simulation.pickupRespawns[type] > 0) {
       simulation.pickupRespawns[type] = Math.max(0, simulation.pickupRespawns[type] - delta);
-      if (simulation.pickupRespawns[type] === 0) object.visible = true;
+      if (simulation.pickupRespawns[type] === 0) {
+        relocatePickup(type);
+        object.visible = true;
+      }
     }
     if (object.visible) {
       if (!elements.comfort.checked) {
@@ -867,7 +1226,7 @@ function updatePickups(delta) {
     }
   });
 
-  Object.keys(simulation.powers).forEach(function (type) {
+  powerTypes.forEach(function (type) {
     const power = simulation.powers[type];
     if (power.remaining <= 0) return;
     power.remaining = Math.max(0, power.remaining - delta);
@@ -881,8 +1240,8 @@ function updatePickups(delta) {
 function updatePlayer(delta) {
   const forwardInput = Number(simulation.keys.has("ArrowUp") || simulation.keys.has("KeyW")) -
     Number(simulation.keys.has("ArrowDown") || simulation.keys.has("KeyS"));
-  const sideInput = Number(simulation.keys.has("ArrowRight") || simulation.keys.has("KeyD")) -
-    Number(simulation.keys.has("ArrowLeft") || simulation.keys.has("KeyA"));
+  const sideInput = (Number(simulation.keys.has("ArrowRight") || simulation.keys.has("KeyD")) -
+    Number(simulation.keys.has("ArrowLeft") || simulation.keys.has("KeyA"))) * screenControlSign();
   const cameraForward = { x: -Math.sin(simulation.yaw), z: -Math.cos(simulation.yaw) };
   const cameraRight = { x: Math.cos(simulation.yaw), z: -Math.sin(simulation.yaw) };
   let desiredX = cameraForward.x * forwardInput + cameraRight.x * sideInput;
@@ -893,11 +1252,17 @@ function updatePlayer(delta) {
     desiredZ /= length;
   }
   const blend = 1 - Math.exp(-14 * delta);
-  simulation.player.velocity.x += (desiredX * WALK_SPEED - simulation.player.velocity.x) * blend;
-  simulation.player.velocity.z += (desiredZ * WALK_SPEED - simulation.player.velocity.z) * blend;
+  const walkSpeed = currentWalkSpeed();
+  simulation.player.velocity.x += (desiredX * walkSpeed - simulation.player.velocity.x) * blend;
+  simulation.player.velocity.z += (desiredZ * walkSpeed - simulation.player.velocity.z) * blend;
   const result = stepPlayer(
     simulation.player,
-    { jumpRequested: simulation.jumpQueued, eyeHeight: PLAYER_HEIGHT },
+    {
+      jumpRequested: simulation.jumpQueued,
+      eyeHeight: PLAYER_HEIGHT,
+      jumpSpeed: currentJumpSpeed(),
+      gravitySign: simulation.gravitySign
+    },
     delta,
     PLAYER_RADIUS,
     obstacleDefinitions,
@@ -921,8 +1286,13 @@ function updateKeyboardLook(delta) {
   const speed = KEYBOARD_LOOK_SPEEDS[Number(elements.lookSpeed.value) - 1];
   const horizontal = Number(simulation.keys.has("KeyL")) - Number(simulation.keys.has("KeyJ"));
   const vertical = Number(simulation.keys.has("KeyK")) - Number(simulation.keys.has("KeyI"));
-  simulation.yaw -= horizontal * speed * delta;
-  simulation.pitch = clamp(simulation.pitch - vertical * speed * delta, -Math.PI * 0.472, Math.PI * 0.472);
+  const controlSign = screenControlSign();
+  simulation.yaw -= horizontal * speed * delta * controlSign;
+  simulation.pitch = clamp(
+    simulation.pitch - vertical * speed * delta * controlSign,
+    -Math.PI * 0.472,
+    Math.PI * 0.472
+  );
 }
 
 function updateFiring(delta) {
@@ -936,6 +1306,10 @@ function updateFiring(delta) {
 
 function fixedUpdate(delta) {
   simulation.simulationTime += delta;
+  updateCallout(delta);
+  updateScoring(delta);
+  updateGravity();
+  updateTargets(delta);
   updateKeyboardLook(delta);
   updatePlayer(delta);
   updateFiring(delta);
@@ -943,10 +1317,22 @@ function fixedUpdate(delta) {
 
   const survivingBalls = [];
   for (const ball of simulation.balls) {
-    const collisions = stepProjectile(ball, delta, solidDefinitions, ARENA, rampDefinitions);
+    const collisions = stepProjectile(
+      ball,
+      delta,
+      solidDefinitions,
+      ARENA,
+      rampDefinitions,
+      solidDefinitions,
+      simulation.gravitySign
+    );
     let strongestSplatCollision = null;
     for (const collision of collisions) {
-      if (collision.speed > 0.5) simulation.bounceCount += 1;
+      scoreFirstTargetCollision(ball, [collision]);
+      if (collision.speed > 0.5) {
+        simulation.bounceCount += 1;
+        ball.ricochets += 1;
+      }
       if (ball.splatLevel > 0 && collision.speed >= PROJECTILE.splatThreshold &&
           (!strongestSplatCollision || collision.speed > strongestSplatCollision.speed)) {
         strongestSplatCollision = collision;
@@ -988,14 +1374,27 @@ function fixedUpdate(delta) {
   simulation.splats = survivingSplats;
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
+  updateCameraRoll(delta);
   updateCamera();
 }
 
 function updateHud() {
+  const scoreText = formatNumber(simulation.score);
+  const comboText = "×" + simulation.combo;
+  const currentGravity = gravityLabel();
+  setText(elements.scoreCount, scoreText);
+  setText(elements.hudScore, scoreText);
+  setText(elements.comboCount, comboText);
+  setText(elements.hudCombo, comboText + " combo");
+  setText(elements.gravityState, currentGravity);
+  setText(elements.hudGravity, currentGravity);
+  elements.hudCombo.classList.toggle("is-active", simulation.combo > 1 && simulation.comboRemaining > 0);
+  elements.hudGravity.classList.toggle("is-active", simulation.gravitySign < 0);
+  elements.comboMeterFill.style.width = clamp(simulation.comboRemaining / COMBO_WINDOW * 100, 0, 100) + "%";
   setText(elements.ballCount, String(simulation.balls.length));
   setText(elements.bounceCount, String(simulation.bounceCount));
   setText(elements.splatCount, String(simulation.splatCount));
-  ["rapid", "giant", "splat"].forEach(function (type) {
+  powerTypes.forEach(function (type) {
     const power = simulation.powers[type];
     const active = power.remaining > 0 && power.level > 0;
     const output = elements["power" + type.charAt(0).toUpperCase() + type.slice(1)];
@@ -1080,8 +1479,13 @@ window.addEventListener("mouseup", function (event) {
 window.addEventListener("mousemove", function (event) {
   if (simulation.mode !== "mouse" || document.pointerLockElement !== elements.canvas) return;
   const sensitivity = LOOK_SPEEDS[Number(elements.lookSpeed.value) - 1];
-  simulation.yaw -= event.movementX * sensitivity;
-  simulation.pitch = clamp(simulation.pitch - event.movementY * sensitivity, -Math.PI * 0.472, Math.PI * 0.472);
+  const controlSign = screenControlSign();
+  simulation.yaw -= event.movementX * sensitivity * controlSign;
+  simulation.pitch = clamp(
+    simulation.pitch - event.movementY * sensitivity * controlSign,
+    -Math.PI * 0.472,
+    Math.PI * 0.472
+  );
   updateCamera();
 });
 
@@ -1139,9 +1543,15 @@ elements.lookSpeed.addEventListener("input", function () {
   setText(elements.lookSpeedValue, label);
   elements.lookSpeed.setAttribute("aria-valuetext", label);
 });
+elements.comfort.addEventListener("change", function () {
+  elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
+  updateCameraRoll(1);
+  updateCamera();
+});
 
 document.getElementById("current-year").textContent = String(new Date().getFullYear());
 elements.comfort.checked = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
 
 try {
   initializeScene();
@@ -1168,6 +1578,20 @@ window.__ballBlasterDebug = {
   fixedUpdate,
   resetGame,
   activatePower,
+  scoreTargetHit,
+  hitTarget: function (targetId = 0, ricochets = 0) {
+    const target = simulation.targets.find(function (candidate) { return candidate.id === targetId; });
+    if (!target) return 0;
+    target.cooldown = 0;
+    return scoreTargetHit({ ricochets, targetHits: new Set() }, target);
+  },
+  setRandomSeed,
+  resetRandomSeed: function () { return setRandomSeed(DEFAULT_RANDOM_SEED); },
+  relocatePickup,
+  relocatePickups: relocateVisiblePickups,
+  forceGravityFlip,
+  updateGravity,
+  screenControlSign,
   pauseGame,
   beginKeyboardMode,
   constants: {
@@ -1177,8 +1601,17 @@ window.__ballBlasterDebug = {
     baseFireInterval: BASE_FIRE_INTERVAL,
     rapidFireIntervals: RAPID_FIRE_INTERVALS,
     giantBallRadii: GIANT_BALL_RADII,
+    walkSpeeds: WALK_SPEEDS,
+    jumpSpeeds: JUMP_SPEEDS,
     maxPowerLevel: MAX_POWER_LEVEL,
     powerDuration: POWER_DURATION,
-    pickupRespawn: PICKUP_RESPAWN
+    pickupRespawn: PICKUP_RESPAWN,
+    comboWindow: COMBO_WINDOW,
+    maxCombo: MAX_COMBO,
+    targetCooldown: TARGET_COOLDOWN,
+    gravityFirstFlip: GRAVITY_FIRST_FLIP,
+    gravityFlipInterval: GRAVITY_FLIP_INTERVAL,
+    gravityWarningTime: GRAVITY_WARNING_TIME,
+    defaultRandomSeed: DEFAULT_RANDOM_SEED
   }
 };

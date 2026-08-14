@@ -63,6 +63,7 @@ select:focus-visible {
   background-size: 50px 50px;
   content: "";
   mask-image: linear-gradient(to bottom, black, transparent 92%);
+  pointer-events: none;
 }
 
 .lab-intro-grid,

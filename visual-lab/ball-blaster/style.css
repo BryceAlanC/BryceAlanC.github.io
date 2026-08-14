@@ -47,6 +47,7 @@
   min-height: 680px;
   overflow: hidden;
   background: #102b35;
+  scroll-margin-top: 88px;
 }
 
 .ball-stage canvas {
@@ -54,6 +55,7 @@
   width: 100%;
   height: 680px;
   outline-offset: -5px;
+  scroll-margin-top: 88px;
 }
 
 .game-gate {
@@ -71,7 +73,8 @@
 
 .game-gate[hidden],
 .game-hud[hidden],
-.pickup-toast[hidden] {
+.pickup-toast[hidden],
+.event-callout[hidden] {
   display: none;
 }
 
@@ -194,6 +197,162 @@
   display: block;
 }
 
+.hud-scoreboard {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+  color: var(--white);
+  font-family: var(--mono);
+  text-align: right;
+  text-shadow: 0 2px 10px rgba(2, 24, 21, 0.8);
+}
+
+.hud-score {
+  display: grid;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(255, 253, 247, 0.24);
+  background: rgba(7, 30, 25, 0.78);
+  line-height: 1;
+}
+
+.hud-score small {
+  margin-bottom: 0.18rem;
+  color: rgba(255, 253, 247, 0.68);
+  font-size: 0.54rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud-score strong {
+  font-size: clamp(1.15rem, 2.5vw, 1.65rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-combo,
+.hud-gravity {
+  display: none;
+  width: max-content;
+  max-width: 15rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid rgba(255, 253, 247, 0.2);
+  background: rgba(7, 30, 25, 0.78);
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.hud-combo.is-active,
+.hud-gravity.is-active {
+  display: block;
+}
+
+.hud-combo {
+  color: #ffd166;
+}
+
+.hud-gravity {
+  display: block;
+  color: #8ee8ff;
+}
+
+.event-callout {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(92%, 800px);
+  justify-items: center;
+  padding: clamp(0.75rem, 3vw, 1.5rem);
+  color: var(--white);
+  filter: drop-shadow(0 10px 28px rgba(4, 22, 29, 0.7));
+  line-height: 0.9;
+  pointer-events: none;
+  text-align: center;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+}
+
+.event-callout::before {
+  position: absolute;
+  z-index: -1;
+  inset: -0.5rem 0;
+  border-block: 2px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(90deg, transparent, rgba(7, 30, 25, 0.86) 18%, rgba(7, 30, 25, 0.86) 82%, transparent);
+  content: "";
+}
+
+.event-callout-kicker {
+  margin-bottom: 0.55rem;
+  font-family: var(--mono);
+  font-size: clamp(0.62rem, 1.6vw, 0.82rem);
+  font-weight: 500;
+  letter-spacing: 0.22em;
+}
+
+.event-callout-title {
+  max-width: 100%;
+  color: #ffe26f;
+  font-family: var(--serif);
+  font-size: clamp(2.35rem, 8vw, 6.4rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 0.84;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 18px rgba(255, 217, 88, 0.48);
+}
+
+.event-callout-points {
+  min-height: 0.8em;
+  margin-top: 0.55rem;
+  color: #fffdf7;
+  font-family: var(--mono);
+  font-size: clamp(0.85rem, 2.6vw, 1.4rem);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+}
+
+.event-callout.is-active,
+.event-callout.is-visible {
+  animation: callout-arrive 520ms cubic-bezier(0.2, 1.5, 0.45, 1) both;
+}
+
+.event-callout.is-gravity .event-callout-title,
+.event-callout[data-kind="gravity"] .event-callout-title {
+  color: #ff6fb5;
+  text-shadow: 0 0 24px rgba(255, 69, 154, 0.72);
+  animation: gravity-warning 800ms steps(2, end) 2;
+}
+
+.event-callout.is-gravity::before,
+.event-callout[data-kind="gravity"]::before {
+  border-color: #67e8ff;
+  background: linear-gradient(90deg, transparent, rgba(53, 12, 65, 0.9) 18%, rgba(7, 53, 68, 0.9) 82%, transparent);
+}
+
+.event-callout.is-combo .event-callout-title,
+.event-callout[data-kind="combo"] .event-callout-title,
+.event-callout.is-score .event-callout-title,
+.event-callout[data-kind="score"] .event-callout-title {
+  color: #ffd166;
+}
+
+@keyframes callout-arrive {
+  0% { opacity: 0; transform: translate(-50%, -43%) scale(0.76); }
+  64% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes gravity-warning {
+  0%, 100% { color: #ff6fb5; text-shadow: 0 0 24px rgba(255, 69, 154, 0.72); }
+  50% { color: #67e8ff; text-shadow: 0 0 24px rgba(74, 225, 255, 0.72); }
+}
+
 .pickup-toast {
   position: absolute;
   z-index: 5;
@@ -270,6 +429,29 @@
   color: var(--forest);
   font-family: var(--mono);
   font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.run-stats .run-stat-feature strong {
+  color: #996313;
+  font-size: 1.12rem;
+}
+
+.combo-meter {
+  height: 4px;
+  margin: -0.38rem 0 0.8rem;
+  overflow: hidden;
+  background: rgba(183, 121, 31, 0.14);
+}
+
+.combo-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #d09b34, #f06f3d);
+  box-shadow: 0 0 8px rgba(240, 111, 61, 0.45);
+  transition: width 120ms linear;
 }
 
 #reset-game {
@@ -332,6 +514,20 @@
 .power-rapid .power-icon { color: #b7791f; }
 .power-giant .power-icon { color: var(--teal); }
 .power-splat .power-icon { color: var(--orange); }
+.power-speed .power-icon { color: #2563a4; }
+.power-jump .power-icon { color: #7552a3; }
+
+body.comfort-mode .event-callout,
+.ball-stage.is-comfort-mode .event-callout,
+body:has(#comfort-mode:checked) .event-callout {
+  animation: none;
+}
+
+body.comfort-mode .event-callout-title,
+.ball-stage.is-comfort-mode .event-callout-title,
+body:has(#comfort-mode:checked) .event-callout-title {
+  animation: none !important;
+}
 
 .noscript-note {
   width: min(1180px, calc(100% - 3rem));
@@ -360,6 +556,21 @@
   .gate-controls {
     grid-template-columns: 1fr;
   }
+
+  .hud-scoreboard {
+    top: 0.65rem;
+    right: 0.65rem;
+  }
+
+  .hud-powers {
+    top: 0.65rem;
+    left: 0.65rem;
+    max-width: 52%;
+  }
+
+  .event-callout-title {
+    font-size: clamp(2.1rem, 12vw, 4.4rem);
+  }
 }
 
 @media (max-width: 480px) {
@@ -379,6 +590,29 @@
 
   .power-row {
     grid-template-columns: 28px minmax(0, 1fr) minmax(54px, auto);
+  }
+
+  .hud-score {
+    padding: 0.38rem 0.48rem;
+  }
+
+  .hud-score strong {
+    font-size: 1rem;
+  }
+
+  .hud-combo,
+  .hud-gravity {
+    max-width: 9rem;
+    font-size: 0.54rem;
+  }
+
+  .hud-powers {
+    gap: 0.25rem;
+  }
+
+  .hud-powers span {
+    padding: 0.28rem 0.38rem;
+    font-size: 0.52rem;
   }
 
   .game-gate {
@@ -405,5 +639,16 @@
 
   .gate-actions {
     margin-top: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-callout,
+  .event-callout-title {
+    animation: none !important;
+  }
+
+  .combo-meter span {
+    transition: none;
   }
 }

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A playful Three.js arena where you leap over ramps, launch bouncing balls, and stack rapid-fire, jumbo-ball, and colorful splat power-ups.">
+  <meta name="description" content="A playful Three.js arena with gravity flips, target combos, randomized stackable power-ups, goofy jumps, and short-lived bouncing balls.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#0b5748">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Bouncy Ball Blaster | Bryce Christopherson">
-  <meta property="og:description" content="Leap through a bright 3D arena, fill it with bouncing balls, and stack playful launcher power-ups.">
+  <meta property="og:description" content="Chase targets and combos through a bright 3D arena while gravity flips and five playful power-ups stack.">
   <title>Bouncy Ball Blaster · Bryce A. Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,7 +61,7 @@
         <div class="app-hero-grid">
           <p class="section-kicker">Physics playground · 03</p>
           <h1>Run, leap,<br>ricochet.</h1>
-          <p class="app-hero-copy">Bound through a roomy arena of ramps and platforms, then fill it with short-lived bouncing balls. Grab the same power-up again to stack its effect: launch faster, grow truly enormous balls, or make them splat on impact.</p>
+          <p class="app-hero-copy">Bound through a roomy arena, chase high-scoring target combos, and fill the air with short-lived bouncing balls. Five power-ups appear in new places and stack into gloriously silly upgrades—but watch for the warning when the floor and ceiling swap jobs.</p>
         </div>
       </div>
     </section>
@@ -70,7 +70,7 @@
       <div class="lab-stage-shell ball-layout">
         <aside class="control-panel ball-desk" aria-label="Playground controls and status">
           <h2>Play desk</h2>
-          <p>Jump the ramps, stack power-ups, and make as much bouncing color as you like—there is no score and no way to lose.</p>
+          <p>Hit glowing targets in quick succession to build a combo. Roaming power-ups and sudden gravity flips keep every run unpredictable.</p>
 
           <fieldset class="control-group">
             <legend>Controls</legend>
@@ -90,7 +90,7 @@
               <input id="comfort-mode" type="checkbox" aria-describedby="comfort-help">
               <span>Comfort mode</span>
             </label>
-            <p class="option-help" id="comfort-help">Stops decorative power-up motion.</p>
+            <p class="option-help" id="comfort-help">Stops decorative motion and softens flashing callouts.</p>
             <div class="field-label"><label for="look-speed">Look speed</label> <span id="look-speed-value">Medium</span></div>
             <input id="look-speed" type="range" min="1" max="3" step="1" value="2" aria-valuetext="Medium">
           </fieldset>
@@ -98,16 +98,20 @@
           <fieldset class="control-group">
             <legend>Current run</legend>
             <div class="run-stats">
+              <div class="run-stat-feature"><span>Score</span><strong id="score-count">0</strong></div>
+              <div class="run-stat-feature"><span>Combo</span><strong id="combo-count">×1</strong></div>
+              <div><span>Gravity</span><strong id="gravity-state">Floor ↓</strong></div>
               <div><span>Balls bouncing</span><strong id="ball-count">0</strong></div>
               <div><span>Bounces</span><strong id="bounce-count">0</strong></div>
               <div><span>Splats</span><strong id="splat-count">0</strong></div>
             </div>
+            <div class="combo-meter" aria-hidden="true"><span id="combo-meter-fill"></span></div>
             <button class="lab-button" id="reset-game" type="button">Start over</button>
           </fieldset>
 
           <fieldset class="control-group power-list">
             <legend>Power-ups</legend>
-            <p class="power-help">Pick up another of the same kind before time runs out to add a level and refresh its timer.</p>
+            <p class="power-help">Power-ups reappear around the arena. Find another of the same kind before time runs out to add a level and refresh its timer.</p>
             <div class="power-row power-rapid" id="power-rapid">
               <span class="power-icon" aria-hidden="true">⚡</span>
               <span class="power-copy"><strong>Rapid fire</strong><small>Each level fires faster</small></span>
@@ -121,6 +125,16 @@
             <div class="power-row power-splat" id="power-splat">
               <span class="power-icon" aria-hidden="true">✹</span>
               <span class="power-copy"><strong>Splat shot</strong><small>Vanishes on the first hit</small></span>
+              <span class="power-value">Level 0</span>
+            </div>
+            <div class="power-row power-speed" id="power-speed">
+              <span class="power-icon" aria-hidden="true">»</span>
+              <span class="power-copy"><strong>Turbo boots</strong><small>Each level makes you faster</small></span>
+              <span class="power-value">Level 0</span>
+            </div>
+            <div class="power-row power-jump" id="power-jump">
+              <span class="power-icon" aria-hidden="true">↑</span>
+              <span class="power-copy"><strong>Moon jump</strong><small>Each level jumps higher and farther</small></span>
               <span class="power-value">Level 0</span>
             </div>
           </fieldset>
@@ -145,7 +159,20 @@
                   <span id="hud-rapid">FAST</span>
                   <span id="hud-giant">BIG</span>
                   <span id="hud-splat">SPLAT</span>
+                  <span id="hud-speed">SPEED</span>
+                  <span id="hud-jump">JUMP</span>
                 </div>
+                <div class="hud-scoreboard">
+                  <span class="hud-score"><small>Score</small><strong id="hud-score">0</strong></span>
+                  <span class="hud-combo" id="hud-combo">×1 combo</span>
+                  <span class="hud-gravity" id="hud-gravity">Floor ↓</span>
+                </div>
+              </div>
+
+              <div class="event-callout" id="event-callout" hidden aria-hidden="true">
+                <span class="event-callout-kicker" id="event-callout-kicker">Arena alert</span>
+                <strong class="event-callout-title" id="event-callout-title">Gravity flip!</strong>
+                <span class="event-callout-points" id="event-callout-points"></span>
               </div>
 
               <div class="game-gate" id="game-gate">
@@ -174,7 +201,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>How it works.</strong> Leap across ramps and platforms while each launched sphere follows gravity and loses a little energy on every bounce. Balls fade sooner so stacked rapid fire can get wonderfully chaotic without filling the arena forever. Repeated power-ups add levels and refresh their timers; splat balls leave a colorful mark and disappear on their first solid impact. Balls pass through one another so the mayhem stays smooth.</p>
+          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards. Power-ups return at random open spots, and repeated pickups add levels while refreshing their timers. Turbo boots increase running speed, moon jump increases both height and distance, and splat balls leave one colorful mark before disappearing. Periodic gravity warnings announce when the ceiling becomes the floor—or flips back again. Balls remain short-lived and pass through one another so even a maximum-stack barrage stays smooth.</p>
         </div>
       </div>
     </section>
