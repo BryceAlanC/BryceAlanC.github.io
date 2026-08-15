@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A playful Three.js arena where any of twelve faces can become the floor, with terrain on many sides, roaming targets, six longer-stacking power-ups, goofy jumps, and short-lived bouncing balls.">
+  <meta name="description" content="A playful Three.js arena with twelve gravity faces, roaming targets, stackable power-ups, ball-splitting splat cascades, goofy jumps, and exuberant combo scoring.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#0b5748">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Bouncy Ball Blaster | Bryce Christopherson">
-  <meta property="og:description" content="Chase roaming targets through a bright many-sided arena while gravity shifts and six playful power-ups stack for longer.">
+  <meta property="og:description" content="Chase roaming targets through a many-sided arena, stack six playful power-ups, and trigger colorful splat cascades and jackpot combos.">
   <title>Bouncy Ball Blaster · Bryce A. Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -126,7 +126,7 @@
             </div>
             <div class="power-row power-splat" id="power-splat">
               <span class="power-icon" aria-hidden="true">✹</span>
-              <span class="power-copy"><strong>Splat shot</strong><small>Vanishes on the first hit</small></span>
+              <span class="power-copy"><strong>Splat cascade</strong><small>Splits into more balls each level</small></span>
               <span class="power-value">Level 0</span>
             </div>
             <div class="power-row power-speed" id="power-speed">
@@ -160,6 +160,19 @@
             <div class="ball-stage" id="ball-stage" role="region" aria-label="Bouncy Ball Blaster 3D playground">
               <canvas id="game-canvas" tabindex="-1" aria-label="First-person view of a bright many-sided arena with terrain on many faces, roaming targets, bouncing colored balls, and collectible power-ups" aria-describedby="key-guide"></canvas>
 
+              <div class="stage-celebration" id="stage-celebration" aria-hidden="true">
+                <span class="celebration-rail celebration-rail-top"></span>
+                <span class="celebration-rail celebration-rail-right"></span>
+                <span class="celebration-rail celebration-rail-bottom"></span>
+                <span class="celebration-rail celebration-rail-left"></span>
+                <span class="celebration-spark celebration-spark-one">✦</span>
+                <span class="celebration-spark celebration-spark-two">★</span>
+                <span class="celebration-spark celebration-spark-three">✦</span>
+                <span class="celebration-spark celebration-spark-four">★</span>
+              </div>
+
+              <div class="score-burst-layer" id="score-burst-layer" aria-hidden="true"></div>
+
               <div class="game-hud" id="game-hud" aria-hidden="true" hidden>
                 <div class="crosshair"></div>
                 <div class="hud-powers">
@@ -172,7 +185,10 @@
                 </div>
                 <div class="hud-scoreboard">
                   <span class="hud-score"><small>Score</small><strong id="hud-score">0</strong></span>
-                  <span class="hud-combo" id="hud-combo">×1 combo</span>
+                  <span class="hud-combo-stack" id="hud-combo-stack">
+                    <span class="hud-combo" id="hud-combo">×1 combo</span>
+                    <span class="hud-combo-meter" aria-hidden="true"><span id="hud-combo-meter-fill"></span></span>
+                  </span>
                   <span class="hud-gravity" id="hud-gravity">Down: Golden floor</span>
                   <span class="hud-gravity-countdown" id="hud-gravity-countdown">Shift in 22 s</span>
                   <span class="hud-target" id="hud-target">Targets hit: 0</span>
@@ -180,6 +196,7 @@
               </div>
 
               <div class="event-callout" id="event-callout" hidden aria-hidden="true">
+                <span class="event-callout-stars" aria-hidden="true">★&nbsp; ✦ &nbsp;★&nbsp; ✦ &nbsp;★</span>
                 <span class="event-callout-kicker" id="event-callout-kicker">Arena alert</span>
                 <strong class="event-callout-title" id="event-callout-title">Gravity shift!</strong>
                 <span class="event-callout-points" id="event-callout-points"></span>
@@ -211,7 +228,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. Matching power-ups add both a level and more time. Turbo boots increase running speed, moon jump adds height and distance, Wall Walk lets you keep running onto a wall, and splat balls leave one colorful mark before disappearing. Gravity warnings announce which of the twelve faces will become down next. Comfort mode snaps the view into place while targets keep roaming. Balls remain short-lived and pass through one another so even a maximum-stack barrage stays smooth.</p>
+          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. Matching power-ups add both a level and more time. Turbo boots increase running speed, moon jump adds height and distance, and Wall Walk lets you keep running onto a wall. Splat shots leave a colorful mark, then burst into a larger cascade of balls at higher levels. Gravity warnings announce which of the twelve faces will become down next. Comfort mode snaps the view into place and keeps celebrations still while targets continue roaming. Balls remain short-lived and pass through one another so even a maximum-stack barrage stays smooth.</p>
         </div>
       </div>
     </section>

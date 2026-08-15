@@ -42,6 +42,17 @@ const RAPID_FIRE_INTERVALS = [0.28, 0.09, 0.065, 0.05, 0.04];
 const GIANT_BALL_RADII = [BASE_BALL_RADIUS, 0.38, 0.65, 1, 1.4];
 const BALL_GROWTH_DURATION = 0.36;
 const SPLAT_SCALE_MULTIPLIERS = [1, 1, 1.45, 1.9, 2.4];
+const SPLAT_CHILD_COUNTS = [0, 2, 3, 4, 6];
+const SPLAT_CASCADE_POINTS = [0, 50, 100, 200, 400];
+const SPLAT_FRAGMENT_RADIUS_MULTIPLIERS = [0, 0.64, 0.58, 0.52, 0.46];
+const SPLAT_FRAGMENT_LIFETIME = 2.75;
+const SPLAT_CALLOUT_COOLDOWN = 0.34;
+const SPLAT_AWARD_COOLDOWN = 0.34;
+const SCORE_BURST_MIN_INTERVAL = 0.11;
+const STAGE_CELEBRATION_MIN_INTERVAL = 0.4;
+const COMBO_TIER_BONUSES = Object.freeze({ 3: 1000, 5: 2500, 8: 5000, 10: 10000 });
+const SCORE_MILESTONES = [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+const MAX_SCORE_BURSTS = 8;
 const MAX_POWER_LEVEL = 4;
 const POWER_INITIAL_DURATION = 30;
 const POWER_STACK_TIME = 10;
@@ -100,6 +111,7 @@ const elements = {
   scoreCount: document.getElementById("score-count"),
   comboCount: document.getElementById("combo-count"),
   comboMeterFill: document.getElementById("combo-meter-fill"),
+  hudComboMeterFill: document.getElementById("hud-combo-meter-fill"),
   gravityState: document.getElementById("gravity-state"),
   gravityCountdown: document.getElementById("gravity-countdown"),
   targetCount: document.getElementById("target-count"),
@@ -122,6 +134,8 @@ const elements = {
   calloutKicker: document.getElementById("event-callout-kicker"),
   calloutTitle: document.getElementById("event-callout-title"),
   calloutPoints: document.getElementById("event-callout-points"),
+  scoreBurstLayer: document.getElementById("score-burst-layer"),
+  stageCelebration: document.getElementById("stage-celebration"),
   announcer: document.getElementById("game-announcer")
 };
 
@@ -190,12 +204,20 @@ const simulation = {
   nextSplatId: 1,
   bounceCount: 0,
   splatCount: 0,
+  cascadeCount: 0,
+  cascadeAwardCount: 0,
+  cascadeFragmentCount: 0,
+  cascadePoints: 0,
   targetHits: 0,
   score: 0,
   combo: 1,
   comboRemaining: 0,
   lastTargetId: null,
+  comboTierAwards: new Set(),
   scoreMilestones: new Set(),
+  lastPointAward: null,
+  lastCascadeCalloutAt: -Infinity,
+  lastCascadeAwardAt: -Infinity,
   targets: [],
   powers: {
     rapid: { level: 0, remaining: 0 },
@@ -208,7 +230,7 @@ const simulation = {
   pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0 },
   pickupObjects: {},
   randomSeed: DEFAULT_RANDOM_SEED,
-  randomStreams: { pickup: 1, target: 1, gravity: 1 },
+  randomStreams: { pickup: 1, target: 1, gravity: 1, cascade: 1 },
   gravityFaceId: startFace.id,
   playerFaceId: startFace.id,
   gravity: {
@@ -221,6 +243,13 @@ const simulation = {
   wallWalkCooldown: 0,
   cameraQuaternion: new THREE.Quaternion(),
   callout: { remaining: 0, priority: 0 },
+  lastCelebrationAt: -Infinity,
+  lastCelebrationRank: -1,
+  lastScoreBurstAt: -Infinity,
+  lastScoreBurstRank: -1,
+  scoreBurstSequence: 0,
+  celebrationTimers: {},
+  celebrationFrames: {},
   toastTimeout: 0,
   resizeObserver: null,
   renderer: null,
@@ -268,6 +297,7 @@ function setRandomSeed(seed = DEFAULT_RANDOM_SEED) {
   simulation.randomStreams.pickup = (simulation.randomSeed ^ 0x9e3779b9) >>> 0 || 0x1a2b3c4d;
   simulation.randomStreams.target = (simulation.randomSeed ^ 0x85ebca6b) >>> 0 || 0x5f356495;
   simulation.randomStreams.gravity = (simulation.randomSeed ^ 0xc2b2ae35) >>> 0 || 0x6d2b79f5;
+  simulation.randomStreams.cascade = (simulation.randomSeed ^ 0x27d4eb2f) >>> 0 || 0x4c957f2d;
   return simulation.randomSeed;
 }
 
@@ -299,15 +329,18 @@ function hideCallout() {
   simulation.callout.remaining = 0;
   simulation.callout.priority = 0;
   elements.callout.classList.remove("is-active", "is-visible", "is-gravity", "is-combo", "is-score");
+  delete elements.callout.dataset.tier;
   elements.callout.hidden = true;
 }
 
-function showCallout(kind, kicker, title, points, duration = 1.25, priority = 1) {
+function showCallout(kind, kicker, title, points, duration = 1.25, priority = 1, tier = "") {
   if (simulation.callout.remaining > 0 && priority < simulation.callout.priority) return false;
   simulation.callout.remaining = duration;
   simulation.callout.priority = priority;
   elements.callout.hidden = false;
   elements.callout.dataset.kind = kind;
+  if (tier) elements.callout.dataset.tier = tier;
+  else delete elements.callout.dataset.tier;
   elements.calloutKicker.textContent = kicker;
   elements.calloutTitle.textContent = title;
   elements.calloutPoints.textContent = points || "";
@@ -322,6 +355,140 @@ function updateCallout(delta) {
   if (simulation.callout.remaining <= 0) return;
   simulation.callout.remaining = Math.max(0, simulation.callout.remaining - delta);
   if (simulation.callout.remaining === 0) hideCallout();
+}
+
+function clearCelebrations() {
+  Object.values(simulation.celebrationTimers).forEach(function (timer) { window.clearTimeout(timer); });
+  Object.values(simulation.celebrationFrames).forEach(function (frame) { window.cancelAnimationFrame(frame); });
+  simulation.celebrationTimers = {};
+  simulation.celebrationFrames = {};
+  simulation.lastCelebrationAt = -Infinity;
+  simulation.lastCelebrationRank = -1;
+  simulation.lastScoreBurstAt = -Infinity;
+  simulation.lastScoreBurstRank = -1;
+  simulation.scoreBurstSequence = 0;
+  elements.stage.classList.remove("is-score-pop", "is-combo-pop", "is-jackpot");
+  if (elements.scoreBurstLayer) elements.scoreBurstLayer.replaceChildren();
+}
+
+function scoreBurstTier(points, requestedTier) {
+  if (requestedTier === "pop" || requestedTier === "bonus" || requestedTier === "jackpot") return requestedTier;
+  if (points >= 5000) return "jackpot";
+  if (points >= 1000) return "bonus";
+  return "pop";
+}
+
+function scoreBurstTierRank(tier) {
+  return tier === "jackpot" ? 2 : tier === "bonus" ? 1 : 0;
+}
+
+function pulseStageCelebration(kind, tier) {
+  if (elements.comfort.checked) return false;
+  const now = simulation.simulationTime;
+  const rank = scoreBurstTierRank(tier);
+  if (now - simulation.lastCelebrationAt < STAGE_CELEBRATION_MIN_INTERVAL &&
+      rank <= simulation.lastCelebrationRank) return false;
+  simulation.lastCelebrationAt = now;
+  simulation.lastCelebrationRank = rank;
+  const className = tier === "jackpot" ? "is-jackpot" : kind === "combo" || kind === "cascade"
+    ? "is-combo-pop" : "is-score-pop";
+  ["is-score-pop", "is-combo-pop", "is-jackpot"].forEach(function (candidate) {
+    window.clearTimeout(simulation.celebrationTimers[candidate]);
+    window.cancelAnimationFrame(simulation.celebrationFrames[candidate]);
+    elements.stage.classList.remove(candidate);
+  });
+  simulation.celebrationFrames[className] = window.requestAnimationFrame(function () {
+    elements.stage.classList.add(className);
+    simulation.celebrationTimers[className] = window.setTimeout(function () {
+      elements.stage.classList.remove(className);
+      delete simulation.celebrationTimers[className];
+      delete simulation.celebrationFrames[className];
+    }, tier === "jackpot" ? 1150 : 760);
+  });
+  return true;
+}
+
+function showScoreBurst(points, options = {}) {
+  if (!(points > 0) || elements.comfort.checked) return false;
+  const tier = scoreBurstTier(points, options.tier);
+  pulseStageCelebration(options.kind || "score", tier);
+  const now = simulation.simulationTime;
+  const rank = scoreBurstTierRank(tier);
+  if (now - simulation.lastScoreBurstAt < SCORE_BURST_MIN_INTERVAL &&
+      rank <= simulation.lastScoreBurstRank) return false;
+  simulation.lastScoreBurstAt = now;
+  simulation.lastScoreBurstRank = rank;
+  if (elements.scoreBurstLayer) {
+    while (elements.scoreBurstLayer.childElementCount >= MAX_SCORE_BURSTS) {
+      elements.scoreBurstLayer.firstElementChild.remove();
+    }
+    const burst = document.createElement("span");
+    burst.className = "score-burst";
+    burst.dataset.tier = tier;
+    burst.textContent = "+" + formatNumber(points) + " TICKETS";
+    const sequence = simulation.scoreBurstSequence % 10;
+    const positions = [
+      [23, 70, -7], [40, 82, 4], [58, 68, -3], [75, 84, 7], [31, 91, 2],
+      [68, 76, -6], [49, 89, 5], [82, 72, -1], [18, 84, 8], [61, 93, -5]
+    ];
+    burst.style.setProperty("--burst-x", positions[sequence][0] + "%");
+    burst.style.setProperty("--burst-y", positions[sequence][1] + "%");
+    burst.style.setProperty("--burst-tilt", positions[sequence][2] + "deg");
+    simulation.scoreBurstSequence += 1;
+    elements.scoreBurstLayer.appendChild(burst);
+    window.requestAnimationFrame(function () {
+      if (burst.isConnected) burst.classList.add("is-live");
+    });
+    window.setTimeout(function () { burst.remove(); }, tier === "jackpot" ? 1650 : 1250);
+  }
+  return true;
+}
+
+function crossedScoreMilestones(previousScore, currentScore) {
+  const crossed = SCORE_MILESTONES.filter(function (milestone) {
+    return previousScore < milestone && currentScore >= milestone && !simulation.scoreMilestones.has(milestone);
+  });
+  crossed.forEach(function (milestone) { simulation.scoreMilestones.add(milestone); });
+  return crossed;
+}
+
+function showScoreMilestone(award) {
+  const crossed = award?.crossedMilestones || [];
+  if (!crossed.length) return false;
+  const milestone = crossed[crossed.length - 1];
+  showCallout(
+    "score",
+    crossed.length > 1 ? "Mega milestone" : "Score milestone",
+    formatNumber(milestone) + " points!",
+    crossed.length > 1 ? crossed.length + " milestones cleared" : "Keep it bouncing",
+    1.8,
+    4,
+    milestone >= 100000 ? "jackpot" : ""
+  );
+  announce(formatNumber(milestone) + " point milestone!");
+  return true;
+}
+
+function awardPoints(value, options = {}) {
+  const requestedPoints = Math.max(0, Math.min(1000000, Math.round(Number(value) || 0)));
+  if (!requestedPoints) return { points: 0, previousScore: simulation.score, total: simulation.score, crossedMilestones: [] };
+  const previousScore = simulation.score;
+  simulation.score = Math.min(Number.MAX_SAFE_INTEGER, simulation.score + requestedPoints);
+  const points = simulation.score - previousScore;
+  const award = {
+    points,
+    previousScore,
+    total: simulation.score,
+    source: options.source || "game",
+    tier: scoreBurstTier(points, options.tier),
+    crossedMilestones: crossedScoreMilestones(previousScore, simulation.score)
+  };
+  simulation.lastPointAward = award;
+  if (options.burst !== false) showScoreBurst(points, { kind: options.kind, tier: award.tier });
+  elements.stage.dispatchEvent(new CustomEvent("ballblaster:score", { detail: { ...award } }));
+  if (!options.deferMilestone) showScoreMilestone(award);
+  if (options.updateHud !== false) updateHud();
+  return award;
 }
 
 function powerLevel(type) {
@@ -1057,12 +1224,20 @@ function resetGame(options = {}) {
   simulation.nextSplatId = 1;
   simulation.bounceCount = 0;
   simulation.splatCount = 0;
+  simulation.cascadeCount = 0;
+  simulation.cascadeAwardCount = 0;
+  simulation.cascadeFragmentCount = 0;
+  simulation.cascadePoints = 0;
   simulation.targetHits = 0;
   simulation.score = 0;
   simulation.combo = 1;
   simulation.comboRemaining = 0;
   simulation.lastTargetId = null;
+  simulation.comboTierAwards.clear();
   simulation.scoreMilestones.clear();
+  simulation.lastPointAward = null;
+  simulation.lastCascadeCalloutAt = -Infinity;
+  simulation.lastCascadeAwardAt = -Infinity;
   simulation.simulationTime = 0;
   simulation.fireCooldown = 0;
   simulation.accumulator = 0;
@@ -1100,6 +1275,7 @@ function resetGame(options = {}) {
   resetTargets();
   window.clearTimeout(simulation.toastTimeout);
   elements.toast.hidden = true;
+  clearCelebrations();
   hideCallout();
   clearInput();
   updateCamera(1, true);
@@ -1288,6 +1464,140 @@ function addSplat(ball, collision) {
   return true;
 }
 
+function splatFragmentRadius(ball, level) {
+  const parentRadius = Math.max(ball.radius || BASE_BALL_RADIUS, ball.targetRadius || 0);
+  return clamp(parentRadius * SPLAT_FRAGMENT_RADIUS_MULTIPLIERS[level], 0.12, 0.78);
+}
+
+function reserveBallSlot() {
+  while (simulation.balls.length >= MAX_BALLS) {
+    const oldest = simulation.balls.shift();
+    removeBallMesh(oldest);
+  }
+  const slot = simulation.freeBallSlots.pop();
+  return Number.isInteger(slot) ? slot : null;
+}
+
+function safeFragmentPosition(ball, collision, radius, radialDirection) {
+  const normal = normalize3(collision.normal, gravityFace().inwardNormal);
+  const collisionPoint = collision.point || ball.position;
+  const candidates = [
+    add3(collisionPoint, add3(scale3(normal, radius + 0.055), scale3(radialDirection, radius * 0.28))),
+    add3(ball.position, scale3(radialDirection, radius * 0.22)),
+    { ...ball.position }
+  ];
+  for (const position of candidates) {
+    if (canSpawnBall(position, radius)) return position;
+    const probe = { position: { ...position }, velocity: { x: 0, y: 0, z: 0 }, radius };
+    if (ensureBallWorldClear(probe, []) && canSpawnBall(probe.position, radius)) return probe.position;
+  }
+  return null;
+}
+
+function spawnSplatFragments(ball, collision) {
+  const level = clamp(Math.round(ball.splatLevel || 0), 0, MAX_POWER_LEVEL);
+  const childCount = SPLAT_CHILD_COUNTS[level];
+  if (!childCount) return [];
+
+  const normal = normalize3(collision.normal, gravityFace().inwardNormal);
+  const reference = Math.abs(normal.y) < 0.84 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+  const tangentA = normalize3(cross3(normal, reference), { x: 1, y: 0, z: 0 });
+  const tangentB = normalize3(cross3(normal, tangentA), { x: 0, y: 0, z: 1 });
+  const radius = splatFragmentRadius(ball, level);
+  const sharedTargetHits = ball.targetHits instanceof Set ? ball.targetHits : new Set();
+  const phase = randomUnit("cascade") * Math.PI * 2;
+  const spawned = [];
+
+  for (let index = 0; index < childCount; index += 1) {
+    const slice = Math.PI * 2 / childCount;
+    const jitter = (randomUnit("cascade") - 0.5) * slice * 0.24;
+    const angle = phase + slice * index + jitter;
+    const radialDirection = normalize3(add3(
+      scale3(tangentA, Math.cos(angle)),
+      scale3(tangentB, Math.sin(angle))
+    ), tangentA);
+    const position = safeFragmentPosition(ball, collision, radius, radialDirection);
+    if (!position) continue;
+    const slot = reserveBallSlot();
+    if (slot === null) continue;
+
+    const spreadSpeed = 4.8 + level * 0.62 + Math.min(collision.speed || 0, 18) * 0.12 + randomUnit("cascade") * 1.15;
+    const velocity = add3(
+      add3(scale3(ball.velocity, 0.38), scale3(normal, 3.2 + level * 0.55)),
+      scale3(radialDirection, spreadSpeed)
+    );
+    const fragment = {
+      id: simulation.nextBallId,
+      parentBallId: ball.id,
+      fragmentGeneration: 1,
+      position,
+      velocity,
+      radius,
+      launchRadius: radius,
+      targetRadius: radius,
+      growthElapsed: BALL_GROWTH_DURATION,
+      age: Math.max(0, PROJECTILE.lifetime - SPLAT_FRAGMENT_LIFETIME),
+      color: ball.color,
+      splatLevel: 0,
+      ricochets: ball.ricochets || 0,
+      bounceCooldown: PROJECTILE.splatCooldown,
+      targetHits: sharedTargetHits,
+      slot,
+      released: false
+    };
+    setBallInstance(fragment, 1);
+    simulation.ballInstances.setColorAt(slot, new THREE.Color(fragment.color));
+    simulation.balls.push(fragment);
+    simulation.nextBallId += 1;
+    spawned.push(fragment);
+  }
+  simulation.cascadeFragmentCount += spawned.length;
+  simulation.ballInstances.instanceMatrix.needsUpdate = true;
+  simulation.ballInstances.instanceColor.needsUpdate = true;
+  updateHud();
+  return spawned;
+}
+
+function scoreSplatCascade(ball) {
+  const level = clamp(Math.round(ball.splatLevel || 0), 0, MAX_POWER_LEVEL);
+  const childCount = SPLAT_CHILD_COUNTS[level];
+  const points = SPLAT_CASCADE_POINTS[level];
+  if (!childCount || !points) return { level: 0, childCount: 0, points: 0, award: null };
+  simulation.cascadeCount += 1;
+  if (simulation.simulationTime - simulation.lastCascadeAwardAt < SPLAT_AWARD_COOLDOWN) {
+    return { level, childCount, points: 0, award: null, awarded: false };
+  }
+  simulation.lastCascadeAwardAt = simulation.simulationTime;
+
+  const jackpot = level === MAX_POWER_LEVEL;
+  const award = awardPoints(points, {
+    source: "splat-cascade",
+    kind: "cascade",
+    tier: jackpot ? "jackpot" : level >= 3 ? "bonus" : "pop",
+    deferMilestone: true,
+    updateHud: false
+  });
+  simulation.cascadeAwardCount += 1;
+  simulation.cascadePoints += award.points;
+
+  if (simulation.simulationTime - simulation.lastCascadeCalloutAt >= SPLAT_CALLOUT_COOLDOWN) {
+    const titles = ["", "SPLAT SPLIT!", "TRIPLE POP!", "CASCADE!", "BALL JACKPOT!"];
+    showCallout(
+      "combo",
+      childCount + "-ball burst",
+      titles[level],
+      "+" + formatNumber(award.points) + " points",
+      jackpot ? 1.5 : 1.05,
+      jackpot ? 3 : level >= 3 ? 2 : 1,
+      jackpot ? "jackpot" : "cascade"
+    );
+    simulation.lastCascadeCalloutAt = simulation.simulationTime;
+  }
+  showScoreMilestone(award);
+  updateHud();
+  return { level, childCount, points: award.points, award, awarded: true };
+}
+
 function comboTitle(combo) {
   if (combo === 2) return "Double hit!";
   if (combo === 3) return "Triple hit!";
@@ -1403,39 +1713,44 @@ function scoreTargetHit(ball, target) {
   simulation.targetHits += 1;
 
   const continues = simulation.comboRemaining > 0 && simulation.lastTargetId !== target.id;
+  if (!continues) simulation.comboTierAwards.clear();
   simulation.combo = continues ? Math.min(MAX_COMBO, simulation.combo + 1) : 1;
   simulation.comboRemaining = COMBO_WINDOW;
   simulation.lastTargetId = target.id;
-  const ricochetBonus = 25 * Math.min(Math.max(0, ball.ricochets || 0), 4);
-  const points = (100 + ricochetBonus) * simulation.combo;
-  const previousScore = simulation.score;
-  simulation.score += points;
+  const ricochets = Math.min(Math.max(0, ball.ricochets || 0), 6);
+  const ricochetBonus = 150 * ricochets;
+  const hitPoints = (500 + ricochetBonus) * simulation.combo;
+  const tierBonus = Number(COMBO_TIER_BONUSES[simulation.combo] || 0);
+  const earnsTierBonus = tierBonus > 0 && !simulation.comboTierAwards.has(simulation.combo);
+  if (earnsTierBonus) simulation.comboTierAwards.add(simulation.combo);
+  const points = hitPoints + (earnsTierBonus ? tierBonus : 0);
+  const award = awardPoints(points, {
+    source: earnsTierBonus ? "combo-jackpot" : "target",
+    kind: simulation.combo > 1 ? "combo" : "score",
+    tier: earnsTierBonus ? "jackpot" : points >= 1000 ? "bonus" : "pop",
+    deferMilestone: true,
+    updateHud: false
+  });
 
   const isCombo = simulation.combo > 1;
   const title = isCombo ? comboTitle(simulation.combo) : "Target hit!";
-  const priority = simulation.combo >= 3 ? 2 : 1;
+  const priority = earnsTierBonus ? 4 : simulation.combo >= 3 ? 2 : 1;
   showCallout(
     isCombo ? "combo" : "score",
-    isCombo ? "Combo chain" : (ricochetBonus ? "Bank shot" : "Bullseye"),
+    earnsTierBonus ? "Jackpot bonus" : isCombo ? "Combo chain" : (ricochetBonus ? "Bank shot" : "Bullseye"),
     title,
-    "+" + formatNumber(points) + " points",
-    simulation.combo >= 3 ? 1.55 : 0.95,
-    priority
+    "+" + formatNumber(award.points) + " points" + (earnsTierBonus ? "!" : ""),
+    earnsTierBonus ? 1.85 : simulation.combo >= 3 ? 1.55 : 0.95,
+    priority,
+    earnsTierBonus ? "jackpot" : ""
   );
 
-  const crossedMilestone = [5000, 10000, 25000, 50000].find(function (milestone) {
-    return previousScore < milestone && simulation.score >= milestone && !simulation.scoreMilestones.has(milestone);
-  });
-  if (crossedMilestone) {
-    simulation.scoreMilestones.add(crossedMilestone);
-    showCallout("score", "Score milestone", formatNumber(crossedMilestone) + " points!", "Keep it bouncing", 1.8, 2);
-    announce(formatNumber(crossedMilestone) + " point milestone!");
-  } else if (simulation.combo >= 3) {
-    announce(title + " " + formatNumber(points) + " points.");
+  if (!showScoreMilestone(award) && (simulation.combo >= 3 || earnsTierBonus)) {
+    announce(title + " " + formatNumber(award.points) + " points.");
   }
   beginTargetWarp(target);
   updateHud();
-  return points;
+  return award.points;
 }
 
 function scoreFirstTargetCollision(ball, collisions) {
@@ -1464,6 +1779,7 @@ function updateScoring(delta) {
   if (simulation.comboRemaining === 0) {
     simulation.combo = 1;
     simulation.lastTargetId = null;
+    simulation.comboTierAwards.clear();
   }
 }
 
@@ -1694,6 +2010,7 @@ function fixedUpdate(delta) {
   updatePickups(delta);
 
   const survivingBalls = [];
+  const pendingSplatCascades = [];
   for (const ball of simulation.balls) {
     ball.bounceCooldown = Math.max(0, (ball.bounceCooldown || 0) - delta);
     updateBallGrowth(ball, delta);
@@ -1713,6 +2030,8 @@ function fixedUpdate(delta) {
       }
     }
     if (strongestSplatCollision && addSplat(ball, strongestSplatCollision)) {
+      scoreSplatCascade(ball);
+      pendingSplatCascades.push({ ball, collision: strongestSplatCollision });
       removeBallMesh(ball);
       continue;
     }
@@ -1729,6 +2048,9 @@ function fixedUpdate(delta) {
     }
   }
   simulation.balls = survivingBalls;
+  pendingSplatCascades.forEach(function (cascade) {
+    spawnSplatFragments(cascade.ball, cascade.collision);
+  });
 
   const survivingSplats = [];
   for (const splat of simulation.splats) {
@@ -1772,7 +2094,9 @@ function updateHud() {
   setText(elements.hudTarget, "Targets hit: " + simulation.targetHits);
   elements.hudCombo.classList.toggle("is-active", simulation.combo > 1 && simulation.comboRemaining > 0);
   elements.hudGravity.classList.toggle("is-active", simulation.gravityFaceId !== startFace.id || simulation.playerFaceId !== simulation.gravityFaceId);
-  elements.comboMeterFill.style.width = clamp(simulation.comboRemaining / COMBO_WINDOW * 100, 0, 100) + "%";
+  const comboMeterWidth = clamp(simulation.comboRemaining / COMBO_WINDOW * 100, 0, 100) + "%";
+  elements.comboMeterFill.style.width = comboMeterWidth;
+  if (elements.hudComboMeterFill) elements.hudComboMeterFill.style.width = comboMeterWidth;
   setText(elements.ballCount, String(simulation.balls.length));
   setText(elements.bounceCount, String(simulation.bounceCount));
   setText(elements.splatCount, String(simulation.splatCount));
@@ -1926,6 +2250,7 @@ elements.lookSpeed.addEventListener("input", function () {
 });
 elements.comfort.addEventListener("change", function () {
   elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
+  if (elements.comfort.checked) clearCelebrations();
   updateCamera(1, true);
 });
 
@@ -1961,6 +2286,11 @@ window.__ballBlasterDebug = {
   fixedUpdate,
   resetGame,
   activatePower,
+  addSplat,
+  spawnSplatFragments,
+  scoreSplatCascade,
+  awardPoints,
+  showScoreBurst,
   scoreTargetHit,
   scoreFirstTargetCollision,
   hitTarget: function (targetId = 0, ricochets = 0) {
@@ -1995,6 +2325,17 @@ window.__ballBlasterDebug = {
     rapidFireIntervals: RAPID_FIRE_INTERVALS,
     giantBallRadii: GIANT_BALL_RADII,
     ballGrowthDuration: BALL_GROWTH_DURATION,
+    splatChildCounts: SPLAT_CHILD_COUNTS,
+    splatCascadePoints: SPLAT_CASCADE_POINTS,
+    splatFragmentRadiusMultipliers: SPLAT_FRAGMENT_RADIUS_MULTIPLIERS,
+    splatFragmentLifetime: SPLAT_FRAGMENT_LIFETIME,
+    splatCalloutCooldown: SPLAT_CALLOUT_COOLDOWN,
+    splatAwardCooldown: SPLAT_AWARD_COOLDOWN,
+    scoreBurstMinInterval: SCORE_BURST_MIN_INTERVAL,
+    stageCelebrationMinInterval: STAGE_CELEBRATION_MIN_INTERVAL,
+    scoreMilestones: SCORE_MILESTONES,
+    comboTierBonuses: COMBO_TIER_BONUSES,
+    maxScoreBursts: MAX_SCORE_BURSTS,
     walkSpeeds: WALK_SPEEDS,
     jumpSpeeds: JUMP_SPEEDS,
     maxPowerLevel: MAX_POWER_LEVEL,
