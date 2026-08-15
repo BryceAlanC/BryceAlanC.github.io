@@ -104,6 +104,16 @@ select:focus-visible {
   padding: clamp(5.5rem, 10vw, 9rem) 0;
 }
 
+.lab-math {
+  padding-bottom: 0;
+}
+
+.lab-games {
+  padding: clamp(4.5rem, 7vw, 6rem) 0;
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-deep);
+}
+
 .gallery-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
@@ -137,6 +147,10 @@ select:focus-visible {
 
 .lab-card-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lab-card-grid-games {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -239,7 +253,8 @@ select:focus-visible {
 
 .lab-future {
   padding: clamp(5rem, 9vw, 8rem) 0;
-  background: var(--paper-deep);
+  border-top: 1px solid var(--hairline);
+  background: var(--paper);
 }
 
 .lab-future-grid {
@@ -561,6 +576,11 @@ select:focus-visible {
     border-left: 1px solid var(--hairline);
   }
 
+  .lab-card-preview {
+    min-height: 0;
+    aspect-ratio: 640 / 390;
+  }
+
   .app-layout {
     grid-template-columns: 1fr;
   }
@@ -582,10 +602,6 @@ select:focus-visible {
 
   .lab-card {
     min-height: 0;
-  }
-
-  .lab-card-preview {
-    min-height: 260px;
   }
 
   .card-meta {

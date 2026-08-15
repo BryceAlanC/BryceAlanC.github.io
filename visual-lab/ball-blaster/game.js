@@ -80,7 +80,7 @@ const CAMERA_ALIGN_SPEED = 5.4;
 const WALL_WALK_COOLDOWN = 0.55;
 const DEFAULT_RANDOM_SEED = 0x52f15e3d;
 const TARGET_COUNT = 6;
-const SOUND_MASTER_GAIN = 0.13;
+const SOUND_MASTER_GAIN = 0.7;
 const MAX_AUDIO_VOICES = 24;
 const BLOOM_BASE_STRENGTH = 0.14;
 const BLOOM_MAX_STRENGTH = 0.58;
@@ -329,12 +329,25 @@ function soundIsEnabled() {
   return Boolean(elements.soundEffects?.checked);
 }
 
+function rampMasterGain(target, timeConstant) {
+  if (!audioState.context || !audioState.master) return;
+  const gain = audioState.master.gain;
+  const now = audioState.context.currentTime;
+  if (typeof gain.cancelAndHoldAtTime === "function") {
+    gain.cancelAndHoldAtTime(now);
+  } else {
+    const currentValue = Math.max(0.0001, Number(gain.value) || 0.0001);
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(currentValue, now);
+  }
+  gain.setTargetAtTime(Math.max(0.0001, target), now, timeConstant);
+}
+
 function setAudioLevel() {
   if (!audioState.context || !audioState.master) return;
-  const now = audioState.context.currentTime;
   const comfortScale = elements.comfort.checked ? 0.65 : 1;
-  audioState.master.gain.cancelScheduledValues(now);
-  audioState.master.gain.setTargetAtTime(SOUND_MASTER_GAIN * comfortScale, now, 0.018);
+  const target = soundIsEnabled() && isPlaying() ? SOUND_MASTER_GAIN * comfortScale : 0.0001;
+  rampMasterGain(target, 0.018);
 }
 
 function ensureAudio(onReady) {
@@ -370,21 +383,20 @@ function ensureAudio(onReady) {
   }
   const context = audioState.context;
   const finish = function () {
+    if (context.state !== "running") return false;
     setAudioLevel();
     if (typeof onReady === "function") onReady();
     return true;
   };
-  if (context.state === "suspended") {
+  if (context.state === "closed") return Promise.resolve(false);
+  if (context.state !== "running") {
     return Promise.resolve(context.resume()).then(finish).catch(function () { return false; });
   }
   return Promise.resolve(finish());
 }
 
 function muteAudio() {
-  if (!audioState.context || !audioState.master) return;
-  const now = audioState.context.currentTime;
-  audioState.master.gain.cancelScheduledValues(now);
-  audioState.master.gain.setTargetAtTime(0.0001, now, 0.012);
+  rampMasterGain(0.0001, 0.012);
 }
 
 function playTone(tone) {
@@ -1617,7 +1629,9 @@ function beginKeyboardMode() {
   elements.canvas.focus();
   setStatus("Playing · keyboard look", "playing");
   announce("Keyboard play started. Arrow keys move, I J K L look, Space jumps, and F launches balls.");
-  ensureAudio(function () { playGameSound("start"); });
+  ensureAudio(function () {
+    if (isPlaying()) playGameSound("start");
+  });
 }
 
 function beginMouseMode() {
@@ -2709,7 +2723,9 @@ document.addEventListener("pointerlockchange", function () {
     elements.canvas.focus();
     setStatus("Playing · mouse look", "playing");
     announce("Mouse play started. Arrow keys move, Space jumps, and clicking launches balls.");
-    ensureAudio(function () { playGameSound("start"); });
+    ensureAudio(function () {
+      if (isPlaying()) playGameSound("start");
+    });
     return;
   }
   if (simulation.pointerLockPending) {
@@ -2757,7 +2773,11 @@ elements.lookSpeed.addEventListener("input", function () {
   elements.lookSpeed.setAttribute("aria-valuetext", label);
 });
 elements.soundEffects.addEventListener("change", function () {
-  if (elements.soundEffects.checked) ensureAudio();
+  if (elements.soundEffects.checked) {
+    ensureAudio(function () {
+      if (isPlaying()) playGameSound("start");
+    });
+  }
   else muteAudio();
 });
 elements.comfort.addEventListener("change", function () {
