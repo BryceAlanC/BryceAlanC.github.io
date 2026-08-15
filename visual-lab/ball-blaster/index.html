@@ -78,7 +78,7 @@
               <div><dt>↑ / ↓ · W / S</dt><dd>Run forward / back</dd></div>
               <div><dt>← / → · A / D</dt><dd>Sidestep</dd></div>
               <div><dt>Mouse · I J K L</dt><dd>Look around</dd></div>
-              <div><dt>Space</dt><dd>Take a big jump</dd></div>
+              <div><dt>Space</dt><dd>Jump · release Wall Walk grip</dd></div>
               <div><dt>Click · F</dt><dd>Launch a ball</dd></div>
               <div><dt>Esc</dt><dd>Pause and free the mouse</dd></div>
             </dl>
@@ -91,6 +91,11 @@
               <span>Comfort mode</span>
             </label>
             <p class="option-help" id="comfort-help">Snaps gravity view rotations and stops flashes, pulsing, and decorative bobbing. Targets still roam as part of play.</p>
+            <label class="check-row">
+              <input id="sound-effects" type="checkbox" checked aria-describedby="sound-help">
+              <span>Sound effects</span>
+            </label>
+            <p class="option-help" id="sound-help">Turn the playful game sounds on or off.</p>
             <div class="field-label"><label for="look-speed">Look speed</label> <span id="look-speed-value">Medium</span></div>
             <input id="look-speed" type="range" min="1" max="3" step="1" value="2" aria-valuetext="Medium">
           </fieldset>
@@ -141,7 +146,7 @@
             </div>
             <div class="power-row power-wallwalk" id="power-wallwalk">
               <span class="power-icon" aria-hidden="true">◆</span>
-              <span class="power-copy"><strong>Wall Walk</strong><small>Run into a wall to climb it</small></span>
+              <span class="power-copy"><strong>Wall Walk</strong><small>Climb a wall; Space releases your grip</small></span>
               <span class="power-value">Level 0</span>
             </div>
           </fieldset>
@@ -210,7 +215,7 @@
                   <ul id="gate-controls" class="gate-controls" hidden>
                     <li><strong>Arrow keys or WASD</strong> run</li>
                     <li><strong>Mouse or I J K L</strong> look</li>
-                    <li><strong>Space</strong> jumps</li>
+                    <li><strong>Space</strong> jumps or releases Wall Walk</li>
                     <li><strong>Click or F</strong> launches</li>
                     <li><strong>Esc</strong> pauses</li>
                   </ul>
@@ -228,7 +233,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. Matching power-ups add both a level and more time. Turbo boots increase running speed, moon jump adds height and distance, and Wall Walk lets you keep running onto a wall. Splat shots leave a colorful mark, then burst into a larger cascade of balls at higher levels. Gravity warnings announce which of the twelve faces will become down next. Comfort mode snaps the view into place and keeps celebrations still while targets continue roaming. Balls remain short-lived and pass through one another so even a maximum-stack barrage stays smooth.</p>
+          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. Matching power-ups add both a level and more time. Turbo boots increase running speed, moon jump adds height and distance, and Wall Walk lets you keep running onto a wall; press Space to release your grip and fall. Splat shots leave a colorful mark, then burst into a larger cascade of balls at higher levels. Gravity warnings announce which of the twelve faces will become down next. Comfort mode snaps the view into place and keeps celebrations still while targets continue roaming. Balls remain short-lived and pass through one another so even a maximum-stack barrage stays smooth.</p>
         </div>
       </div>
     </section>

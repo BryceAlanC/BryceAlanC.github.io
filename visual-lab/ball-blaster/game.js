@@ -1,4 +1,8 @@
 import * as THREE from "./vendor/three.module.min.js";
+import { EffectComposer } from "./vendor/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "./vendor/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "./vendor/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "./vendor/addons/postprocessing/UnrealBloomPass.js";
 import {
   PLAYER_PHYSICS,
   PROJECTILE,
@@ -46,7 +50,7 @@ const SPLAT_CHILD_COUNTS = [0, 2, 3, 4, 6];
 const SPLAT_CASCADE_POINTS = [0, 50, 100, 200, 400];
 const SPLAT_FRAGMENT_RADIUS_MULTIPLIERS = [0, 0.64, 0.58, 0.52, 0.46];
 const SPLAT_FRAGMENT_LIFETIME = 2.75;
-const SPLAT_CALLOUT_COOLDOWN = 0.34;
+const SPLAT_CALLOUT_COOLDOWN = 1.5;
 const SPLAT_AWARD_COOLDOWN = 0.34;
 const SCORE_BURST_MIN_INTERVAL = 0.11;
 const STAGE_CELEBRATION_MIN_INTERVAL = 0.4;
@@ -76,6 +80,12 @@ const CAMERA_ALIGN_SPEED = 5.4;
 const WALL_WALK_COOLDOWN = 0.55;
 const DEFAULT_RANDOM_SEED = 0x52f15e3d;
 const TARGET_COUNT = 6;
+const SOUND_MASTER_GAIN = 0.13;
+const MAX_AUDIO_VOICES = 24;
+const BLOOM_BASE_STRENGTH = 0.14;
+const BLOOM_MAX_STRENGTH = 0.58;
+const BLOOM_BASE_THRESHOLD = 0.92;
+const BLOOM_MIN_THRESHOLD = 0.84;
 
 const elements = {
   stage: document.getElementById("ball-stage"),
@@ -105,6 +115,7 @@ const elements = {
   hudTarget: document.getElementById("hud-target"),
   toast: document.getElementById("pickup-toast"),
   comfort: document.getElementById("comfort-mode"),
+  soundEffects: document.getElementById("sound-effects"),
   lookSpeed: document.getElementById("look-speed"),
   lookSpeedValue: document.getElementById("look-speed-value"),
   reset: document.getElementById("reset-game"),
@@ -241,6 +252,14 @@ const simulation = {
     flipCount: 0
   },
   wallWalkCooldown: 0,
+  wallWalkReleaseCount: 0,
+  lastWallWalkRelease: null,
+  visualExcitement: 0,
+  visualPulse: 0,
+  frameTimeEma: 16.7,
+  bloomSlowTime: 0,
+  bloomRecoveryTime: 0,
+  bloomSuppressed: false,
   cameraQuaternion: new THREE.Quaternion(),
   callout: { remaining: 0, priority: 0 },
   lastCelebrationAt: -Infinity,
@@ -253,12 +272,35 @@ const simulation = {
   toastTimeout: 0,
   resizeObserver: null,
   renderer: null,
+  composer: null,
+  bloomPass: null,
+  outputPass: null,
+  bloomAvailable: false,
+  arcadeLights: [],
+  playerLight: null,
+  arenaMaterials: [],
+  terrainMaterials: [],
   scene: null,
   camera: null
 };
 
+const audioState = {
+  context: null,
+  master: null,
+  compressor: null,
+  voices: 0,
+  lastEventAt: new Map(),
+  duckLowPriorityUntil: 0
+};
+
 const ballGeometry = new THREE.SphereGeometry(1, 16, 12);
-const ballMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.05 });
+const ballMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.22,
+  roughness: 0.35,
+  metalness: 0.05
+});
 const splatGeometry = new THREE.CircleGeometry(1, 18);
 const pickupCoreGeometry = new THREE.OctahedronGeometry(0.48, 0);
 const pickupRingGeometry = new THREE.TorusGeometry(0.72, 0.08, 8, 24);
@@ -281,6 +323,176 @@ function announce(message) {
   window.setTimeout(function () {
     elements.announcer.textContent = message;
   }, 20);
+}
+
+function soundIsEnabled() {
+  return Boolean(elements.soundEffects?.checked);
+}
+
+function setAudioLevel() {
+  if (!audioState.context || !audioState.master) return;
+  const now = audioState.context.currentTime;
+  const comfortScale = elements.comfort.checked ? 0.65 : 1;
+  audioState.master.gain.cancelScheduledValues(now);
+  audioState.master.gain.setTargetAtTime(SOUND_MASTER_GAIN * comfortScale, now, 0.018);
+}
+
+function ensureAudio(onReady) {
+  if (!soundIsEnabled()) return Promise.resolve(false);
+  if (!audioState.context) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      elements.soundEffects.checked = false;
+      elements.soundEffects.disabled = true;
+      return Promise.resolve(false);
+    }
+    try {
+      const context = new AudioContextConstructor();
+      const master = context.createGain();
+      const compressor = context.createDynamicsCompressor();
+      master.gain.value = 0;
+      compressor.threshold.value = -20;
+      compressor.knee.value = 16;
+      compressor.ratio.value = 8;
+      compressor.attack.value = 0.004;
+      compressor.release.value = 0.18;
+      compressor.connect(master);
+      master.connect(context.destination);
+      audioState.context = context;
+      audioState.master = master;
+      audioState.compressor = compressor;
+    } catch (error) {
+      console.warn("Sound effects could not start.", error);
+      elements.soundEffects.checked = false;
+      elements.soundEffects.disabled = true;
+      return Promise.resolve(false);
+    }
+  }
+  const context = audioState.context;
+  const finish = function () {
+    setAudioLevel();
+    if (typeof onReady === "function") onReady();
+    return true;
+  };
+  if (context.state === "suspended") {
+    return Promise.resolve(context.resume()).then(finish).catch(function () { return false; });
+  }
+  return Promise.resolve(finish());
+}
+
+function muteAudio() {
+  if (!audioState.context || !audioState.master) return;
+  const now = audioState.context.currentTime;
+  audioState.master.gain.cancelScheduledValues(now);
+  audioState.master.gain.setTargetAtTime(0.0001, now, 0.012);
+}
+
+function playTone(tone) {
+  const context = audioState.context;
+  if (!context || context.state !== "running" || audioState.voices >= MAX_AUDIO_VOICES) return false;
+  const start = context.currentTime + Math.max(0, tone.delay || 0);
+  const duration = Math.max(0.025, tone.duration || 0.1);
+  const end = start + duration;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = tone.type || "sine";
+  oscillator.frequency.setValueAtTime(Math.max(20, tone.frequency || 220), start);
+  if (tone.endFrequency) {
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, tone.endFrequency), end);
+  }
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, tone.gain || 0.02), start + Math.min(0.012, duration * 0.2));
+  gain.gain.exponentialRampToValueAtTime(0.0001, end);
+  oscillator.connect(gain);
+  gain.connect(audioState.compressor);
+  audioState.voices += 1;
+  oscillator.onended = function () {
+    oscillator.disconnect();
+    gain.disconnect();
+    audioState.voices = Math.max(0, audioState.voices - 1);
+  };
+  oscillator.start(start);
+  oscillator.stop(end + 0.015);
+  return true;
+}
+
+function playGameSound(kind, detail = {}) {
+  if (!soundIsEnabled() || !audioState.context || audioState.context.state !== "running") return false;
+  const now = audioState.context.currentTime;
+  const minimumIntervals = {
+    fire: 0.09,
+    bounce: 0.1,
+    splat: 0.14,
+    target: 0.1,
+    pickup: 0.18,
+    jump: 0.12,
+    land: 0.18,
+    "wall-release": 0.3,
+    warning: 1,
+    gravity: 1,
+    jackpot: 0.6,
+    start: 0.5
+  };
+  const lowPriority = kind === "fire" || kind === "bounce";
+  if (kind === "bounce" && (Number(detail.speed) || 0) < 2) return false;
+  if (elements.comfort.checked && lowPriority) return false;
+  if (lowPriority && (audioState.voices >= 12 || now < audioState.duckLowPriorityUntil)) return false;
+  if (kind === "splat" && audioState.voices >= 16) return false;
+  if (audioState.voices >= MAX_AUDIO_VOICES) return false;
+  const previous = audioState.lastEventAt.get(kind) ?? -Infinity;
+  if (now - previous < (minimumIntervals[kind] || 0)) return false;
+  audioState.lastEventAt.set(kind, now);
+  const combo = clamp(Math.round(detail.combo || 1), 1, MAX_COMBO);
+  const level = clamp(Math.round(detail.level || 1), 1, MAX_POWER_LEVEL);
+  const speed = clamp(Number(detail.speed) || 0, 0, 24);
+  let tones = [];
+  if (kind === "fire") tones = [{ frequency: 285, endFrequency: 145, duration: 0.065, gain: 0.021, type: "triangle" }];
+  else if (kind === "bounce") tones = [{ frequency: 82 + speed * 13, endFrequency: 58 + speed * 7, duration: 0.055, gain: 0.006 + speed * 0.00065, type: "sine" }];
+  else if (kind === "jump") tones = [{ frequency: 155, endFrequency: 335, duration: 0.16, gain: 0.04, type: "sine" }];
+  else if (kind === "wall-release") tones = [{ frequency: 290, endFrequency: 105, duration: 0.18, gain: 0.038, type: "triangle" }];
+  else if (kind === "land") tones = [{ frequency: 105, endFrequency: 62, duration: 0.08, gain: 0.016, type: "sine" }];
+  else if (kind === "splat") tones = [
+    { frequency: 135 + level * 15, endFrequency: 52, duration: 0.14, gain: 0.036, type: "triangle" },
+    { frequency: 255 + level * 28, endFrequency: 150, duration: 0.1, gain: 0.018, type: "triangle", delay: 0.025 }
+  ];
+  else if (kind === "target") {
+    const root = 330 * Math.pow(2, Math.min(combo - 1, 8) / 12);
+    tones = [
+      { frequency: root, endFrequency: root * 1.04, duration: 0.12, gain: 0.03, type: "triangle" },
+      { frequency: root * 1.25, endFrequency: root * 1.3, duration: 0.14, gain: 0.024, type: "triangle", delay: 0.055 },
+      { frequency: root * 1.5, endFrequency: root * 1.56, duration: 0.16, gain: 0.021, type: "triangle", delay: 0.11 }
+    ];
+  } else if (kind === "pickup") tones = [
+    { frequency: 392, endFrequency: 420, duration: 0.12, gain: 0.028, type: "triangle" },
+    { frequency: 523, endFrequency: 560, duration: 0.14, gain: 0.025, type: "triangle", delay: 0.065 },
+    { frequency: 659 + level * 18, endFrequency: 720 + level * 22, duration: 0.17, gain: 0.022, type: "triangle", delay: 0.13 }
+  ];
+  else if (kind === "warning") tones = [
+    { frequency: 294, endFrequency: 330, duration: 0.1, gain: 0.028, type: "triangle" },
+    { frequency: 294, endFrequency: 330, duration: 0.1, gain: 0.028, type: "triangle", delay: 0.18 }
+  ];
+  else if (kind === "gravity") tones = [
+    { frequency: 260, endFrequency: 92, duration: 0.28, gain: 0.04, type: "triangle" },
+    { frequency: 390, endFrequency: 138, duration: 0.31, gain: 0.024, type: "triangle", delay: 0.025 }
+  ];
+  else if (kind === "jackpot") tones = [523, 659, 784, 1046].map(function (frequency, index) {
+    return { frequency, endFrequency: frequency * 1.035, duration: 0.2, gain: 0.026, type: "triangle", delay: index * 0.065 };
+  });
+  else if (kind === "start") tones = [
+    { frequency: 392, endFrequency: 420, duration: 0.12, gain: 0.024, type: "triangle" },
+    { frequency: 587, endFrequency: 620, duration: 0.16, gain: 0.022, type: "triangle", delay: 0.075 }
+  ];
+  if (kind === "gravity" || kind === "jackpot") audioState.duckLowPriorityUntil = now + 0.45;
+  return tones.reduce(function (played, tone) { return playTone(tone) || played; }, false);
+}
+
+function triggerVisualPulse(amount) {
+  if (elements.comfort.checked) {
+    simulation.visualPulse = 0;
+    return 0;
+  }
+  simulation.visualPulse = Math.max(simulation.visualPulse, clamp(Number(amount) || 0, 0, 1));
+  return simulation.visualPulse;
 }
 
 function setText(element, text) {
@@ -333,7 +545,7 @@ function hideCallout() {
   elements.callout.hidden = true;
 }
 
-function showCallout(kind, kicker, title, points, duration = 1.25, priority = 1, tier = "") {
+function showCallout(kind, kicker, title, points, duration = 0.55, priority = 1, tier = "") {
   if (simulation.callout.remaining > 0 && priority < simulation.callout.priority) return false;
   simulation.callout.remaining = duration;
   simulation.callout.priority = priority;
@@ -390,6 +602,7 @@ function pulseStageCelebration(kind, tier) {
       rank <= simulation.lastCelebrationRank) return false;
   simulation.lastCelebrationAt = now;
   simulation.lastCelebrationRank = rank;
+  triggerVisualPulse(rank === 2 ? 1 : rank === 1 ? 0.72 : 0.3);
   const className = tier === "jackpot" ? "is-jackpot" : kind === "combo" || kind === "cascade"
     ? "is-combo-pop" : "is-score-pop";
   ["is-score-pop", "is-combo-pop", "is-jackpot"].forEach(function (candidate) {
@@ -403,7 +616,7 @@ function pulseStageCelebration(kind, tier) {
       elements.stage.classList.remove(className);
       delete simulation.celebrationTimers[className];
       delete simulation.celebrationFrames[className];
-    }, tier === "jackpot" ? 1150 : 760);
+    }, tier === "jackpot" ? 820 : 650);
   });
   return true;
 }
@@ -439,7 +652,7 @@ function showScoreBurst(points, options = {}) {
     window.requestAnimationFrame(function () {
       if (burst.isConnected) burst.classList.add("is-live");
     });
-    window.setTimeout(function () { burst.remove(); }, tier === "jackpot" ? 1650 : 1250);
+    window.setTimeout(function () { burst.remove(); }, tier === "jackpot" ? 820 : 720);
   }
   return true;
 }
@@ -461,8 +674,8 @@ function showScoreMilestone(award) {
     crossed.length > 1 ? "Mega milestone" : "Score milestone",
     formatNumber(milestone) + " points!",
     crossed.length > 1 ? crossed.length + " milestones cleared" : "Keep it bouncing",
-    1.8,
-    4,
+    0.82,
+    4.5,
     milestone >= 100000 ? "jackpot" : ""
   );
   announce(formatNumber(milestone) + " point milestone!");
@@ -593,6 +806,7 @@ function showPauseGate(message) {
 
 function showError(title, copy) {
   clearInput();
+  muteAudio();
   simulation.mode = "error";
   simulation.pointerLockPending = false;
   if (document.pointerLockElement === elements.canvas) document.exitPointerLock();
@@ -648,9 +862,16 @@ function faceObjectQuaternion(face, planeNormal = "inward") {
 }
 
 function makeTerrainMesh(scene, obstacle) {
+  const material = new THREE.MeshStandardMaterial({
+    color: obstacle.color,
+    emissive: obstacle.color,
+    emissiveIntensity: 0.07,
+    roughness: 0.68,
+    metalness: 0.02
+  });
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(obstacle.dimensions.width, obstacle.dimensions.height, obstacle.dimensions.depth),
-    new THREE.MeshStandardMaterial({ color: obstacle.color, roughness: 0.68, metalness: 0.02 })
+    material
   );
   const x = new THREE.Vector3(obstacle.axes.u.x, obstacle.axes.u.y, obstacle.axes.u.z).normalize();
   const y = new THREE.Vector3(obstacle.axes.up.x, obstacle.axes.up.y, obstacle.axes.up.z).normalize();
@@ -660,6 +881,7 @@ function makeTerrainMesh(scene, obstacle) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
+  simulation.terrainMaterials.push(material);
   return mesh;
 }
 
@@ -707,6 +929,8 @@ function createArena(scene) {
   DODECA_ARENA.faces.forEach(function (face) {
     const material = new THREE.MeshStandardMaterial({
       color: face.color,
+      emissive: face.color,
+      emissiveIntensity: 0.035,
       roughness: 0.83,
       metalness: 0,
       side: THREE.DoubleSide
@@ -714,6 +938,7 @@ function createArena(scene) {
     const mesh = new THREE.Mesh(faceMeshGeometry(face), material);
     mesh.receiveShadow = true;
     scene.add(mesh);
+    simulation.arenaMaterials.push(material);
   });
 
   const edgePositions = [];
@@ -927,6 +1152,180 @@ function updatePickupLabels() {
   if (nearestLabel) nearestLabel.visible = true;
 }
 
+function initializeArcadeLighting(scene) {
+  const lightDefinitions = [
+    { color: 0xff4f9a, phase: 0, radius: 8.4 },
+    { color: 0x45f0d1, phase: Math.PI * 2 / 3, radius: 9.2 },
+    { color: 0x8b6dff, phase: Math.PI * 4 / 3, radius: 7.7 }
+  ];
+  simulation.arcadeLights = lightDefinitions.map(function (definition) {
+    const light = new THREE.PointLight(definition.color, 28, 34, 2);
+    light.userData.phase = definition.phase;
+    light.userData.radius = definition.radius;
+    scene.add(light);
+    return light;
+  });
+  simulation.playerLight = new THREE.PointLight(0xb8fff2, 7, 11, 2);
+  simulation.playerLight.position.set(0, 0.1, 0.25);
+  simulation.camera.add(simulation.playerLight);
+}
+
+function restoreDirectRendererState() {
+  if (!simulation.renderer) return;
+  simulation.renderer.setRenderTarget(null);
+  simulation.renderer.autoClear = true;
+  simulation.renderer.setScissorTest(false);
+}
+
+function disposePostProcessing() {
+  const composer = simulation.composer;
+  const bloomPass = simulation.bloomPass;
+  const outputPass = simulation.outputPass;
+  simulation.composer = null;
+  simulation.bloomPass = null;
+  simulation.outputPass = null;
+  simulation.bloomAvailable = false;
+  try { bloomPass?.dispose(); } catch (error) {}
+  try { outputPass?.dispose(); } catch (error) {}
+  try { composer?.dispose(); } catch (error) {}
+  restoreDirectRendererState();
+}
+
+function initializePostProcessing() {
+  if (elements.comfort.checked || window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      window.matchMedia("(pointer: coarse)").matches) return false;
+  let composer = null;
+  let bloomPass = null;
+  let outputPass = null;
+  try {
+    composer = new EffectComposer(simulation.renderer);
+    const renderPass = new RenderPass(simulation.scene, simulation.camera);
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(Math.max(1, elements.canvas.clientWidth), Math.max(1, elements.canvas.clientHeight)),
+      BLOOM_BASE_STRENGTH,
+      0.18,
+      BLOOM_BASE_THRESHOLD
+    );
+    outputPass = new OutputPass();
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    composer.addPass(outputPass);
+    simulation.composer = composer;
+    simulation.bloomPass = bloomPass;
+    simulation.outputPass = outputPass;
+    simulation.bloomAvailable = true;
+    return true;
+  } catch (error) {
+    console.warn("Bloom is unavailable; continuing with the standard renderer.", error);
+    try { bloomPass?.dispose(); } catch (disposeError) {}
+    try { outputPass?.dispose(); } catch (disposeError) {}
+    try { composer?.dispose(); } catch (disposeError) {}
+    restoreDirectRendererState();
+    return false;
+  }
+}
+
+function bloomCanRender() {
+  return simulation.bloomAvailable && simulation.composer && simulation.bloomPass &&
+    !simulation.bloomSuppressed && !elements.comfort.checked &&
+    !window.matchMedia("(pointer: coarse)").matches;
+}
+
+function updateFramePerformance(delta) {
+  if (!simulation.bloomAvailable || !isPlaying() || !(delta > 0)) return;
+  const frameMilliseconds = delta * 1000;
+  simulation.frameTimeEma += (frameMilliseconds - simulation.frameTimeEma) * 0.055;
+  if (!simulation.bloomSuppressed) {
+    simulation.bloomSlowTime = simulation.frameTimeEma > 30
+      ? simulation.bloomSlowTime + delta
+      : Math.max(0, simulation.bloomSlowTime - delta * 0.75);
+    if (simulation.bloomSlowTime >= 2) {
+      simulation.bloomSuppressed = true;
+      simulation.bloomRecoveryTime = 0;
+    }
+  } else {
+    simulation.bloomRecoveryTime = simulation.frameTimeEma < 20
+      ? simulation.bloomRecoveryTime + delta
+      : 0;
+    if (simulation.bloomRecoveryTime >= 5) {
+      simulation.bloomSuppressed = false;
+      simulation.bloomSlowTime = 0;
+      simulation.bloomRecoveryTime = 0;
+    }
+  }
+}
+
+function updateVisualEffects(delta = FIXED_STEP) {
+  if (elements.comfort.checked) {
+    simulation.visualPulse = 0;
+    simulation.visualExcitement = 0.12;
+    if (simulation.bloomPass) simulation.bloomPass.strength = 0;
+    ballMaterial.emissiveIntensity = 0.24;
+    simulation.arenaMaterials.forEach(function (material) { material.emissiveIntensity = 0.035; });
+    simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.075; });
+    powerTypes.forEach(function (type) {
+      const material = simulation.pickupObjects[type]?.userData.core?.material;
+      if (material) material.emissiveIntensity = 0.6;
+    });
+    simulation.arcadeLights.forEach(function (light) { light.intensity = 30; });
+    if (simulation.playerLight) simulation.playerLight.intensity = 8;
+    if (simulation.renderer) simulation.renderer.toneMappingExposure = 1.06;
+    return;
+  }
+  const comboHeat = clamp((simulation.combo - 1) / Math.max(1, MAX_COMBO - 1), 0, 1);
+  const powerHeat = powerTypes.reduce(function (sum, type) {
+    return sum + powerLevel(type);
+  }, 0) / (powerTypes.length * MAX_POWER_LEVEL);
+  const ballHeat = clamp(simulation.balls.length / 90, 0, 1);
+  simulation.visualPulse *= Math.exp(-3.2 * delta);
+  let target = clamp(0.08 + comboHeat * 0.4 + powerHeat * 0.26 + ballHeat * 0.22 + simulation.visualPulse * 0.42, 0, 1);
+  simulation.visualExcitement += (target - simulation.visualExcitement) * (1 - Math.exp(-7 * delta));
+  const excitement = simulation.visualExcitement;
+
+  if (simulation.bloomPass) {
+    const bloomBallLoad = clamp((simulation.balls.length - 48) / 102, 0, 1);
+    const framePenalty = clamp((simulation.frameTimeEma - 18) / 10, 0, 1);
+    const desiredStrength = bloomCanRender()
+      ? clamp(
+        (BLOOM_BASE_STRENGTH + comboHeat * 0.1 + powerHeat * 0.06 + simulation.visualPulse * 0.42) *
+          (1 - 0.5 * bloomBallLoad) * (1 - 0.35 * framePenalty),
+        0,
+        BLOOM_MAX_STRENGTH
+      )
+      : 0;
+    simulation.bloomPass.strength += (desiredStrength - simulation.bloomPass.strength) * (1 - Math.exp(-8 * delta));
+    simulation.bloomPass.radius = 0.16 + excitement * 0.08;
+    simulation.bloomPass.threshold = BLOOM_BASE_THRESHOLD - excitement * (BLOOM_BASE_THRESHOLD - BLOOM_MIN_THRESHOLD);
+  }
+
+  ballMaterial.emissiveIntensity = 0.2 + excitement * 0.36;
+  simulation.arenaMaterials.forEach(function (material) {
+    material.emissiveIntensity = 0.035;
+  });
+  simulation.terrainMaterials.forEach(function (material) {
+    material.emissiveIntensity = 0.075;
+  });
+  powerTypes.forEach(function (type) {
+    const material = simulation.pickupObjects[type]?.userData.core?.material;
+    if (material) material.emissiveIntensity = 0.5 + excitement * 0.8;
+  });
+
+  const time = simulation.simulationTime * 0.34;
+  simulation.arcadeLights.forEach(function (light, index) {
+    const angle = time + light.userData.phase;
+    const radius = light.userData.radius;
+    light.position.set(
+      Math.cos(angle) * radius,
+      Math.sin(angle * 0.73 + index) * 5.2,
+      Math.sin(angle) * radius
+    );
+    const shimmer = 1 + Math.sin(time * 2.1 + index * 1.7) * 0.08;
+    light.intensity = (22 + excitement * 56) * shimmer;
+  });
+  if (simulation.playerLight) simulation.playerLight.intensity = 6 + excitement * 12;
+  simulation.renderer.toneMappingExposure = 1.06;
+}
+
 function initializeScene() {
   simulation.renderer = createWebGLRenderer();
   simulation.scene = new THREE.Scene();
@@ -935,11 +1334,11 @@ function initializeScene() {
   simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 90);
   simulation.scene.add(simulation.camera);
 
-  const hemisphere = new THREE.HemisphereLight(0xeafcff, 0x6b4b38, 2.35);
+  const hemisphere = new THREE.HemisphereLight(0xeafcff, 0x6b4b38, 1.65);
   simulation.scene.add(hemisphere);
-  const ambient = new THREE.AmbientLight(0xffffff, 0.85);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.42);
   simulation.scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xfff2d4, 2.8);
+  const sun = new THREE.DirectionalLight(0xfff2d4, 2.35);
   sun.position.set(8, 15, 11);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -952,8 +1351,12 @@ function initializeScene() {
   createArena(simulation.scene);
   initializeInstances(simulation.scene);
   createPickups(simulation.scene);
+  initializeArcadeLighting(simulation.scene);
   updateCamera(1, true);
   resizeRenderer();
+  initializePostProcessing();
+  resizeRenderer();
+  updateVisualEffects(1);
   render();
 }
 
@@ -1062,12 +1465,14 @@ function changePlayerFace(faceId, options = {}) {
   simulation.player.gravityDirection = { ...nextFace.normal };
   simulation.player.grounded = false;
   simulation.player.supportFaceId = null;
-  const momentumScale = options.keepMomentum === false ? 0 : 0.68;
+  const momentumScale = Number.isFinite(options.momentumScale)
+    ? clamp(options.momentumScale, 0, 1)
+    : options.keepMomentum === false ? 0 : 0.68;
   simulation.player.velocity.x *= momentumScale;
   simulation.player.velocity.y *= momentumScale;
   simulation.player.velocity.z *= momentumScale;
   const speed = Math.hypot(simulation.player.velocity.x, simulation.player.velocity.y, simulation.player.velocity.z);
-  if (speed > 18) {
+  if (options.limitMomentum !== false && speed > 18) {
     const amount = 18 / speed;
     simulation.player.velocity.x *= amount;
     simulation.player.velocity.y *= amount;
@@ -1080,6 +1485,36 @@ function wallWalkActive() {
   return powerLevel("wallwalk") > 0;
 }
 
+function releaseWallWalkForJump() {
+  if (!wallWalkActive() || simulation.playerFaceId === simulation.gravityFaceId) return null;
+  const gripFace = playerFace();
+  const arenaFace = gravityFace();
+  const wasGrounded = simulation.player.grounded === true;
+  let jumpImpulse = 0;
+  if (wasGrounded) {
+    const up = gripFace.inwardNormal;
+    const upwardSpeed = dot3(simulation.player.velocity, up);
+    jumpImpulse = currentJumpSpeed() - upwardSpeed;
+    simulation.player.velocity.x += up.x * jumpImpulse;
+    simulation.player.velocity.y += up.y * jumpImpulse;
+    simulation.player.velocity.z += up.z * jumpImpulse;
+  }
+  if (!changePlayerFace(arenaFace.id, { momentumScale: 1, limitMomentum: false })) return null;
+  simulation.wallWalkCooldown = WALL_WALK_COOLDOWN;
+  simulation.wallWalkReleaseCount += 1;
+  simulation.lastWallWalkRelease = {
+    fromFaceId: gripFace.id,
+    toFaceId: arenaFace.id,
+    jumped: wasGrounded,
+    jumpImpulse,
+    at: simulation.simulationTime
+  };
+  triggerVisualPulse(0.08);
+  playGameSound("wall-release");
+  announce("Wall Walk released. Falling toward " + arenaFace.label + ".");
+  return simulation.lastWallWalkRelease;
+}
+
 function forceGravityFlip(options = {}) {
   const requested = options.faceId || simulation.gravity.nextFaceId || takeNextGravityFace();
   const destinationFace = faceById.get(requested) || startFace;
@@ -1088,7 +1523,9 @@ function forceGravityFlip(options = {}) {
   if (!wallWalkActive()) changePlayerFace(destinationFace.id);
   relocateVisiblePickups(destinationFace.id);
   const destination = destinationFace.label + " is down now";
-  showCallout("gravity", "Arena alert", "Gravity shift!", destination, 2.25, 6);
+  triggerVisualPulse(0.65);
+  playGameSound("gravity");
+  showCallout("gravity", "Arena alert", "Gravity shift!", destination, 0.95, 6);
   if (options.announceEvent !== false) announce("Gravity shift. " + destination + ".");
   if (isPlaying()) setStatus("Playing · down is " + destinationFace.label, "playing");
   if (options.schedule !== false) scheduleNextGravity(false);
@@ -1102,7 +1539,9 @@ function updateGravity() {
   if (!simulation.gravity.warningIssued && simulation.simulationTime >= warningAt) {
     simulation.gravity.warningIssued = true;
     const nextFace = faceById.get(simulation.gravity.nextFaceId) || startFace;
-    showCallout("gravity", "Get ready", "Gravity shift incoming!", nextFace.label + " in 3 seconds", 1.75, 5);
+    triggerVisualPulse(0.18);
+    playGameSound("warning");
+    showCallout("gravity", "Get ready", "Gravity shift incoming!", nextFace.label + " in 3 seconds", 0.72, 5);
     announce("Gravity shift incoming. " + nextFace.label + " will be down in three seconds.");
   }
   if (simulation.simulationTime >= simulation.gravity.nextFlipAt) forceGravityFlip();
@@ -1117,12 +1556,33 @@ function resizeRenderer() {
   ratio = Math.min(ratio, Math.sqrt(maximumPixels / Math.max(1, width * height)));
   simulation.renderer.setPixelRatio(Math.max(0.75, ratio));
   simulation.renderer.setSize(width, height, false);
+  if (simulation.composer) {
+    const composerRatio = clamp(ratio * 0.85, 0.85, 1.15);
+    simulation.composer.setPixelRatio(composerRatio);
+    simulation.composer.setSize(width, height);
+    if (simulation.bloomPass) {
+      simulation.bloomPass.setSize(
+        Math.max(1, Math.round(width * ratio * 0.55)),
+        Math.max(1, Math.round(height * ratio * 0.55))
+      );
+    }
+  }
   simulation.camera.aspect = width / height;
   simulation.camera.updateProjectionMatrix();
 }
 
 function render() {
   if (simulation.renderer && simulation.scene && simulation.camera) {
+    if (bloomCanRender()) {
+      try {
+        simulation.composer.render();
+        return;
+      } catch (error) {
+        console.warn("Bloom stopped after a graphics error; continuing without it.", error);
+        disposePostProcessing();
+      }
+    }
+    restoreDirectRendererState();
     simulation.renderer.render(simulation.scene, simulation.camera);
   }
 }
@@ -1157,6 +1617,7 @@ function beginKeyboardMode() {
   elements.canvas.focus();
   setStatus("Playing · keyboard look", "playing");
   announce("Keyboard play started. Arrow keys move, I J K L look, Space jumps, and F launches balls.");
+  ensureAudio(function () { playGameSound("start"); });
 }
 
 function beginMouseMode() {
@@ -1164,6 +1625,7 @@ function beginMouseMode() {
     showPointerLockFallback();
     return;
   }
+  ensureAudio();
   clearInput();
   simulation.pointerLockPending = true;
   try {
@@ -1191,6 +1653,7 @@ function showPointerLockFallback() {
     focus: "keyboard"
   });
   setStatus("Keyboard play available");
+  muteAudio();
   announce("Mouse look did not start. Keyboard play is available.");
 }
 
@@ -1201,11 +1664,13 @@ function pauseGame(reason) {
   simulation.mode = "paused";
   simulation.accumulator = 0;
   simulation.lastTime = performance.now();
+  muteAudio();
   showPauseGate(reason);
   announce((reason || "Paused") + ". The playground is frozen.");
 }
 
 function requestPause(reason) {
+  muteAudio();
   if (document.pointerLockElement === elements.canvas) {
     simulation.pendingPauseReason = reason || "Paused";
     simulation.mode = "unlocking";
@@ -1247,6 +1712,16 @@ function resetGame(options = {}) {
   simulation.gravity.nextFaceId = null;
   simulation.gravity.flipCount = 0;
   simulation.wallWalkCooldown = 0;
+  simulation.wallWalkReleaseCount = 0;
+  simulation.lastWallWalkRelease = null;
+  simulation.visualPulse = 0;
+  simulation.visualExcitement = 0.08;
+  simulation.frameTimeEma = 16.7;
+  simulation.bloomSlowTime = 0;
+  simulation.bloomRecoveryTime = 0;
+  simulation.bloomSuppressed = false;
+  audioState.lastEventAt.clear();
+  audioState.duckLowPriorityUntil = 0;
   const startPosition = facePoint(startFace, 0, 0, PLAYER_HEIGHT);
   simulation.player.position.x = startPosition.x;
   simulation.player.position.y = startPosition.y;
@@ -1278,6 +1753,7 @@ function resetGame(options = {}) {
   clearCelebrations();
   hideCallout();
   clearInput();
+  updateVisualEffects(1);
   updateCamera(1, true);
   updateHud();
   render();
@@ -1426,6 +1902,7 @@ function fireBall() {
   simulation.ballInstances.instanceColor.needsUpdate = true;
   simulation.balls.push(ball);
   simulation.nextBallId += 1;
+  playGameSound("fire");
   updateHud();
   return true;
 }
@@ -1565,6 +2042,8 @@ function scoreSplatCascade(ball) {
   if (!childCount || !points) return { level: 0, childCount: 0, points: 0, award: null };
   simulation.cascadeCount += 1;
   if (simulation.simulationTime - simulation.lastCascadeAwardAt < SPLAT_AWARD_COOLDOWN) {
+    triggerVisualPulse(Math.min(0.82, 0.3 + level * 0.13));
+    playGameSound("splat", { level });
     return { level, childCount, points: 0, award: null, awarded: false };
   }
   simulation.lastCascadeAwardAt = simulation.simulationTime;
@@ -1579,6 +2058,9 @@ function scoreSplatCascade(ball) {
   });
   simulation.cascadeAwardCount += 1;
   simulation.cascadePoints += award.points;
+  const cascadeIsMajor = jackpot || award.crossedMilestones.length > 0;
+  triggerVisualPulse(cascadeIsMajor ? 1 : Math.min(0.82, 0.3 + level * 0.13));
+  playGameSound(cascadeIsMajor ? "jackpot" : "splat", { level });
 
   if (simulation.simulationTime - simulation.lastCascadeCalloutAt >= SPLAT_CALLOUT_COOLDOWN) {
     const titles = ["", "SPLAT SPLIT!", "TRIPLE POP!", "CASCADE!", "BALL JACKPOT!"];
@@ -1587,7 +2069,7 @@ function scoreSplatCascade(ball) {
       childCount + "-ball burst",
       titles[level],
       "+" + formatNumber(award.points) + " points",
-      jackpot ? 1.5 : 1.05,
+      jackpot ? 0.62 : 0.38,
       jackpot ? 3 : level >= 3 ? 2 : 1,
       jackpot ? "jackpot" : "cascade"
     );
@@ -1735,12 +2217,15 @@ function scoreTargetHit(ball, target) {
   const isCombo = simulation.combo > 1;
   const title = isCombo ? comboTitle(simulation.combo) : "Target hit!";
   const priority = earnsTierBonus ? 4 : simulation.combo >= 3 ? 2 : 1;
+  const targetIsMajor = earnsTierBonus || award.crossedMilestones.length > 0;
+  triggerVisualPulse(targetIsMajor ? 1 : simulation.combo >= 3 ? 0.72 : 0.3);
+  playGameSound(targetIsMajor ? "jackpot" : "target", { combo: simulation.combo });
   showCallout(
     isCombo ? "combo" : "score",
     earnsTierBonus ? "Jackpot bonus" : isCombo ? "Combo chain" : (ricochetBonus ? "Bank shot" : "Bullseye"),
     title,
     "+" + formatNumber(award.points) + " points" + (earnsTierBonus ? "!" : ""),
-    earnsTierBonus ? 1.85 : simulation.combo >= 3 ? 1.55 : 0.95,
+    earnsTierBonus ? 0.78 : simulation.combo >= 3 ? 0.55 : 0.34,
     priority,
     earnsTierBonus ? "jackpot" : ""
   );
@@ -1802,8 +2287,10 @@ function updateTargets(delta) {
     }
     positionTarget(target);
     const flashAmount = clamp(target.flash / 0.48, 0, 1);
-    target.ring.material.color.copy(target.baseColor).lerp(targetFlashColor, flashAmount);
-    target.center.material.color.copy(target.baseColor).multiplyScalar(0.5).lerp(targetFlashColor, flashAmount * 0.82);
+    const glow = elements.comfort.checked ? 1.05 : 1.05 + simulation.visualExcitement * 0.42;
+    target.ring.material.color.copy(target.baseColor).multiplyScalar(glow).lerp(targetFlashColor, flashAmount);
+    target.center.material.color.copy(target.baseColor).multiplyScalar(0.5 + simulation.visualExcitement * 0.16)
+      .lerp(targetFlashColor, flashAmount * 0.82);
     const pulse = elements.comfort.checked ? 0 : Math.sin(flashAmount * Math.PI) * 0.16;
     target.group.scale.setScalar(1 + pulse);
   });
@@ -1824,9 +2311,11 @@ function activatePower(type) {
   elements.toast.textContent = label + " — level " + power.level + "!";
   elements.toast.hidden = false;
   window.clearTimeout(simulation.toastTimeout);
-  simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 1500);
+  simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 820);
+  triggerVisualPulse(0.26);
+  playGameSound("pickup", { level: power.level });
   if (type === "wallwalk" && !wasActive) {
-    showCallout("score", "Power up", "Wall Walk!", "Run into a seam to climb", 1.55, 3);
+    showCallout("score", "Power up", "Wall Walk!", "Run into a seam to climb", 0.55, 3);
   }
   announce(label + " level " + power.level + ". " + Math.ceil(power.remaining) + " seconds remaining.");
   updateHud();
@@ -1877,7 +2366,7 @@ function updatePickups(delta) {
       if (type === "wallwalk" && simulation.playerFaceId !== simulation.gravityFaceId) {
         changePlayerFace(simulation.gravityFaceId);
         simulation.wallWalkCooldown = WALL_WALK_COOLDOWN;
-        showCallout("score", "Power ended", "Grip released!", gravityLabel() + " is down", 1.35, 3);
+        showCallout("score", "Power ended", "Grip released!", gravityLabel() + " is down", 0.45, 3);
       }
       announce(powerDefinitions[type].label + " expired.");
     }
@@ -1907,25 +2396,27 @@ function updatePlayer(delta) {
   }
   const blend = 1 - Math.exp(-14 * delta);
   const walkSpeed = currentWalkSpeed();
-  const down = face.normal;
-  const verticalSpeed = dot3(simulation.player.velocity, down);
-  const currentTangent = projectToPlane(simulation.player.velocity, down);
+  const gripDown = face.normal;
+  const verticalSpeed = dot3(simulation.player.velocity, gripDown);
+  const currentTangent = projectToPlane(simulation.player.velocity, gripDown);
   const desiredTangent = scale3(desired, walkSpeed);
   const blendedTangent = {
     x: currentTangent.x + (desiredTangent.x - currentTangent.x) * blend,
     y: currentTangent.y + (desiredTangent.y - currentTangent.y) * blend,
     z: currentTangent.z + (desiredTangent.z - currentTangent.z) * blend
   };
-  simulation.player.velocity.x = blendedTangent.x + down.x * verticalSpeed;
-  simulation.player.velocity.y = blendedTangent.y + down.y * verticalSpeed;
-  simulation.player.velocity.z = blendedTangent.z + down.z * verticalSpeed;
+  simulation.player.velocity.x = blendedTangent.x + gripDown.x * verticalSpeed;
+  simulation.player.velocity.y = blendedTangent.y + gripDown.y * verticalSpeed;
+  simulation.player.velocity.z = blendedTangent.z + gripDown.z * verticalSpeed;
+  const wallWalkRelease = simulation.jumpQueued ? releaseWallWalkForJump() : null;
+  const physicsDown = wallWalkRelease ? gravityFace().normal : gripDown;
   const result = stepPlayerWorld(
     simulation.player,
     {
-      jumpRequested: simulation.jumpQueued,
+      jumpRequested: simulation.jumpQueued && !wallWalkRelease,
       eyeHeight: PLAYER_HEIGHT,
       jumpSpeed: currentJumpSpeed(),
-      gravityDirection: down,
+      gravityDirection: physicsDown,
       minimumGroundDot: 0.55
     },
     delta,
@@ -1933,9 +2424,15 @@ function updatePlayer(delta) {
     WORLD,
     PLAYER_PHYSICS
   );
+  if (wallWalkRelease) {
+    result.wallWalkReleased = true;
+    result.releasedFromFaceId = wallWalkRelease.fromFaceId;
+    result.releasedToFaceId = wallWalkRelease.toFaceId;
+    result.jumped = wallWalkRelease.jumped;
+  }
   simulation.jumpQueued = false;
   simulation.wallWalkCooldown = Math.max(0, simulation.wallWalkCooldown - delta);
-  if (wallWalkActive() && simulation.wallWalkCooldown === 0 && length > 0.12 && result.sideRoomFaces.length) {
+  if (!wallWalkRelease && wallWalkActive() && simulation.wallWalkCooldown === 0 && length > 0.12 && result.sideRoomFaces.length) {
     const candidates = result.sideRoomFaces.map(function (faceId) { return faceById.get(faceId); }).filter(function (candidate) {
       return candidate && facesAreAdjacent(DODECA_ARENA, face, candidate) && dot3(desired, candidate.normal) > 0.08;
     }).sort(function (first, second) {
@@ -1946,9 +2443,14 @@ function updatePlayer(delta) {
       setStatus("Playing · gripping " + candidates[0].label, "playing");
     }
   }
-  if (result.jumped) {
+  if (wallWalkRelease) {
+    setStatus("Playing · Wall Walk released toward " + gravityLabel(), "playing");
+  } else if (result.jumped) {
+    triggerVisualPulse(0.08);
+    playGameSound("jump");
     setStatus(simulation.mode === "mouse" ? "Playing · big jump" : "Playing · keyboard jump", "playing");
   } else if (result.landed) {
+    playGameSound("land");
     setStatus(simulation.mode === "mouse" ? "Playing · mouse look" : "Playing · keyboard look", "playing");
   }
   return result;
@@ -2017,18 +2519,21 @@ function fixedUpdate(delta) {
     const collisions = stepProjectileWorld(ball, delta, WORLD, gravityFace().normal);
     ensureBallWorldClear(ball, collisions);
     let strongestSplatCollision = null;
+    let strongestBounceSpeed = 0;
     for (const collision of collisions) {
       scoreFirstTargetCollision(ball, [collision]);
       if (collision.speed > 0.5 && ball.bounceCooldown === 0) {
         simulation.bounceCount += 1;
         ball.ricochets += 1;
         ball.bounceCooldown = 0.07;
+        strongestBounceSpeed = Math.max(strongestBounceSpeed, collision.speed);
       }
       if (ball.splatLevel > 0 && collision.speed >= PROJECTILE.splatThreshold &&
           (!strongestSplatCollision || collision.speed > strongestSplatCollision.speed)) {
         strongestSplatCollision = collision;
       }
     }
+    if (strongestBounceSpeed >= 2) playGameSound("bounce", { speed: strongestBounceSpeed });
     if (strongestSplatCollision && addSplat(ball, strongestSplatCollision)) {
       scoreSplatCascade(ball);
       pendingSplatCascades.push({ ball, collision: strongestSplatCollision });
@@ -2070,6 +2575,7 @@ function fixedUpdate(delta) {
   simulation.splats = survivingSplats;
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
+  updateVisualEffects(delta);
   updateCamera(delta);
 }
 
@@ -2127,6 +2633,7 @@ function animate(timestamp) {
     }
     if (steps === MAX_SUBSTEPS) simulation.accumulator = 0;
   }
+  updateFramePerformance(elapsed);
   updateHud();
   render();
   window.requestAnimationFrame(animate);
@@ -2202,6 +2709,7 @@ document.addEventListener("pointerlockchange", function () {
     elements.canvas.focus();
     setStatus("Playing · mouse look", "playing");
     announce("Mouse play started. Arrow keys move, Space jumps, and clicking launches balls.");
+    ensureAudio(function () { playGameSound("start"); });
     return;
   }
   if (simulation.pointerLockPending) {
@@ -2248,9 +2756,21 @@ elements.lookSpeed.addEventListener("input", function () {
   setText(elements.lookSpeedValue, label);
   elements.lookSpeed.setAttribute("aria-valuetext", label);
 });
+elements.soundEffects.addEventListener("change", function () {
+  if (elements.soundEffects.checked) ensureAudio();
+  else muteAudio();
+});
 elements.comfort.addEventListener("change", function () {
   elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
-  if (elements.comfort.checked) clearCelebrations();
+  if (elements.comfort.checked) {
+    clearCelebrations();
+    disposePostProcessing();
+  } else if (!simulation.bloomAvailable) {
+    initializePostProcessing();
+    resizeRenderer();
+  }
+  if (audioState.context && soundIsEnabled() && isPlaying()) setAudioLevel();
+  updateVisualEffects(1);
   updateCamera(1, true);
 });
 
@@ -2279,11 +2799,13 @@ window.__ballBlasterLoaded = true;
 
 window.__ballBlasterDebug = {
   simulation,
+  audioState,
   fireBall,
   canSpawnBall,
   findSafeMuzzlePosition,
   findLaunchSphere,
   fixedUpdate,
+  updatePlayer,
   resetGame,
   activatePower,
   addSplat,
@@ -2291,6 +2813,7 @@ window.__ballBlasterDebug = {
   scoreSplatCascade,
   awardPoints,
   showScoreBurst,
+  showCallout,
   scoreTargetHit,
   scoreFirstTargetCollision,
   hitTarget: function (targetId = 0, ricochets = 0) {
@@ -2309,6 +2832,16 @@ window.__ballBlasterDebug = {
   updateGravity,
   scheduleNextGravity,
   changePlayerFace,
+  releaseWallWalkForJump,
+  playGameSound,
+  ensureAudio,
+  muteAudio,
+  triggerVisualPulse,
+  updateVisualEffects,
+  initializePostProcessing,
+  disposePostProcessing,
+  resizeRenderer,
+  render,
   gravityFace,
   playerFace,
   updateCamera,
@@ -2354,6 +2887,7 @@ window.__ballBlasterDebug = {
     gravityFlipInterval: GRAVITY_INTERVAL_MIN,
     gravityIntervalRange: [GRAVITY_INTERVAL_MIN, GRAVITY_INTERVAL_MAX],
     gravityWarningTime: GRAVITY_WARNING_TIME,
+    wallWalkCooldown: WALL_WALK_COOLDOWN,
     defaultRandomSeed: DEFAULT_RANDOM_SEED
   }
 };

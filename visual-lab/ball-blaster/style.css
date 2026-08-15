@@ -223,25 +223,25 @@
 
 .ball-stage.is-score-pop .celebration-rail,
 .ball-stage.is-combo-pop .celebration-rail {
-  animation: celebration-chase 1.2s linear both;
+  animation: celebration-chase 620ms linear both;
 }
 
 .ball-stage.is-jackpot .celebration-rail {
-  animation: jackpot-chase 1.6s linear both;
+  animation: jackpot-chase 780ms linear both;
   filter: drop-shadow(0 0 7px rgba(255, 222, 89, 0.95));
 }
 
 .ball-stage.is-combo-pop .celebration-spark,
 .ball-stage.is-jackpot .celebration-spark {
-  animation: celebration-spark 1.25s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+  animation: celebration-spark 680ms cubic-bezier(0.2, 0.75, 0.3, 1) both;
 }
 
 .ball-stage.is-combo-pop .celebration-spark-two,
-.ball-stage.is-jackpot .celebration-spark-two { animation-delay: 100ms; }
+.ball-stage.is-jackpot .celebration-spark-two { animation-delay: 25ms; }
 .ball-stage.is-combo-pop .celebration-spark-three,
-.ball-stage.is-jackpot .celebration-spark-three { animation-delay: 200ms; }
+.ball-stage.is-jackpot .celebration-spark-three { animation-delay: 50ms; }
 .ball-stage.is-combo-pop .celebration-spark-four,
-.ball-stage.is-jackpot .celebration-spark-four { animation-delay: 300ms; }
+.ball-stage.is-jackpot .celebration-spark-four { animation-delay: 75ms; }
 
 .score-burst {
   position: absolute;
@@ -289,7 +289,7 @@
 }
 
 .score-burst.is-live {
-  animation: score-burst-rise 1.2s cubic-bezier(0.15, 0.75, 0.28, 1) both;
+  animation: score-burst-rise 680ms cubic-bezier(0.15, 0.75, 0.28, 1) both;
 }
 
 .crosshair,
@@ -544,7 +544,7 @@
 
 .event-callout.is-active,
 .event-callout.is-visible {
-  animation: callout-arrive 520ms cubic-bezier(0.2, 1.5, 0.45, 1) both;
+  animation: callout-arrive 280ms cubic-bezier(0.2, 1.35, 0.45, 1) both;
 }
 
 .event-callout.is-gravity .event-callout-title,
@@ -564,7 +564,7 @@
 .event-callout[data-kind="gravity"]::before {
   border-color: #67e8ff;
   background: linear-gradient(90deg, transparent, rgba(53, 12, 65, 0.9) 18%, rgba(7, 53, 68, 0.9) 82%, transparent);
-  animation: gravity-border-arrive 620ms cubic-bezier(0.2, 0.82, 0.35, 1) both;
+  animation: gravity-border-arrive 360ms cubic-bezier(0.2, 0.82, 0.35, 1) both;
   transform-origin: center;
 }
 
@@ -678,7 +678,7 @@
 }
 
 .pickup-toast:not([hidden]) {
-  animation: ticket-toast-arrive 720ms cubic-bezier(0.2, 1.35, 0.38, 1) both;
+  animation: ticket-toast-arrive 380ms cubic-bezier(0.2, 1.25, 0.38, 1) both;
 }
 
 .key-guide {
