@@ -39,6 +39,11 @@ const LOOK_SPEEDS = [0.00115, 0.0018, 0.0026];
 const KEYBOARD_LOOK_SPEEDS = [1.05, 1.65, 2.35];
 const MAX_BALLS = 150;
 const MAX_SPLATS = 180;
+const TRAIL_SAMPLES = 7;
+const TRAIL_COMFORT_SAMPLES = 2;
+const TRAIL_SAMPLE_INTERVAL = 0.045;
+const TRAIL_LIFETIME = 0.38;
+const MAX_TRAIL_INSTANCES = MAX_BALLS * TRAIL_SAMPLES;
 const BASE_BALL_RADIUS = 0.18;
 const BALL_SPEED = 17;
 const BASE_FIRE_INTERVAL = 0.28;
@@ -104,10 +109,10 @@ const ARCADE_LEAD_PATTERNS = [
   [24, null, 31, null, 27, null, 34, null, 31, null, 27, null, 29, null, 22, null],
   [null, 27, null, 31, 34, null, 31, null, 29, null, 24, null, 27, 31, null, 22, null]
 ];
-const BLOOM_BASE_STRENGTH = 0.14;
-const BLOOM_MAX_STRENGTH = 0.58;
-const BLOOM_BASE_THRESHOLD = 0.92;
-const BLOOM_MIN_THRESHOLD = 0.84;
+const BLOOM_BASE_STRENGTH = 0.26;
+const BLOOM_MAX_STRENGTH = 0.78;
+const BLOOM_BASE_THRESHOLD = 1.08;
+const BLOOM_MIN_THRESHOLD = 1;
 
 const elements = {
   stage: document.getElementById("ball-stage"),
@@ -298,6 +303,19 @@ const simulation = {
   bloomPass: null,
   outputPass: null,
   bloomAvailable: false,
+  ballGlowInstances: null,
+  splatMaterial: null,
+  trailMesh: null,
+  trailMaterial: null,
+  trailGeometry: null,
+  trailPositions: null,
+  trailRadii: null,
+  trailTimes: null,
+  trailHeads: null,
+  trailCounts: null,
+  trailLastSampleAt: null,
+  trailColors: null,
+  trailsDirty: false,
   arcadeLights: [],
   playerLight: null,
   arenaMaterials: [],
@@ -336,10 +354,20 @@ const audioState = {
 const ballGeometry = new THREE.SphereGeometry(1, 16, 12);
 const ballMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
-  emissive: 0xffffff,
-  emissiveIntensity: 0.22,
-  roughness: 0.35,
+  emissive: 0x182333,
+  emissiveIntensity: 0.08,
+  roughness: 0.3,
   metalness: 0.05
+});
+const ballGlowMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+  depthTest: true,
+  depthWrite: false,
+  side: THREE.BackSide,
+  toneMapped: false
 });
 const splatGeometry = new THREE.CircleGeometry(1, 18);
 const pickupCoreGeometry = new THREE.OctahedronGeometry(0.48, 0);
@@ -357,6 +385,9 @@ const cameraUpVector = new THREE.Vector3();
 const cameraBackVector = new THREE.Vector3();
 const movementCameraDirection = new THREE.Vector3();
 const movementCameraRightDirection = new THREE.Vector3();
+const trailDirectionScratch = new THREE.Vector3();
+const ballColorScratch = new THREE.Color();
+const glowColorScratch = new THREE.Color();
 
 function announce(message) {
   elements.announcer.textContent = "";
@@ -1303,7 +1334,7 @@ function createWebGLRenderer() {
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   return renderer;
@@ -1330,11 +1361,13 @@ function faceObjectQuaternion(face, planeNormal = "inward") {
 }
 
 function makeTerrainMesh(scene, obstacle) {
+  const terrainColor = new THREE.Color(obstacle.color).multiplyScalar(0.14);
+  const terrainEmissive = new THREE.Color(obstacle.color).multiplyScalar(0.18);
   const material = new THREE.MeshStandardMaterial({
-    color: obstacle.color,
-    emissive: obstacle.color,
-    emissiveIntensity: 0.07,
-    roughness: 0.68,
+    color: terrainColor,
+    emissive: terrainEmissive,
+    emissiveIntensity: 0.1,
+    roughness: 0.72,
     metalness: 0.02
   });
   const mesh = new THREE.Mesh(
@@ -1395,11 +1428,13 @@ function createTargetMeshes(scene) {
 
 function createArena(scene) {
   DODECA_ARENA.faces.forEach(function (face) {
+    const faceColor = new THREE.Color(face.color).multiplyScalar(0.09);
+    const faceEmissive = new THREE.Color(face.color).multiplyScalar(0.16);
     const material = new THREE.MeshStandardMaterial({
-      color: face.color,
-      emissive: face.color,
-      emissiveIntensity: 0.035,
-      roughness: 0.83,
+      color: faceColor,
+      emissive: faceEmissive,
+      emissiveIntensity: 0.1,
+      roughness: 0.88,
       metalness: 0,
       side: THREE.DoubleSide
     });
@@ -1417,7 +1452,7 @@ function createArena(scene) {
   edgeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(edgePositions, 3));
   scene.add(new THREE.LineSegments(
     edgeGeometry,
-    new THREE.LineBasicMaterial({ color: 0x295f65, transparent: true, opacity: 0.42 })
+    new THREE.LineBasicMaterial({ color: 0x4d8ca3, transparent: true, opacity: 0.55 })
   ));
 
   terrainObstacles.forEach(function (obstacle) { makeTerrainMesh(scene, obstacle); });
@@ -1454,40 +1489,252 @@ function createSplatTexture() {
   return texture;
 }
 
+function initializeBallTrails(scene) {
+  simulation.trailPositions = new Float32Array(MAX_TRAIL_INSTANCES * 3);
+  simulation.trailRadii = new Float32Array(MAX_TRAIL_INSTANCES);
+  simulation.trailTimes = new Float64Array(MAX_TRAIL_INSTANCES);
+  simulation.trailHeads = new Uint8Array(MAX_BALLS);
+  simulation.trailCounts = new Uint8Array(MAX_BALLS);
+  simulation.trailLastSampleAt = new Float64Array(MAX_BALLS);
+  simulation.trailLastSampleAt.fill(-Infinity);
+  simulation.trailColors = new Float32Array(MAX_BALLS * 3);
+  simulation.trailGeometry = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
+  simulation.trailMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    depthWrite: false,
+    toneMapped: false
+  });
+  simulation.trailMesh = new THREE.InstancedMesh(
+    simulation.trailGeometry,
+    simulation.trailMaterial,
+    MAX_TRAIL_INSTANCES
+  );
+  simulation.trailMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  simulation.trailMesh.frustumCulled = false;
+  simulation.trailMesh.renderOrder = 2;
+  ballColorScratch.setRGB(0, 0, 0);
+  for (let index = 0; index < MAX_TRAIL_INSTANCES; index += 1) {
+    simulation.trailMesh.setMatrixAt(index, zeroMatrix);
+    simulation.trailMesh.setColorAt(index, ballColorScratch);
+  }
+  simulation.trailMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  simulation.trailMesh.instanceMatrix.needsUpdate = true;
+  simulation.trailMesh.instanceColor.needsUpdate = true;
+  scene.add(simulation.trailMesh);
+}
+
+function clearBallTrail(slot) {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_BALLS || !simulation.trailCounts) return;
+  simulation.trailCounts[slot] = 0;
+  simulation.trailHeads[slot] = 0;
+  simulation.trailLastSampleAt[slot] = -Infinity;
+  const historyStart = slot * TRAIL_SAMPLES;
+  for (let index = 0; index < TRAIL_SAMPLES; index += 1) {
+    const historyIndex = historyStart + index;
+    const positionIndex = historyIndex * 3;
+    simulation.trailPositions[positionIndex] = 0;
+    simulation.trailPositions[positionIndex + 1] = 0;
+    simulation.trailPositions[positionIndex + 2] = 0;
+    simulation.trailRadii[historyIndex] = 0;
+    simulation.trailTimes[historyIndex] = 0;
+    simulation.trailMesh?.setMatrixAt(historyIndex, zeroMatrix);
+  }
+  if (simulation.trailMesh) simulation.trailMesh.instanceMatrix.needsUpdate = true;
+  simulation.trailsDirty = true;
+}
+
+function clearAllBallTrails() {
+  if (!simulation.trailCounts) return;
+  for (let slot = 0; slot < MAX_BALLS; slot += 1) clearBallTrail(slot);
+  updateTrailInstances();
+}
+
+function seedBallTrail(ball) {
+  if (!ball || !Number.isInteger(ball.slot) || !simulation.trailCounts) return;
+  clearBallTrail(ball.slot);
+  const historyIndex = ball.slot * TRAIL_SAMPLES;
+  const positionIndex = historyIndex * 3;
+  simulation.trailPositions[positionIndex] = ball.position.x;
+  simulation.trailPositions[positionIndex + 1] = ball.position.y;
+  simulation.trailPositions[positionIndex + 2] = ball.position.z;
+  simulation.trailRadii[historyIndex] = ball.radius;
+  simulation.trailTimes[historyIndex] = simulation.simulationTime;
+  simulation.trailHeads[ball.slot] = 0;
+  simulation.trailCounts[ball.slot] = 1;
+  simulation.trailLastSampleAt[ball.slot] = simulation.simulationTime;
+  ballColorScratch.setHex(ball.color);
+  const colorIndex = ball.slot * 3;
+  simulation.trailColors[colorIndex] = ballColorScratch.r;
+  simulation.trailColors[colorIndex + 1] = ballColorScratch.g;
+  simulation.trailColors[colorIndex + 2] = ballColorScratch.b;
+  simulation.trailsDirty = true;
+}
+
+function sampleBallTrail(ball) {
+  if (!ball || ball.released || !simulation.trailCounts) return;
+  const slot = ball.slot;
+  const elapsed = simulation.simulationTime - simulation.trailLastSampleAt[slot];
+  if (elapsed + 1e-9 < TRAIL_SAMPLE_INTERVAL) {
+    simulation.trailsDirty = true;
+    return;
+  }
+  const head = simulation.trailHeads[slot];
+  const lastIndex = slot * TRAIL_SAMPLES + head;
+  const lastPositionIndex = lastIndex * 3;
+  const dx = ball.position.x - simulation.trailPositions[lastPositionIndex];
+  const dy = ball.position.y - simulation.trailPositions[lastPositionIndex + 1];
+  const dz = ball.position.z - simulation.trailPositions[lastPositionIndex + 2];
+  const minimumDistance = Math.max(0.1, ball.radius * 0.18);
+  if (dx * dx + dy * dy + dz * dz < minimumDistance * minimumDistance) {
+    simulation.trailsDirty = true;
+    return;
+  }
+  const nextHead = (head + 1) % TRAIL_SAMPLES;
+  const historyIndex = slot * TRAIL_SAMPLES + nextHead;
+  const positionIndex = historyIndex * 3;
+  simulation.trailPositions[positionIndex] = ball.position.x;
+  simulation.trailPositions[positionIndex + 1] = ball.position.y;
+  simulation.trailPositions[positionIndex + 2] = ball.position.z;
+  simulation.trailRadii[historyIndex] = ball.radius;
+  simulation.trailTimes[historyIndex] = simulation.simulationTime;
+  simulation.trailHeads[slot] = nextHead;
+  simulation.trailCounts[slot] = Math.min(TRAIL_SAMPLES, simulation.trailCounts[slot] + 1);
+  simulation.trailLastSampleAt[slot] = simulation.simulationTime;
+  simulation.trailsDirty = true;
+}
+
+function updateTrailInstances() {
+  if (!simulation.trailMesh || !simulation.trailCounts) return;
+  const maximumSamples = elements.comfort.checked ? TRAIL_COMFORT_SAMPLES : TRAIL_SAMPLES;
+  const lifetimeMultiplier = elements.comfort.checked ? 0.55 : 1;
+  const colorMultiplier = elements.comfort.checked
+    ? 1.15
+    : 2.55 + simulation.visualExcitement * 1.15;
+  simulation.trailMaterial.opacity = elements.comfort.checked
+    ? 0.3
+    : 0.64 + simulation.visualExcitement * 0.18;
+
+  for (const ball of simulation.balls) {
+    if (ball.released || !Number.isInteger(ball.slot)) continue;
+    const slot = ball.slot;
+    const blockStart = slot * TRAIL_SAMPLES;
+    let written = 0;
+    let startX = ball.position.x;
+    let startY = ball.position.y;
+    let startZ = ball.position.z;
+    const count = simulation.trailCounts[slot];
+    const head = simulation.trailHeads[slot];
+    const colorIndex = slot * 3;
+    const ballLifetimeFade = ball.age > PROJECTILE.lifetime - BALL_FADE_TIME
+      ? clamp((PROJECTILE.lifetime - ball.age) / BALL_FADE_TIME, 0, 1)
+      : 1;
+
+    for (let ageIndex = 0; ageIndex < count && written < maximumSamples; ageIndex += 1) {
+      const sampleIndex = blockStart + (head - ageIndex + TRAIL_SAMPLES) % TRAIL_SAMPLES;
+      const age = simulation.simulationTime - simulation.trailTimes[sampleIndex];
+      if (age < -1e-6 || age >= TRAIL_LIFETIME * lifetimeMultiplier) continue;
+      const samplePositionIndex = sampleIndex * 3;
+      const endX = simulation.trailPositions[samplePositionIndex];
+      const endY = simulation.trailPositions[samplePositionIndex + 1];
+      const endZ = simulation.trailPositions[samplePositionIndex + 2];
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const dz = endZ - startZ;
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (length > 0.008) {
+        const fade = Math.pow(1 - age / (TRAIL_LIFETIME * lifetimeMultiplier), 1.45);
+        const radius = simulation.trailRadii[sampleIndex] || ball.radius;
+        const thickness = clamp(radius * (0.1 + fade * 0.24), 0.034, 0.36) * ballLifetimeFade;
+        const instanceIndex = blockStart + written;
+        instanceDummy.position.set(
+          (startX + endX) * 0.5,
+          (startY + endY) * 0.5,
+          (startZ + endZ) * 0.5
+        );
+        instanceDummy.quaternion.setFromUnitVectors(localY, trailDirectionScratch.set(dx / length, dy / length, dz / length));
+        instanceDummy.scale.set(thickness, length, thickness);
+        instanceDummy.updateMatrix();
+        simulation.trailMesh.setMatrixAt(instanceIndex, instanceDummy.matrix);
+        glowColorScratch.setRGB(
+          simulation.trailColors[colorIndex],
+          simulation.trailColors[colorIndex + 1],
+          simulation.trailColors[colorIndex + 2]
+        ).multiplyScalar(colorMultiplier * (0.28 + fade * 0.72));
+        simulation.trailMesh.setColorAt(instanceIndex, glowColorScratch);
+        written += 1;
+      }
+      startX = endX;
+      startY = endY;
+      startZ = endZ;
+    }
+    for (let index = written; index < TRAIL_SAMPLES; index += 1) {
+      simulation.trailMesh.setMatrixAt(blockStart + index, zeroMatrix);
+    }
+  }
+  simulation.trailMesh.instanceMatrix.needsUpdate = true;
+  simulation.trailMesh.instanceColor.needsUpdate = true;
+  simulation.trailsDirty = false;
+}
+
 function initializeInstances(scene) {
   simulation.ballInstances = new THREE.InstancedMesh(ballGeometry, ballMaterial, MAX_BALLS);
   simulation.ballInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   simulation.ballInstances.frustumCulled = false;
+  simulation.ballGlowInstances = new THREE.InstancedMesh(ballGeometry, ballGlowMaterial, MAX_BALLS);
+  simulation.ballGlowInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  simulation.ballGlowInstances.frustumCulled = false;
+  simulation.ballGlowInstances.renderOrder = 3;
+  simulation.splatMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    map: createSplatTexture(),
+    transparent: true,
+    opacity: 0.92,
+    alphaTest: 0.06,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    toneMapped: false
+  });
   simulation.splatInstances = new THREE.InstancedMesh(
     splatGeometry,
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      map: createSplatTexture(),
-      transparent: true,
-      opacity: 0.88,
-      alphaTest: 0.08,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2
-    }),
+    simulation.splatMaterial,
     MAX_SPLATS
   );
   simulation.splatInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   simulation.splatInstances.frustumCulled = false;
   simulation.freeBallSlots = [];
   simulation.freeSplatSlots = [];
+  ballColorScratch.setRGB(0, 0, 0);
   for (let index = MAX_BALLS - 1; index >= 0; index -= 1) {
     simulation.ballInstances.setMatrixAt(index, zeroMatrix);
+    simulation.ballGlowInstances.setMatrixAt(index, zeroMatrix);
+    simulation.ballInstances.setColorAt(index, ballColorScratch);
+    simulation.ballGlowInstances.setColorAt(index, ballColorScratch);
     simulation.freeBallSlots.push(index);
   }
   for (let index = MAX_SPLATS - 1; index >= 0; index -= 1) {
     simulation.splatInstances.setMatrixAt(index, zeroMatrix);
+    simulation.splatInstances.setColorAt(index, ballColorScratch);
     simulation.freeSplatSlots.push(index);
   }
+  simulation.ballInstances.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  simulation.ballGlowInstances.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  simulation.splatInstances.instanceColor.setUsage(THREE.DynamicDrawUsage);
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
+  simulation.ballGlowInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
-  scene.add(simulation.ballInstances, simulation.splatInstances);
+  simulation.ballInstances.instanceColor.needsUpdate = true;
+  simulation.ballGlowInstances.instanceColor.needsUpdate = true;
+  simulation.splatInstances.instanceColor.needsUpdate = true;
+  scene.add(simulation.ballInstances, simulation.ballGlowInstances, simulation.splatInstances);
+  initializeBallTrails(scene);
 }
 
 function createLabelSprite(text, color) {
@@ -1626,14 +1873,19 @@ function initializeArcadeLighting(scene) {
     { color: 0x45f0d1, phase: Math.PI * 2 / 3, radius: 9.2 },
     { color: 0x8b6dff, phase: Math.PI * 4 / 3, radius: 7.7 }
   ];
-  simulation.arcadeLights = lightDefinitions.map(function (definition) {
-    const light = new THREE.PointLight(definition.color, 28, 34, 2);
+  simulation.arcadeLights = lightDefinitions.map(function (definition, index) {
+    const light = new THREE.PointLight(definition.color, 12, 30, 2);
     light.userData.phase = definition.phase;
     light.userData.radius = definition.radius;
+    light.position.set(
+      Math.cos(definition.phase) * definition.radius,
+      Math.sin(definition.phase * 0.73 + index) * 5.2,
+      Math.sin(definition.phase) * definition.radius
+    );
     scene.add(light);
     return light;
   });
-  simulation.playerLight = new THREE.PointLight(0xb8fff2, 7, 11, 2);
+  simulation.playerLight = new THREE.PointLight(0xb8fff2, 10, 13, 2);
   simulation.playerLight.position.set(0, 0.1, 0.25);
   simulation.camera.add(simulation.playerLight);
 }
@@ -1728,16 +1980,19 @@ function updateVisualEffects(delta = FIXED_STEP) {
     simulation.visualPulse = 0;
     simulation.visualExcitement = 0.12;
     if (simulation.bloomPass) simulation.bloomPass.strength = 0;
-    ballMaterial.emissiveIntensity = 0.24;
-    simulation.arenaMaterials.forEach(function (material) { material.emissiveIntensity = 0.035; });
-    simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.075; });
+    ballMaterial.emissiveIntensity = 0.08;
+    ballGlowMaterial.opacity = 0.24;
+    if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.78;
+    simulation.arenaMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
+    simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
     powerTypes.forEach(function (type) {
       const material = simulation.pickupObjects[type]?.userData.core?.material;
-      if (material) material.emissiveIntensity = 0.6;
+      if (material) material.emissiveIntensity = 0.72;
     });
-    simulation.arcadeLights.forEach(function (light) { light.intensity = 30; });
-    if (simulation.playerLight) simulation.playerLight.intensity = 8;
-    if (simulation.renderer) simulation.renderer.toneMappingExposure = 1.06;
+    simulation.arcadeLights.forEach(function (light) { light.intensity = 12; });
+    if (simulation.playerLight) simulation.playerLight.intensity = 10;
+    if (simulation.trailMaterial) simulation.trailMaterial.opacity = 0.3;
+    if (simulation.renderer) simulation.renderer.toneMappingExposure = 0.96;
     return;
   }
   const comboHeat = clamp((simulation.combo - 1) / Math.max(1, MAX_COMBO - 1), 0, 1);
@@ -1755,23 +2010,25 @@ function updateVisualEffects(delta = FIXED_STEP) {
     const framePenalty = clamp((simulation.frameTimeEma - 18) / 10, 0, 1);
     const desiredStrength = bloomCanRender()
       ? clamp(
-        (BLOOM_BASE_STRENGTH + comboHeat * 0.1 + powerHeat * 0.06 + simulation.visualPulse * 0.42) *
+        (BLOOM_BASE_STRENGTH + comboHeat * 0.12 + powerHeat * 0.08 + ballHeat * 0.08 + simulation.visualPulse * 0.42) *
           (1 - 0.5 * bloomBallLoad) * (1 - 0.35 * framePenalty),
         0,
         BLOOM_MAX_STRENGTH
       )
       : 0;
     simulation.bloomPass.strength += (desiredStrength - simulation.bloomPass.strength) * (1 - Math.exp(-8 * delta));
-    simulation.bloomPass.radius = 0.16 + excitement * 0.08;
+    simulation.bloomPass.radius = 0.18 + excitement * 0.12;
     simulation.bloomPass.threshold = BLOOM_BASE_THRESHOLD - excitement * (BLOOM_BASE_THRESHOLD - BLOOM_MIN_THRESHOLD);
   }
 
-  ballMaterial.emissiveIntensity = 0.2 + excitement * 0.36;
+  ballMaterial.emissiveIntensity = 0.08 + excitement * 0.08;
+  ballGlowMaterial.opacity = 0.48 + excitement * 0.14;
+  if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.88 + excitement * 0.1;
   simulation.arenaMaterials.forEach(function (material) {
-    material.emissiveIntensity = 0.035;
+    material.emissiveIntensity = 0.1;
   });
   simulation.terrainMaterials.forEach(function (material) {
-    material.emissiveIntensity = 0.075;
+    material.emissiveIntensity = 0.1;
   });
   powerTypes.forEach(function (type) {
     const material = simulation.pickupObjects[type]?.userData.core?.material;
@@ -1788,25 +2045,25 @@ function updateVisualEffects(delta = FIXED_STEP) {
       Math.sin(angle) * radius
     );
     const shimmer = 1 + Math.sin(time * 2.1 + index * 1.7) * 0.08;
-    light.intensity = (22 + excitement * 56) * shimmer;
+    light.intensity = (10 + excitement * 24) * shimmer;
   });
-  if (simulation.playerLight) simulation.playerLight.intensity = 6 + excitement * 12;
-  simulation.renderer.toneMappingExposure = 1.06;
+  if (simulation.playerLight) simulation.playerLight.intensity = 9 + excitement * 8;
+  simulation.renderer.toneMappingExposure = 0.92;
 }
 
 function initializeScene() {
   simulation.renderer = createWebGLRenderer();
   simulation.scene = new THREE.Scene();
-  simulation.scene.background = new THREE.Color(0x102f3a);
-  simulation.scene.fog = new THREE.Fog(0x102f3a, 25, 58);
+  simulation.scene.background = new THREE.Color(0x02040b);
+  simulation.scene.fog = new THREE.Fog(0x02040b, 25, 58);
   simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 90);
   simulation.scene.add(simulation.camera);
 
-  const hemisphere = new THREE.HemisphereLight(0xeafcff, 0x6b4b38, 1.65);
+  const hemisphere = new THREE.HemisphereLight(0x5d7c9e, 0x080510, 0.52);
   simulation.scene.add(hemisphere);
-  const ambient = new THREE.AmbientLight(0xffffff, 0.42);
+  const ambient = new THREE.AmbientLight(0x6d7694, 0.12);
   simulation.scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xfff2d4, 2.35);
+  const sun = new THREE.DirectionalLight(0x9fc9ff, 0.72);
   sun.position.set(8, 15, 11);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -2158,6 +2415,7 @@ function resetGame(options = {}) {
   simulation.splats.forEach(removeSplatMesh);
   simulation.balls = [];
   simulation.splats = [];
+  clearAllBallTrails();
   simulation.nextBallId = 1;
   simulation.nextSplatId = 1;
   simulation.bounceCount = 0;
@@ -2245,6 +2503,8 @@ function removeBallMesh(ball) {
   if (!ball || ball.released) return;
   ball.released = true;
   hideInstance(simulation.ballInstances, ball.slot);
+  hideInstance(simulation.ballGlowInstances, ball.slot);
+  clearBallTrail(ball.slot);
   simulation.freeBallSlots.push(ball.slot);
 }
 
@@ -2261,6 +2521,18 @@ function setBallInstance(ball, fade) {
   instanceDummy.scale.setScalar(ball.radius * fade);
   instanceDummy.updateMatrix();
   simulation.ballInstances.setMatrixAt(ball.slot, instanceDummy.matrix);
+  instanceDummy.scale.setScalar(ball.radius * fade * 1.16);
+  instanceDummy.updateMatrix();
+  simulation.ballGlowInstances.setMatrixAt(ball.slot, instanceDummy.matrix);
+}
+
+function setBallVisualColor(ball) {
+  ballColorScratch.setHex(ball.color);
+  simulation.ballInstances.setColorAt(ball.slot, ballColorScratch);
+  glowColorScratch.copy(ballColorScratch).multiplyScalar(3.4);
+  simulation.ballGlowInstances.setColorAt(ball.slot, glowColorScratch);
+  simulation.ballInstances.instanceColor.needsUpdate = true;
+  simulation.ballGlowInstances.instanceColor.needsUpdate = true;
 }
 
 function setSplatInstance(splat, fade) {
@@ -2372,9 +2644,10 @@ function fireBall() {
     released: false
   };
   setBallInstance(ball, 1);
-  simulation.ballInstances.setColorAt(slot, new THREE.Color(color));
+  setBallVisualColor(ball);
+  seedBallTrail(ball);
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
-  simulation.ballInstances.instanceColor.needsUpdate = true;
+  simulation.ballGlowInstances.instanceMatrix.needsUpdate = true;
   simulation.balls.push(ball);
   simulation.nextBallId += 1;
   playGameSound("fire");
@@ -2407,7 +2680,8 @@ function addSplat(ball, collision) {
   quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(zAxis, (ball.id * 1.618 + simulation.splatCount * 0.7) % (Math.PI * 2)));
   const splat = { id: simulation.nextSplatId, age: 0, slot, position, quaternion, scale, released: false };
   setSplatInstance(splat, 1);
-  simulation.splatInstances.setColorAt(slot, new THREE.Color(ball.color));
+  glowColorScratch.setHex(ball.color).multiplyScalar(2.15);
+  simulation.splatInstances.setColorAt(slot, glowColorScratch);
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceColor.needsUpdate = true;
   simulation.splats.push(splat);
@@ -2498,14 +2772,15 @@ function spawnSplatFragments(ball, collision) {
       released: false
     };
     setBallInstance(fragment, 1);
-    simulation.ballInstances.setColorAt(slot, new THREE.Color(fragment.color));
+    setBallVisualColor(fragment);
+    seedBallTrail(fragment);
     simulation.balls.push(fragment);
     simulation.nextBallId += 1;
     spawned.push(fragment);
   }
   simulation.cascadeFragmentCount += spawned.length;
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
-  simulation.ballInstances.instanceColor.needsUpdate = true;
+  simulation.ballGlowInstances.instanceMatrix.needsUpdate = true;
   updateHud();
   return spawned;
 }
@@ -2993,6 +3268,7 @@ function fixedUpdate(delta) {
     updateBallGrowth(ball, delta);
     const collisions = stepProjectileWorld(ball, delta, WORLD, gravityFace().normal);
     ensureBallWorldClear(ball, collisions);
+    sampleBallTrail(ball);
     let strongestSplatCollision = null;
     let strongestBounceSpeed = 0;
     for (const collision of collisions) {
@@ -3049,6 +3325,7 @@ function fixedUpdate(delta) {
   }
   simulation.splats = survivingSplats;
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
+  simulation.ballGlowInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
   updateVisualEffects(delta);
   updateCamera(delta);
@@ -3098,9 +3375,9 @@ function animate(timestamp) {
   if (!simulation.lastTime) simulation.lastTime = timestamp;
   const elapsed = Math.min(0.05, Math.max(0, (timestamp - simulation.lastTime) / 1000));
   simulation.lastTime = timestamp;
+  let steps = 0;
   if (isPlaying() && !document.hidden) {
     simulation.accumulator += elapsed;
-    let steps = 0;
     while (simulation.accumulator >= FIXED_STEP && steps < MAX_SUBSTEPS) {
       fixedUpdate(FIXED_STEP);
       simulation.accumulator -= FIXED_STEP;
@@ -3108,6 +3385,7 @@ function animate(timestamp) {
     }
     if (steps === MAX_SUBSTEPS) simulation.accumulator = 0;
   }
+  if (simulation.trailsDirty || steps > 0) updateTrailInstances();
   updateArcadeMusic(elapsed);
   updateFramePerformance(elapsed);
   updateHud();
@@ -3259,6 +3537,8 @@ elements.comfort.addEventListener("change", function () {
   }
   if (audioState.context && soundIsEnabled() && isPlaying()) setAudioLevel();
   updateVisualEffects(1);
+  simulation.trailsDirty = true;
+  updateTrailInstances();
   updateCamera(1, true);
 });
 
@@ -3298,6 +3578,11 @@ window.__ballBlasterDebug = {
   activatePower,
   addSplat,
   spawnSplatFragments,
+  seedBallTrail,
+  sampleBallTrail,
+  clearBallTrail,
+  clearAllBallTrails,
+  updateTrailInstances,
   scoreSplatCascade,
   awardPoints,
   showScoreBurst,
@@ -3350,6 +3635,11 @@ window.__ballBlasterDebug = {
   constants: {
     fixedStep: FIXED_STEP,
     maxBalls: MAX_BALLS,
+    trailSamples: TRAIL_SAMPLES,
+    trailComfortSamples: TRAIL_COMFORT_SAMPLES,
+    trailSampleInterval: TRAIL_SAMPLE_INTERVAL,
+    trailLifetime: TRAIL_LIFETIME,
+    maxTrailInstances: MAX_TRAIL_INSTANCES,
     maxAudioVoices: MAX_AUDIO_VOICES,
     maxMusicVoices: MAX_MUSIC_VOICES,
     musicBaseBpm: MUSIC_BASE_BPM,
