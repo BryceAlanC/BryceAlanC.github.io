@@ -44,6 +44,13 @@ const TRAIL_COMFORT_SAMPLES = 2;
 const TRAIL_SAMPLE_INTERVAL = 0.045;
 const TRAIL_LIFETIME = 0.38;
 const MAX_TRAIL_INSTANCES = MAX_BALLS * TRAIL_SAMPLES;
+const VISUAL_LAUNCH_NDC_X = 0.42;
+const VISUAL_LAUNCH_NDC_Y = -0.36;
+const VISUAL_LAUNCH_DURATION = 0.15;
+const VISUAL_LAUNCH_CLEARANCE_CANDIDATES = [
+  [1, 1], [1, 0.55], [1, 0], [0.72, 0.42], [0.42, 0.25], [0.25, 0.12], [0.12, 0], [0, 0]
+];
+const VISUAL_LAUNCH_RETRACTION_SCALES = [1, 0.72, 0.42, 0.25, 0.12, 0];
 const BASE_BALL_RADIUS = 0.18;
 const BALL_SPEED = 17;
 const BASE_FIRE_INTERVAL = 0.28;
@@ -115,9 +122,12 @@ const BLOOM_BASE_THRESHOLD = 1.08;
 const BLOOM_MIN_THRESHOLD = 1;
 
 const elements = {
+  stagePanel: document.getElementById("ball-stage-panel"),
   stage: document.getElementById("ball-stage"),
   canvas: document.getElementById("game-canvas"),
   status: document.getElementById("game-status"),
+  fullscreenToggle: document.getElementById("fullscreen-toggle"),
+  fullscreenLabel: document.getElementById("fullscreen-label"),
   gate: document.getElementById("game-gate"),
   gateTitle: document.getElementById("gate-title"),
   gateCopy: document.getElementById("gate-copy"),
@@ -287,6 +297,8 @@ const simulation = {
   bloomSlowTime: 0,
   bloomRecoveryTime: 0,
   bloomSuppressed: false,
+  fullscreenActive: false,
+  fullscreenInitialized: false,
   cameraQuaternion: new THREE.Quaternion(),
   callout: { remaining: 0, priority: 0 },
   lastCelebrationAt: -Infinity,
@@ -386,6 +398,8 @@ const cameraBackVector = new THREE.Vector3();
 const movementCameraDirection = new THREE.Vector3();
 const movementCameraRightDirection = new THREE.Vector3();
 const trailDirectionScratch = new THREE.Vector3();
+const muzzleRightScratch = new THREE.Vector3();
+const muzzleUpScratch = new THREE.Vector3();
 const ballColorScratch = new THREE.Color();
 const glowColorScratch = new THREE.Color();
 
@@ -1556,11 +1570,12 @@ function clearAllBallTrails() {
 function seedBallTrail(ball) {
   if (!ball || !Number.isInteger(ball.slot) || !simulation.trailCounts) return;
   clearBallTrail(ball.slot);
+  const visualPosition = ballVisualPosition(ball);
   const historyIndex = ball.slot * TRAIL_SAMPLES;
   const positionIndex = historyIndex * 3;
-  simulation.trailPositions[positionIndex] = ball.position.x;
-  simulation.trailPositions[positionIndex + 1] = ball.position.y;
-  simulation.trailPositions[positionIndex + 2] = ball.position.z;
+  simulation.trailPositions[positionIndex] = visualPosition.x;
+  simulation.trailPositions[positionIndex + 1] = visualPosition.y;
+  simulation.trailPositions[positionIndex + 2] = visualPosition.z;
   simulation.trailRadii[historyIndex] = ball.radius;
   simulation.trailTimes[historyIndex] = simulation.simulationTime;
   simulation.trailHeads[ball.slot] = 0;
@@ -1577,6 +1592,7 @@ function seedBallTrail(ball) {
 function sampleBallTrail(ball) {
   if (!ball || ball.released || !simulation.trailCounts) return;
   const slot = ball.slot;
+  const visualPosition = ballVisualPosition(ball);
   const elapsed = simulation.simulationTime - simulation.trailLastSampleAt[slot];
   if (elapsed + 1e-9 < TRAIL_SAMPLE_INTERVAL) {
     simulation.trailsDirty = true;
@@ -1585,9 +1601,9 @@ function sampleBallTrail(ball) {
   const head = simulation.trailHeads[slot];
   const lastIndex = slot * TRAIL_SAMPLES + head;
   const lastPositionIndex = lastIndex * 3;
-  const dx = ball.position.x - simulation.trailPositions[lastPositionIndex];
-  const dy = ball.position.y - simulation.trailPositions[lastPositionIndex + 1];
-  const dz = ball.position.z - simulation.trailPositions[lastPositionIndex + 2];
+  const dx = visualPosition.x - simulation.trailPositions[lastPositionIndex];
+  const dy = visualPosition.y - simulation.trailPositions[lastPositionIndex + 1];
+  const dz = visualPosition.z - simulation.trailPositions[lastPositionIndex + 2];
   const minimumDistance = Math.max(0.1, ball.radius * 0.18);
   if (dx * dx + dy * dy + dz * dz < minimumDistance * minimumDistance) {
     simulation.trailsDirty = true;
@@ -1596,9 +1612,9 @@ function sampleBallTrail(ball) {
   const nextHead = (head + 1) % TRAIL_SAMPLES;
   const historyIndex = slot * TRAIL_SAMPLES + nextHead;
   const positionIndex = historyIndex * 3;
-  simulation.trailPositions[positionIndex] = ball.position.x;
-  simulation.trailPositions[positionIndex + 1] = ball.position.y;
-  simulation.trailPositions[positionIndex + 2] = ball.position.z;
+  simulation.trailPositions[positionIndex] = visualPosition.x;
+  simulation.trailPositions[positionIndex + 1] = visualPosition.y;
+  simulation.trailPositions[positionIndex + 2] = visualPosition.z;
   simulation.trailRadii[historyIndex] = ball.radius;
   simulation.trailTimes[historyIndex] = simulation.simulationTime;
   simulation.trailHeads[slot] = nextHead;
@@ -1623,9 +1639,10 @@ function updateTrailInstances() {
     const slot = ball.slot;
     const blockStart = slot * TRAIL_SAMPLES;
     let written = 0;
-    let startX = ball.position.x;
-    let startY = ball.position.y;
-    let startZ = ball.position.z;
+    const visualPosition = ballVisualPosition(ball);
+    let startX = visualPosition.x;
+    let startY = visualPosition.y;
+    let startZ = visualPosition.z;
     const count = simulation.trailCounts[slot];
     const head = simulation.trailHeads[slot];
     const colorIndex = slot * 3;
@@ -2272,6 +2289,84 @@ function updateGravity() {
   if (simulation.simulationTime >= simulation.gravity.nextFlipAt) forceGravityFlip();
 }
 
+function currentFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function fullscreenSupported() {
+  if (!elements.stagePanel) return false;
+  const request = elements.stagePanel.requestFullscreen || elements.stagePanel.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const explicitlyDisabled = document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true;
+  return typeof request === "function" && typeof exit === "function" && !explicitlyDisabled;
+}
+
+function scheduleFullscreenResize() {
+  window.requestAnimationFrame(function () {
+    resizeRenderer();
+    window.requestAnimationFrame(resizeRenderer);
+  });
+}
+
+function syncFullscreenState(options = {}) {
+  const wasActive = simulation.fullscreenActive;
+  const isActive = currentFullscreenElement() === elements.stagePanel;
+  simulation.fullscreenActive = isActive;
+  elements.stagePanel?.classList.toggle("is-fullscreen", isActive);
+  if (elements.fullscreenToggle) {
+    elements.fullscreenToggle.setAttribute("aria-pressed", String(isActive));
+    elements.fullscreenToggle.setAttribute("aria-label", isActive ? "Exit fullscreen" : "Enter fullscreen");
+    elements.fullscreenToggle.title = isActive ? "Exit fullscreen" : "Enter fullscreen";
+  }
+  setText(elements.fullscreenLabel, isActive ? "Exit fullscreen" : "Fullscreen");
+  scheduleFullscreenResize();
+  if (simulation.fullscreenInitialized && isActive !== wasActive && options.announceChange !== false) {
+    if (isActive) announce("Fullscreen view entered.");
+    else if (isPlaying()) requestPause("Paused after leaving fullscreen");
+    else announce("Fullscreen view closed.");
+  }
+  simulation.fullscreenInitialized = true;
+  if (isActive && isPlaying()) {
+    window.requestAnimationFrame(function () { elements.canvas.focus(); });
+  }
+  return isActive;
+}
+
+function initializeFullscreenControl() {
+  const supported = fullscreenSupported();
+  if (elements.fullscreenToggle) elements.fullscreenToggle.hidden = !supported;
+  syncFullscreenState({ announceChange: false });
+  return supported;
+}
+
+function toggleFullscreen() {
+  if (!fullscreenSupported()) {
+    announce("Fullscreen is not available in this browser.");
+    return Promise.resolve(false);
+  }
+  const active = currentFullscreenElement() === elements.stagePanel;
+  const action = active
+    ? document.exitFullscreen || document.webkitExitFullscreen
+    : elements.stagePanel.requestFullscreen || elements.stagePanel.webkitRequestFullscreen;
+  const receiver = active ? document : elements.stagePanel;
+  try {
+    return Promise.resolve(action.call(receiver)).then(function () {
+      syncFullscreenState();
+      return true;
+    }).catch(function (error) {
+      console.warn("Fullscreen could not change.", error);
+      announce("Fullscreen could not change in this browser.");
+      syncFullscreenState({ announceChange: false });
+      return false;
+    });
+  } catch (error) {
+    console.warn("Fullscreen could not change.", error);
+    announce("Fullscreen could not change in this browser.");
+    syncFullscreenState({ announceChange: false });
+    return Promise.resolve(false);
+  }
+}
+
 function resizeRenderer() {
   if (!simulation.renderer || !simulation.camera) return;
   const width = Math.max(1, elements.canvas.clientWidth);
@@ -2515,8 +2610,70 @@ function removeSplatMesh(splat) {
   simulation.freeSplatSlots.push(splat.slot);
 }
 
+function ballVisualPosition(ball) {
+  return ball.visualPosition || ball.position;
+}
+
+function createVisualLaunchOffset(launchPosition, direction, radius) {
+  const cameraPosition = simulation.camera.position;
+  const depth = Math.max(0.05, dot3(subtract3(launchPosition, cameraPosition), direction));
+  const halfHeight = depth * Math.tan(THREE.MathUtils.degToRad(simulation.camera.fov * 0.5));
+  muzzleRightScratch.set(1, 0, 0).applyQuaternion(simulation.camera.quaternion).normalize();
+  muzzleUpScratch.set(0, 1, 0).applyQuaternion(simulation.camera.quaternion).normalize();
+  const horizontalScale = halfHeight * simulation.camera.aspect * VISUAL_LAUNCH_NDC_X;
+  const verticalScale = halfHeight * VISUAL_LAUNCH_NDC_Y;
+  for (const candidate of VISUAL_LAUNCH_CLEARANCE_CANDIDATES) {
+    const offset = {
+      x: muzzleRightScratch.x * horizontalScale * candidate[0] + muzzleUpScratch.x * verticalScale * candidate[1],
+      y: muzzleRightScratch.y * horizontalScale * candidate[0] + muzzleUpScratch.y * verticalScale * candidate[1],
+      z: muzzleRightScratch.z * horizontalScale * candidate[0] + muzzleUpScratch.z * verticalScale * candidate[1]
+    };
+    const visualPosition = {
+      x: launchPosition.x + offset.x,
+      y: launchPosition.y + offset.y,
+      z: launchPosition.z + offset.z
+    };
+    if (canSpawnBall(visualPosition, radius)) return offset;
+  }
+  return { x: 0, y: 0, z: 0 };
+}
+
+function updateBallVisualPosition(ball) {
+  const offset = ball.visualLaunchOffset;
+  if (!offset) {
+    ball.visualPosition = null;
+    return ball.position;
+  }
+  const elapsed = Math.max(0, (ball.age || 0) - (ball.visualLaunchStartAge || 0));
+  const progress = clamp(elapsed / VISUAL_LAUNCH_DURATION, 0, 1);
+  if (progress >= 1) {
+    ball.visualLaunchOffset = null;
+    ball.visualLaunchClearanceScale = null;
+    ball.visualPosition = null;
+    return ball.position;
+  }
+  const decay = Math.pow(1 - progress, 2);
+  if (!ball.visualPosition) ball.visualPosition = { ...ball.position };
+  const maximumScale = Number.isFinite(ball.visualLaunchClearanceScale) ? ball.visualLaunchClearanceScale : 1;
+  for (const clearanceScale of VISUAL_LAUNCH_RETRACTION_SCALES) {
+    if (clearanceScale > maximumScale + 1e-9) continue;
+    ball.visualPosition.x = ball.position.x + offset.x * decay * clearanceScale;
+    ball.visualPosition.y = ball.position.y + offset.y * decay * clearanceScale;
+    ball.visualPosition.z = ball.position.z + offset.z * decay * clearanceScale;
+    if (canSpawnBall(ball.visualPosition, ball.radius)) {
+      ball.visualLaunchClearanceScale = clearanceScale;
+      return ball.visualPosition;
+    }
+  }
+  ball.visualPosition.x = ball.position.x;
+  ball.visualPosition.y = ball.position.y;
+  ball.visualPosition.z = ball.position.z;
+  return ball.visualPosition;
+}
+
 function setBallInstance(ball, fade) {
-  instanceDummy.position.set(ball.position.x, ball.position.y, ball.position.z);
+  const position = ballVisualPosition(ball);
+  instanceDummy.position.set(position.x, position.y, position.z);
   instanceDummy.quaternion.identity();
   instanceDummy.scale.setScalar(ball.radius * fade);
   instanceDummy.updateMatrix();
@@ -2641,8 +2798,13 @@ function fireBall() {
     bounceCooldown: 0,
     targetHits: new Set(),
     slot,
-    released: false
+    released: false,
+    visualLaunchOffset: createVisualLaunchOffset(launch.position, direction, launch.radius),
+    visualLaunchClearanceScale: 1,
+    visualLaunchStartAge: 0,
+    visualPosition: null
   };
+  updateBallVisualPosition(ball);
   setBallInstance(ball, 1);
   setBallVisualColor(ball);
   seedBallTrail(ball);
@@ -3268,6 +3430,7 @@ function fixedUpdate(delta) {
     updateBallGrowth(ball, delta);
     const collisions = stepProjectileWorld(ball, delta, WORLD, gravityFace().normal);
     ensureBallWorldClear(ball, collisions);
+    updateBallVisualPosition(ball);
     sampleBallTrail(ball);
     let strongestSplatCollision = null;
     let strongestBounceSpeed = 0;
@@ -3503,6 +3666,30 @@ elements.canvas.addEventListener("webglcontextlost", function (event) {
   showError("3D view paused", "The browser lost the graphics connection. Reload the page to rebuild the playground.");
 });
 
+if (elements.fullscreenToggle) {
+  elements.fullscreenToggle.addEventListener("pointerdown", function (event) {
+    if (simulation.mode === "keyboard" && isPlaying()) event.preventDefault();
+  });
+  elements.fullscreenToggle.addEventListener("click", function () {
+    const restoreKeyboardFocus = simulation.mode === "keyboard" && isPlaying();
+    toggleFullscreen().finally(function () {
+      if (restoreKeyboardFocus && isPlaying()) {
+        window.requestAnimationFrame(function () { elements.canvas.focus(); });
+      }
+    });
+  });
+}
+document.addEventListener("fullscreenchange", syncFullscreenState);
+document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+document.addEventListener("fullscreenerror", function () {
+  announce("Fullscreen could not change in this browser.");
+  syncFullscreenState({ announceChange: false });
+});
+document.addEventListener("webkitfullscreenerror", function () {
+  announce("Fullscreen could not change in this browser.");
+  syncFullscreenState({ announceChange: false });
+});
+
 elements.startMouse.addEventListener("click", beginMouseMode);
 elements.startKeyboard.addEventListener("click", beginKeyboardMode);
 elements.reload.addEventListener("click", function () { window.location.reload(); });
@@ -3551,6 +3738,7 @@ try {
   resetGame({ silent: true });
   simulation.mode = "ready";
   showReadyGate();
+  initializeFullscreenControl();
   simulation.resizeObserver = "ResizeObserver" in window ? new ResizeObserver(resizeRenderer) : null;
   if (simulation.resizeObserver) simulation.resizeObserver.observe(elements.canvas);
   else window.addEventListener("resize", resizeRenderer);
@@ -3572,6 +3760,9 @@ window.__ballBlasterDebug = {
   canSpawnBall,
   findSafeMuzzlePosition,
   findLaunchSphere,
+  ballVisualPosition,
+  createVisualLaunchOffset,
+  updateBallVisualPosition,
   fixedUpdate,
   updatePlayer,
   resetGame,
@@ -3622,6 +3813,11 @@ window.__ballBlasterDebug = {
   updateVisualEffects,
   initializePostProcessing,
   disposePostProcessing,
+  currentFullscreenElement,
+  fullscreenSupported,
+  initializeFullscreenControl,
+  syncFullscreenState,
+  toggleFullscreen,
   resizeRenderer,
   render,
   gravityFace,
@@ -3635,6 +3831,8 @@ window.__ballBlasterDebug = {
   constants: {
     fixedStep: FIXED_STEP,
     maxBalls: MAX_BALLS,
+    visualLaunchNdc: [VISUAL_LAUNCH_NDC_X, VISUAL_LAUNCH_NDC_Y],
+    visualLaunchDuration: VISUAL_LAUNCH_DURATION,
     trailSamples: TRAIL_SAMPLES,
     trailComfortSamples: TRAIL_COMFORT_SAMPLES,
     trailSampleInterval: TRAIL_SAMPLE_INTERVAL,
