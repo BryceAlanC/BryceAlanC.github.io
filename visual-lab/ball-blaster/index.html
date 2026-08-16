@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A playful Three.js arena with twelve gravity faces, roaming targets, stackable power-ups, ball-splitting splat cascades, goofy jumps, and exuberant combo scoring.">
+  <meta name="description" content="A playful Three.js arena with twelve gravity faces, a floating dodecahedral core, roaming targets, stackable power-ups, goofy jumps, and exuberant combo scoring.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#0b5748">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Bouncy Ball Blaster | Bryce Christopherson">
-  <meta property="og:description" content="Chase roaming targets through a many-sided arena, stack seven playful power-ups, and complete a no-fail Star Tour of quick missions.">
+  <meta property="og:description" content="Chase roaming targets through a roomy many-sided arena, collect power-ups from every wall, and Wall Walk around a floating dodecahedral core.">
   <title>Bouncy Ball Blaster · Bryce A. Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,7 +61,7 @@
         <div class="app-hero-grid">
           <p class="section-kicker">Physics playground · 03</p>
           <h1>Run, leap,<br>ricochet.</h1>
-          <p class="app-hero-copy">Race through a many-sided arena where any of twelve faces can become down. Chase roaming targets across terrain built onto the walls and ceiling, stack seven silly power-ups for longer, and complete a no-fail Star Tour of quick missions.</p>
+          <p class="app-hero-copy">Race through a roomy many-sided arena where any of twelve faces can become down. Chase power-ups across every wall and ceiling, leap onto the floating dodecahedral core, and use Wall Walk to roam around it while completing a no-fail Star Tour.</p>
         </div>
       </div>
     </section>
@@ -70,7 +70,7 @@
       <div class="lab-stage-shell ball-layout">
         <aside class="control-panel ball-desk" aria-label="Playground controls and status">
           <h2>Play desk</h2>
-          <p>Hit a glowing target, then find another before the combo bar runs out. Targets roam across the arena, power-ups stay longer, and gravity can pull toward any face.</p>
+          <p>Hit a glowing target, then find another before the combo bar runs out. Power-ups stay on their own faces when gravity shifts, and the floating core gives you another strange place to explore.</p>
 
           <fieldset class="control-group">
             <legend>Controls</legend>
@@ -139,7 +139,7 @@
 
           <fieldset class="control-group power-list">
             <legend>Power-ups</legend>
-            <p class="power-help">Power-ups reappear around the arena and stay active longer. Grabbing the same kind adds a level and more time, up to the stack limits.</p>
+            <p class="power-help">Power-ups reappear on any outer face and stay put when gravity shifts. Grabbing the same kind adds a level and more time, up to the stack limits.</p>
             <div class="power-row power-rapid" id="power-rapid">
               <span class="power-icon" aria-hidden="true">⚡</span>
               <span class="power-copy"><strong>Rapid fire</strong><small>Each level fires faster</small></span>
@@ -194,7 +194,7 @@
             </div>
 
             <div class="ball-stage" id="ball-stage" role="region" aria-label="Bouncy Ball Blaster 3D playground">
-              <canvas id="game-canvas" tabindex="-1" aria-label="First-person view of a dark, neon-lit many-sided arena with terrain on many faces, roaming targets, glowing bouncing balls, and collectible power-ups" aria-describedby="key-guide"></canvas>
+              <canvas id="game-canvas" tabindex="-1" aria-label="First-person view of a roomy, dark, neon-lit dodecahedral arena with a floating solid core, terrain, roaming targets, glowing bouncing balls, and power-ups on walls and ceilings" aria-describedby="key-guide"></canvas>
 
               <div class="stage-celebration" id="stage-celebration" aria-hidden="true">
                 <span class="celebration-rail celebration-rail-top"></span>
@@ -267,7 +267,7 @@
             </div>
           </section>
 
-          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. The no-fail Star Tour rotates through short missions, and finishing a round earns a bonus before the next challenge begins. Matching power-ups add both a level and more time. Long Bounce makes newly fired balls stay in play longer, turbo boots increase running speed, moon jump adds height and distance, and Wall Walk lets you keep running onto a wall; press Space to release your grip and fall. Splat shots leave a colorful mark, then burst into a larger cascade of balls at higher levels. Gravity warnings announce which of the twelve faces will become down next. Comfort mode snaps the view into place and keeps celebrations still while targets continue roaming. Balls pass through one another and still expire so even a maximum-stack barrage stays smooth.</p>
+          <p class="app-note"><strong>How it works.</strong> Hit glowing targets to earn points; quick hits extend your combo for larger rewards, and every hit sends its target roaming to a new place. The no-fail Star Tour rotates through short missions, and finishing a round earns a bonus before the next challenge begins. Power-ups appear across every outer wall and ceiling, and they stay there when gravity shifts. Matching power-ups add both a level and more time. Long Bounce makes newly fired balls stay in play longer, turbo boots increase running speed, moon jump adds height and distance, and Wall Walk lets you keep running across seams. The floating central dodecahedron is solid: fall onto it with Wall Walk active to grip it and run around its faces; press Space to release your grip and fall. Splat shots leave a colorful mark, then burst into a larger cascade of balls at higher levels. Comfort mode snaps the view into place and keeps celebrations still while targets continue roaming. Balls pass through one another and still expire so even a maximum-stack barrage stays smooth.</p>
         </div>
       </div>
     </section>

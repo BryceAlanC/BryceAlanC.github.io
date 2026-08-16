@@ -8,7 +8,7 @@ import {
 const EPSILON = 1e-8;
 const COLLISION_SLOP = 1e-5;
 const TOPOLOGY_EPSILON = 1e-5;
-const DEFAULT_INRADIUS = 15.5;
+const DEFAULT_INRADIUS = 20;
 const PLAYER_SOLVER_PASSES = 6;
 const SPHERE_SOLVER_PASSES = 4;
 
@@ -296,6 +296,55 @@ export function makeDodecaArena(inradius = DEFAULT_INRADIUS) {
 
 export const DODECA_ARENA = makeDodecaArena(DEFAULT_INRADIUS);
 
+export function makeConvexSolid(room, options = {}) {
+  if (!room?.faces?.length || !room?.vertices?.length) {
+    throw new Error("A convex solid requires a populated convex room definition.");
+  }
+  const id = options.id || "convex-solid";
+  const faceIdPrefix = options.faceIdPrefix || id + "-";
+  const roomCenter = room.center || { x: 0, y: 0, z: 0 };
+  const center = options.center || roomCenter;
+  const translation = subtract3(center, roomCenter);
+  const faceIdMap = Object.fromEntries(room.faces.map(function (face) {
+    return [face.id, faceIdPrefix + face.id];
+  }));
+  const faces = room.faces.map(function (face) {
+    const vertices = face.vertices.map(function (point) { return add3(point, translation); });
+    const solidFace = {
+      ...face,
+      id: faceIdMap[face.id],
+      sourceFaceId: face.id,
+      solidId: id,
+      offset: face.offset + dot3(face.normal, translation),
+      origin: add3(face.origin, translation),
+      center: add3(face.center, translation),
+      vertices,
+      neighbors: face.neighbors.map(function (neighborId) { return faceIdMap[neighborId]; }),
+      triangles: []
+    };
+    for (let index = 1; index < vertices.length - 1; index += 1) {
+      solidFace.triangles.push({
+        a: vertices[0],
+        b: vertices[index],
+        c: vertices[index + 1],
+        faceId: solidFace.id,
+        normal: solidFace.normal
+      });
+    }
+    return solidFace;
+  });
+  return {
+    id,
+    kind: "convex-solid",
+    center: { ...center },
+    inradius: room.inradius,
+    circumradius: room.circumradius,
+    faces,
+    faceById: Object.fromEntries(faces.map(function (face) { return [face.id, face]; })),
+    triangles: faces.flatMap(function (face) { return face.triangles; })
+  };
+}
+
 function resolveFace(room, faceOrId) {
   if (faceOrId && typeof faceOrId === "object" && faceOrId.normal) return faceOrId;
   if (room?.faceById?.[faceOrId]) return room.faceById[faceOrId];
@@ -374,6 +423,10 @@ function worldObstacles(world) {
   return world?.obstacles || world?.solids || [];
 }
 
+function worldConvexSolids(world) {
+  return world?.convexSolids || [];
+}
+
 function localPointInObb(point, obstacle) {
   const relative = subtract3(point, obstacle.center);
   return {
@@ -442,6 +495,114 @@ function sphereObbContact(position, radius, obstacle) {
     normal,
     penetration,
     point: add3(obstacle.center, worldVectorFromObbLocal(localPoint, obstacle))
+  };
+}
+
+function closestPointOnTriangle(point, triangle) {
+  const ab = subtract3(triangle.b, triangle.a);
+  const ac = subtract3(triangle.c, triangle.a);
+  const ap = subtract3(point, triangle.a);
+  const d1 = dot3(ab, ap);
+  const d2 = dot3(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return { ...triangle.a };
+
+  const bp = subtract3(point, triangle.b);
+  const d3 = dot3(ab, bp);
+  const d4 = dot3(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return { ...triangle.b };
+
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const amount = d1 / (d1 - d3);
+    return add3(triangle.a, scale3(ab, amount));
+  }
+
+  const cp = subtract3(point, triangle.c);
+  const d5 = dot3(ab, cp);
+  const d6 = dot3(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return { ...triangle.c };
+
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const amount = d2 / (d2 - d6);
+    return add3(triangle.a, scale3(ac, amount));
+  }
+
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const edge = subtract3(triangle.c, triangle.b);
+    const amount = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+    return add3(triangle.b, scale3(edge, amount));
+  }
+
+  const denominator = 1 / (va + vb + vc);
+  const v = vb * denominator;
+  const w = vc * denominator;
+  return add3(triangle.a, add3(scale3(ab, v), scale3(ac, w)));
+}
+
+function sphereConvexSolidContact(position, radius, solid) {
+  const broadphaseRadius = solid.circumradius + radius;
+  if (lengthSquared3(subtract3(position, solid.center)) > broadphaseRadius * broadphaseRadius) return null;
+
+  let nearestFace = solid.faces[0];
+  let maximumSignedDistance = -Infinity;
+  let inside = true;
+  for (const face of solid.faces) {
+    const signedDistance = dot3(face.normal, position) - face.offset;
+    if (signedDistance > maximumSignedDistance) {
+      maximumSignedDistance = signedDistance;
+      nearestFace = face;
+    }
+    if (signedDistance > EPSILON) inside = false;
+  }
+  if (inside) {
+    const touchingFaceIds = solid.faces.filter(function (face) {
+      const signedDistance = dot3(face.normal, position) - face.offset;
+      return signedDistance >= maximumSignedDistance - 1e-6;
+    }).map(function (face) { return face.id; });
+    return {
+      normal: nearestFace.normal,
+      penetration: radius - maximumSignedDistance,
+      point: subtract3(position, scale3(nearestFace.normal, maximumSignedDistance)),
+      face: nearestFace,
+      faceIds: touchingFaceIds
+    };
+  }
+
+  let closest = null;
+  let closestFace = null;
+  let minimumDistanceSquared = Infinity;
+  const touchingFaceIds = [];
+  for (const face of solid.faces) {
+    let faceDistanceSquared = Infinity;
+    let faceClosest = null;
+    for (const triangle of face.triangles) {
+      const candidate = closestPointOnTriangle(position, triangle);
+      const difference = subtract3(position, candidate);
+      const distanceSquared = lengthSquared3(difference);
+      if (distanceSquared < faceDistanceSquared) {
+        faceDistanceSquared = distanceSquared;
+        faceClosest = candidate;
+      }
+    }
+    if (faceDistanceSquared < radius * radius) touchingFaceIds.push(face.id);
+    if (faceDistanceSquared < minimumDistanceSquared) {
+      minimumDistanceSquared = faceDistanceSquared;
+      closest = faceClosest;
+      closestFace = face;
+    }
+  }
+  if (!(minimumDistanceSquared < radius * radius)) return null;
+  const distance = Math.sqrt(Math.max(0, minimumDistanceSquared));
+  return {
+    normal: distance > EPSILON
+      ? scale3(subtract3(position, closest), 1 / distance)
+      : closestFace.normal,
+    penetration: radius - distance,
+    point: closest,
+    face: closestFace,
+    faceIds: touchingFaceIds.length ? touchingFaceIds : [closestFace.id]
   };
 }
 
@@ -524,13 +685,45 @@ export function resolveSphereObstacle(ball, obstacle, collisions = [], settings 
   return collisions;
 }
 
+export function resolveSphereConvexSolid(ball, solid, collisions = [], settings = PROJECTILE) {
+  const contact = sphereConvexSolidContact(ball.position, ball.radius, solid);
+  if (!contact) return collisions;
+  resolveBallContact(
+    ball,
+    contact,
+    {
+      kind: "solid",
+      surfaceId: contact.face.id,
+      faceId: contact.face.id
+    },
+    settings,
+    collisions
+  );
+  return collisions;
+}
+
+export function resolveSphereWorld(ball, world, collisions = [], settings = PROJECTILE) {
+  const room = world?.room || DODECA_ARENA;
+  resolveSphereRoom(ball, room, collisions, settings);
+  for (const obstacle of worldObstacles(world)) {
+    resolveSphereObstacle(ball, obstacle, collisions, settings);
+  }
+  for (const solid of worldConvexSolids(world)) {
+    resolveSphereConvexSolid(ball, solid, collisions, settings);
+  }
+  return collisions;
+}
+
 export function sphereIntersectsWorld(position, radius, world) {
   const room = world?.room || DODECA_ARENA;
   if (room.faces.some(function (face) {
     return roomSphereViolation(position, radius, face) >= 0;
   })) return true;
-  return worldObstacles(world).some(function (obstacle) {
+  if (worldObstacles(world).some(function (obstacle) {
     return Boolean(sphereObbContact(position, radius, obstacle));
+  })) return true;
+  return worldConvexSolids(world).some(function (solid) {
+    return Boolean(sphereConvexSolidContact(position, radius, solid));
   });
 }
 
@@ -564,6 +757,7 @@ export function stepProjectileWorld(
 ) {
   const room = world?.room || DODECA_ARENA;
   const obstacles = worldObstacles(world);
+  const solids = worldConvexSolids(world);
   const settings = { ...PROJECTILE, ...(world?.projectileSettings || {}) };
   const acceleration = gravityAcceleration(gravityDirection, Math.abs(settings.gravity));
   const substeps = projectileSubstepCount(ball, delta, settings);
@@ -578,9 +772,8 @@ export function stepProjectileWorld(
     ball.position.y += ball.velocity.y * substep;
     ball.position.z += ball.velocity.z * substep;
     resolveSphereRoom(ball, room, collisions, settings);
-    for (const obstacle of obstacles) {
-      resolveSphereObstacle(ball, obstacle, collisions, settings);
-    }
+    for (const obstacle of obstacles) resolveSphereObstacle(ball, obstacle, collisions, settings);
+    for (const solid of solids) resolveSphereConvexSolid(ball, solid, collisions, settings);
   }
   ball.age = (ball.age || 0) + delta;
   return collisions;
@@ -684,6 +877,29 @@ function capsuleObbContact(player, up, radius, eyeHeight, headClearance, obstacl
   };
 }
 
+function capsuleConvexSolidContact(player, up, radius, eyeHeight, headClearance, solid) {
+  const broadphaseRadius = solid.circumradius + eyeHeight + radius;
+  if (lengthSquared3(subtract3(player.position, solid.center)) > broadphaseRadius * broadphaseRadius) return null;
+  const capsule = playerCapsule(player, up, radius, eyeHeight, headClearance);
+  const delta = subtract3(capsule.second, capsule.first);
+  let deepest = null;
+  const touchingFaceIds = new Set();
+  // The capsule axis is only about one world unit long. Nine deterministic
+  // samples keep adjacent centers much closer than the player radius, so a
+  // convex face or edge cannot slip between samples at the fixed game step.
+  for (let index = 0; index <= 8; index += 1) {
+    const amount = index / 8;
+    const point = add3(capsule.first, scale3(delta, amount));
+    const contact = sphereConvexSolidContact(point, radius, solid);
+    if (!contact) continue;
+    contact.faceIds.forEach(function (faceId) { touchingFaceIds.add(faceId); });
+    if (!deepest || contact.penetration > deepest.penetration) deepest = contact;
+  }
+  if (!deepest) return null;
+  deepest.faceIds = Array.from(touchingFaceIds).sort();
+  return deepest;
+}
+
 function clipPlayerVelocity(player, normal) {
   const inwardSpeed = dot3(player.velocity, normal);
   if (inwardSpeed >= 0) return;
@@ -716,6 +932,7 @@ function addPlayerContact(contacts, metadata, contact) {
 function resolvePlayerWorldContacts(player, up, radius, eyeHeight, headClearance, world, contacts) {
   const room = world?.room || DODECA_ARENA;
   const obstacles = worldObstacles(world);
+  const solids = worldConvexSolids(world);
   for (let pass = 0; pass < PLAYER_SOLVER_PASSES; pass += 1) {
     let resolved = false;
     for (const face of room.faces) {
@@ -741,6 +958,27 @@ function resolvePlayerWorldContacts(player, up, radius, eyeHeight, headClearance
         faceId: obstacle.faceId,
         obstacleId: obstacle.id
       }, contact);
+      resolved = true;
+    }
+    for (const solid of solids) {
+      const contact = capsuleConvexSolidContact(player, up, radius, eyeHeight, headClearance, solid);
+      if (!contact) continue;
+      player.position.x += contact.normal.x * (contact.penetration + COLLISION_SLOP);
+      player.position.y += contact.normal.y * (contact.penetration + COLLISION_SLOP);
+      player.position.z += contact.normal.z * (contact.penetration + COLLISION_SLOP);
+      const faceIds = contact.faceIds?.length ? contact.faceIds : [contact.face.id];
+      faceIds.forEach(function (faceId) {
+        const face = solid.faceById[faceId] || contact.face;
+        clipPlayerVelocity(player, face.normal);
+        addPlayerContact(contacts, {
+          kind: "solid",
+          surfaceId: face.id,
+          faceId: face.id
+        }, {
+          ...contact,
+          normal: face.normal
+        });
+      });
       resolved = true;
     }
     if (!resolved) break;

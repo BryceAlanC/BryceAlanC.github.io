@@ -15,12 +15,12 @@ import {
   dot3,
   faceLocalCoordinates,
   facePoint,
-  facesAreAdjacent,
+  makeConvexSolid,
+  makeDodecaArena,
   makeFaceObstacle,
   normalize3,
   projectToPlane,
-  resolveSphereObstacle,
-  resolveSphereRoom,
+  resolveSphereWorld,
   scale3,
   sphereIntersectsWorld,
   stepPlayerWorld,
@@ -93,6 +93,11 @@ const CAMERA_ALIGN_SPEED = 5.4;
 const WALL_WALK_COOLDOWN = 0.55;
 const DEFAULT_RANDOM_SEED = 0x52f15e3d;
 const TARGET_COUNT = 6;
+const CENTRAL_DODECA_INRADIUS = 5;
+const PICKUP_FACE_MARGIN = 2;
+const PICKUP_HEIGHT = 1;
+const PICKUP_CLEARANCE_RADIUS = 0.84;
+const TARGET_PATROL_RADIUS = 7.25;
 const JOURNEY_MISSIONS = Object.freeze([
   { id: "target-party", name: "Target Party", goal: 4, hint: "Every target earns 1 star", reward: ["rapid"], points: 2000 },
   { id: "bank-shot-bash", name: "Bank-Shot Bash", goal: 6, hint: "Bank shots earn a bonus star", reward: ["giant"], points: 4000 },
@@ -224,6 +229,28 @@ const powerDefinitions = {
 const powerTypes = Object.keys(powerDefinitions);
 const faceById = new Map(DODECA_ARENA.faces.map(function (face) { return [face.id, face]; }));
 const startFace = faceById.get(DODECA_ARENA.floorFaceId) || DODECA_ARENA.faces[0];
+const centralSourceArena = makeDodecaArena(CENTRAL_DODECA_INRADIUS);
+const centralSolid = makeConvexSolid(centralSourceArena, {
+  id: "central-dodecahedron",
+  faceIdPrefix: "core-"
+});
+const outerWalkFaces = DODECA_ARENA.faces.map(function (face) {
+  return { ...face, surfaceKind: "outer", collisionNormal: face.inwardNormal };
+});
+const coreWalkFaces = centralSolid.faces.map(function (face) {
+  return {
+    ...face,
+    label: "Core · " + face.label,
+    normal: { ...face.inwardNormal },
+    inwardNormal: { ...face.normal },
+    v: scale3(face.v, -1),
+    surfaceKind: "core",
+    collisionNormal: face.normal
+  };
+});
+const walkFaceById = new Map(outerWalkFaces.concat(coreWalkFaces).map(function (face) {
+  return [face.id, face];
+}));
 
 const terrainColors = [0x236b73, 0xd76d4c, 0xb68bd1, 0xd1a54a, 0x3f8f77, 0x4e7fb2, 0xc98752];
 const terrainSpecs = [];
@@ -247,7 +274,7 @@ const terrainObstacles = terrainSpecs.map(function (spec, index) {
     color: terrainColors[index % terrainColors.length]
   });
 });
-const WORLD = { room: DODECA_ARENA, obstacles: terrainObstacles };
+const WORLD = { room: DODECA_ARENA, obstacles: terrainObstacles, convexSolids: [centralSolid] };
 
 const simulation = {
   mode: "loading",
@@ -303,6 +330,7 @@ const simulation = {
   },
   pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0, linger: 0 },
   pickupObjects: {},
+  pickupFaceBag: [],
   randomSeed: DEFAULT_RANDOM_SEED,
   randomStreams: { pickup: 1, target: 1, gravity: 1, cascade: 1 },
   gravityFaceId: startFace.id,
@@ -370,6 +398,7 @@ const simulation = {
   arcadeLights: [],
   playerLight: null,
   arenaMaterials: [],
+  centralMaterials: [],
   terrainMaterials: [],
   scene: null,
   camera: null
@@ -1071,6 +1100,7 @@ function setRandomSeed(seed = DEFAULT_RANDOM_SEED) {
   simulation.randomStreams.target = (simulation.randomSeed ^ 0x85ebca6b) >>> 0 || 0x5f356495;
   simulation.randomStreams.gravity = (simulation.randomSeed ^ 0xc2b2ae35) >>> 0 || 0x6d2b79f5;
   simulation.randomStreams.cascade = (simulation.randomSeed ^ 0x27d4eb2f) >>> 0 || 0x4c957f2d;
+  simulation.pickupFaceBag = [];
   return simulation.randomSeed;
 }
 
@@ -1415,7 +1445,7 @@ function showReadyGate() {
   }
   setGate({
     title: "Ready to bounce?",
-    copy: "Follow the no-fail Star Tour, bank bright shots into six roaming targets, and chase seven stackable power-ups across all twelve faces. Every target moves the tour forward, even when gravity shifts.",
+    copy: "Follow the no-fail Star Tour, bank bright shots into six roaming targets, and chase seven stackable power-ups scattered among the twelve outer faces. With Wall Walk, you can even land on and circle the floating core.",
     controls: true,
     mouse: true,
     keyboard: true,
@@ -1573,6 +1603,38 @@ function createTargetMeshes(scene) {
   }
 }
 
+function createCentralDodecahedron(scene) {
+  centralSolid.faces.forEach(function (face) {
+    const faceColor = new THREE.Color(face.color).multiplyScalar(0.2);
+    const faceEmissive = new THREE.Color(face.color).multiplyScalar(0.28);
+    const material = new THREE.MeshStandardMaterial({
+      color: faceColor,
+      emissive: faceEmissive,
+      emissiveIntensity: 0.14,
+      roughness: 0.58,
+      metalness: 0.12,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(faceMeshGeometry(face), material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.surfaceId = face.id;
+    scene.add(mesh);
+    simulation.centralMaterials.push(material);
+  });
+
+  const edgePositions = [];
+  centralSourceArena.edges.forEach(function (edge) {
+    edge.vertices.forEach(function (point) { edgePositions.push(point.x, point.y, point.z); });
+  });
+  const edgeGeometry = new THREE.BufferGeometry();
+  edgeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(edgePositions, 3));
+  scene.add(new THREE.LineSegments(
+    edgeGeometry,
+    new THREE.LineBasicMaterial({ color: 0x75f5e5, transparent: true, opacity: 0.88 })
+  ));
+}
+
 function createArena(scene) {
   DODECA_ARENA.faces.forEach(function (face) {
     const faceColor = new THREE.Color(face.color).multiplyScalar(0.09);
@@ -1603,6 +1665,7 @@ function createArena(scene) {
   ));
 
   terrainObstacles.forEach(function (obstacle) { makeTerrainMesh(scene, obstacle); });
+  createCentralDodecahedron(scene);
   createTargetMeshes(scene);
 }
 
@@ -1918,7 +1981,7 @@ function pickupSpawnIsClear(point, type, faceId) {
     simulation.player.position.y - point.y,
     simulation.player.position.z - point.z
   );
-  if (playerDistance < 5 || sphereIntersectsWorld(point, 0.72, WORLD)) return false;
+  if (playerDistance < 5 || sphereIntersectsWorld(point, PICKUP_CLEARANCE_RADIUS, WORLD)) return false;
   const overlapsPickup = powerTypes.some(function (otherType) {
     if (otherType === type) return false;
     const other = simulation.pickupObjects[otherType];
@@ -1931,33 +1994,98 @@ function pickupSpawnIsClear(point, type, faceId) {
   });
 }
 
-function randomFacePoint(face, streamName, height, maximumRadius = 5.7) {
+function faceUsableRadius(face, margin = PICKUP_FACE_MARGIN) {
+  const points = face.vertices.map(function (point) { return faceLocalCoordinates(face, point); });
+  let minimumEdgeDistance = Infinity;
+  for (let index = 0; index < points.length; index += 1) {
+    const first = points[index];
+    const second = points[(index + 1) % points.length];
+    const edgeU = second.u - first.u;
+    const edgeV = second.v - first.v;
+    const edgeLength = Math.hypot(edgeU, edgeV);
+    if (!(edgeLength > 0)) continue;
+    minimumEdgeDistance = Math.min(
+      minimumEdgeDistance,
+      Math.abs(first.u * second.v - first.v * second.u) / edgeLength
+    );
+  }
+  return Math.max(1, minimumEdgeDistance - margin);
+}
+
+function randomFacePoint(face, streamName, height, maximumRadius = faceUsableRadius(face)) {
   const angle = randomUnit(streamName) * Math.PI * 2;
   const radius = Math.sqrt(randomUnit(streamName)) * maximumRadius;
   return facePoint(face, Math.cos(angle) * radius, Math.sin(angle) * radius, height);
 }
 
-function relocatePickup(type, faceId = simulation.gravityFaceId) {
+function refillPickupFaceBag(preferredFirstFaceId = null) {
+  simulation.pickupFaceBag = shuffleWithStream(
+    DODECA_ARENA.faces.map(function (face) { return face.id; }),
+    "pickup"
+  );
+  if (preferredFirstFaceId) {
+    const index = simulation.pickupFaceBag.indexOf(preferredFirstFaceId);
+    if (index > 0) {
+      const first = simulation.pickupFaceBag[0];
+      simulation.pickupFaceBag[0] = preferredFirstFaceId;
+      simulation.pickupFaceBag[index] = first;
+    }
+  }
+  return simulation.pickupFaceBag.slice();
+}
+
+function takePickupFace(type) {
+  const object = simulation.pickupObjects[type];
+  const previousFaceId = object?.userData.faceId || null;
+  const occupied = new Set(powerTypes.filter(function (otherType) {
+    if (otherType === type) return false;
+    return simulation.pickupObjects[otherType]?.visible;
+  }).map(function (otherType) {
+    return simulation.pickupObjects[otherType].userData.faceId;
+  }));
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    if (!simulation.pickupFaceBag.length) refillPickupFaceBag();
+    const length = simulation.pickupFaceBag.length;
+    for (let index = 0; index < length; index += 1) {
+      const faceId = simulation.pickupFaceBag.shift();
+      if (!occupied.has(faceId) && faceId !== previousFaceId) return faceById.get(faceId) || null;
+      simulation.pickupFaceBag.push(faceId);
+    }
+    refillPickupFaceBag();
+  }
+  return DODECA_ARENA.faces.find(function (face) {
+    return !occupied.has(face.id) && face.id !== previousFaceId;
+  }) || DODECA_ARENA.faces.find(function (face) { return !occupied.has(face.id); }) || startFace;
+}
+
+function relocatePickup(type, faceId = null) {
   const object = simulation.pickupObjects[type];
   if (!object) return null;
-  const face = faceById.get(faceId) || startFace;
   let chosen;
-  for (let attempt = 0; attempt < 48; attempt += 1) {
-    const candidate = randomFacePoint(face, "pickup", 0.82);
-    if (pickupSpawnIsClear(candidate, type, face.id)) {
-      chosen = candidate;
-      break;
+  let chosenFace = null;
+  const faceAttempts = faceId
+    ? [faceById.get(faceId) || startFace]
+    : [takePickupFace(type)].filter(Boolean);
+  for (const face of faceAttempts) {
+    for (let attempt = 0; attempt < 48; attempt += 1) {
+      const candidate = randomFacePoint(face, "pickup", PICKUP_HEIGHT);
+      if (pickupSpawnIsClear(candidate, type, face.id)) {
+        chosen = candidate;
+        chosenFace = face;
+        break;
+      }
     }
+    if (chosen) break;
   }
   if (!chosen) return null;
   object.position.set(chosen.x, chosen.y, chosen.z);
-  object.quaternion.copy(faceObjectQuaternion(face));
+  object.quaternion.copy(faceObjectQuaternion(chosenFace));
   object.userData.basePosition = { ...chosen };
-  object.userData.faceId = face.id;
-  return { x: chosen.x, y: chosen.y, z: chosen.z, faceId: face.id };
+  object.userData.faceId = chosenFace.id;
+  return { x: chosen.x, y: chosen.y, z: chosen.z, faceId: chosenFace.id };
 }
 
-function relocateVisiblePickups(faceId = simulation.gravityFaceId) {
+function relocateVisiblePickups(faceId = null) {
   const placements = {};
   powerTypes.forEach(function (type) {
     const object = simulation.pickupObjects[type];
@@ -2020,17 +2148,17 @@ function updatePickupLabels() {
 
 function initializeArcadeLighting(scene) {
   const lightDefinitions = [
-    { color: 0xff4f9a, phase: 0, radius: 8.4 },
-    { color: 0x45f0d1, phase: Math.PI * 2 / 3, radius: 9.2 },
-    { color: 0x8b6dff, phase: Math.PI * 4 / 3, radius: 7.7 }
+    { color: 0xff4f9a, phase: 0, radius: 11.4 },
+    { color: 0x45f0d1, phase: Math.PI * 2 / 3, radius: 12.5 },
+    { color: 0x8b6dff, phase: Math.PI * 4 / 3, radius: 10.5 }
   ];
   simulation.arcadeLights = lightDefinitions.map(function (definition, index) {
-    const light = new THREE.PointLight(definition.color, 12, 30, 2);
+    const light = new THREE.PointLight(definition.color, 12, 38, 2);
     light.userData.phase = definition.phase;
     light.userData.radius = definition.radius;
     light.position.set(
       Math.cos(definition.phase) * definition.radius,
-      Math.sin(definition.phase * 0.73 + index) * 5.2,
+      Math.sin(definition.phase * 0.73 + index) * 7,
       Math.sin(definition.phase) * definition.radius
     );
     scene.add(light);
@@ -2135,6 +2263,7 @@ function updateVisualEffects(delta = FIXED_STEP) {
     ballGlowMaterial.opacity = 0.24;
     if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.4;
     simulation.arenaMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
+    simulation.centralMaterials.forEach(function (material) { material.emissiveIntensity = 0.14; });
     simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
     powerTypes.forEach(function (type) {
       const material = simulation.pickupObjects[type]?.userData.core?.material;
@@ -2178,6 +2307,9 @@ function updateVisualEffects(delta = FIXED_STEP) {
   simulation.arenaMaterials.forEach(function (material) {
     material.emissiveIntensity = 0.1;
   });
+  simulation.centralMaterials.forEach(function (material) {
+    material.emissiveIntensity = 0.14 + excitement * 0.04;
+  });
   simulation.terrainMaterials.forEach(function (material) {
     material.emissiveIntensity = 0.1;
   });
@@ -2192,7 +2324,7 @@ function updateVisualEffects(delta = FIXED_STEP) {
     const radius = light.userData.radius;
     light.position.set(
       Math.cos(angle) * radius,
-      Math.sin(angle * 0.73 + index) * 5.2,
+      Math.sin(angle * 0.73 + index) * 7,
       Math.sin(angle) * radius
     );
     const shimmer = 1 + Math.sin(time * 2.1 + index * 1.7) * 0.08;
@@ -2206,8 +2338,8 @@ function initializeScene() {
   simulation.renderer = createWebGLRenderer();
   simulation.scene = new THREE.Scene();
   simulation.scene.background = new THREE.Color(0x02040b);
-  simulation.scene.fog = new THREE.Fog(0x02040b, 25, 58);
-  simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 90);
+  simulation.scene.fog = new THREE.Fog(0x02040b, 31, 72);
+  simulation.camera = new THREE.PerspectiveCamera(72, 1, 0.05, 110);
   simulation.scene.add(simulation.camera);
 
   const hemisphere = new THREE.HemisphereLight(0x5d7c9e, 0x080510, 0.52);
@@ -2218,10 +2350,10 @@ function initializeScene() {
   sun.position.set(8, 15, 11);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -25;
-  sun.shadow.camera.right = 25;
-  sun.shadow.camera.top = 22;
-  sun.shadow.camera.bottom = -22;
+  sun.shadow.camera.left = -30;
+  sun.shadow.camera.right = 30;
+  sun.shadow.camera.top = 30;
+  sun.shadow.camera.bottom = -30;
   simulation.scene.add(sun);
 
   createArena(simulation.scene);
@@ -2241,7 +2373,7 @@ function gravityFace() {
 }
 
 function playerFace() {
-  return faceById.get(simulation.playerFaceId) || gravityFace();
+  return walkFaceById.get(simulation.playerFaceId) || walkFaceById.get(simulation.gravityFaceId) || gravityFace();
 }
 
 function flatForwardForFace(face = playerFace()) {
@@ -2327,21 +2459,29 @@ function scheduleNextGravity(initial = false) {
 }
 
 function changePlayerFace(faceId, options = {}) {
-  const nextFace = faceById.get(faceId);
+  const nextFace = walkFaceById.get(faceId);
   if (!nextFace || faceId === simulation.playerFaceId) return false;
   const previousForward = flatForwardForFace(playerFace());
   const towardFaceCenter = projectToPlane(subtract3(nextFace.center, simulation.player.position), nextFace.normal);
   const centerDirectionIsUseful = dot3(towardFaceCenter, towardFaceCenter) > 0.04;
   const projectedPreviousForward = projectToPlane(previousForward, nextFace.normal);
+  const projectedForwardIsUseful = dot3(projectedPreviousForward, projectedPreviousForward) > 0.04;
   const nextForward = normalize3(
-    centerDirectionIsUseful ? towardFaceCenter : projectedPreviousForward,
+    options.preserveHeading && projectedForwardIsUseful
+      ? projectedPreviousForward
+      : centerDirectionIsUseful ? towardFaceCenter : projectedPreviousForward,
     nextFace.v
   );
   simulation.heading = Math.atan2(dot3(nextForward, nextFace.u), dot3(nextForward, nextFace.v));
   simulation.playerFaceId = nextFace.id;
   simulation.player.gravityDirection = { ...nextFace.normal };
-  simulation.player.grounded = false;
-  simulation.player.supportFaceId = null;
+  if (options.preserveGrounded) {
+    simulation.player.grounded = true;
+    simulation.player.supportFaceId = options.supportFaceId || nextFace.id;
+  } else {
+    simulation.player.grounded = false;
+    simulation.player.supportFaceId = null;
+  }
   const momentumScale = Number.isFinite(options.momentumScale)
     ? clamp(options.momentumScale, 0, 1)
     : options.keepMomentum === false ? 0 : 0.68;
@@ -2356,6 +2496,74 @@ function changePlayerFace(faceId, options = {}) {
     simulation.player.velocity.z *= amount;
   }
   return true;
+}
+
+function walkFacesAreAdjacent(firstFace, secondFace) {
+  return Boolean(
+    firstFace && secondFace &&
+    firstFace.surfaceKind === secondFace.surfaceKind &&
+    firstFace.id !== secondFace.id &&
+    firstFace.neighbors.includes(secondFace.id)
+  );
+}
+
+function sharedEdgeDirection(firstFace, secondFace) {
+  if (!walkFacesAreAdjacent(firstFace, secondFace)) return null;
+  const sharedVertexIds = firstFace.vertexIds.filter(function (vertexId) {
+    return secondFace.vertexIds.includes(vertexId);
+  });
+  if (sharedVertexIds.length < 2) return null;
+  const points = sharedVertexIds.slice(0, 2).map(function (vertexId) {
+    const index = firstFace.vertexIds.indexOf(vertexId);
+    return firstFace.vertices[index];
+  });
+  const midpoint = scale3(add3(points[0], points[1]), 0.5);
+  return normalize3(
+    projectToPlane(subtract3(midpoint, firstFace.center), firstFace.normal),
+    firstFace.u
+  );
+}
+
+function adoptWallWalkSupport(result) {
+  if (!wallWalkActive() || simulation.wallWalkCooldown > 0 || !result?.grounded || !result.surfaceId) return null;
+  const supportContact = result.contacts.find(function (contact) {
+    return contact.kind === "solid" && contact.surfaceId === result.surfaceId;
+  });
+  const supportFace = supportContact ? walkFaceById.get(supportContact.faceId) : null;
+  if (!supportFace || supportFace.surfaceKind !== "core" || supportFace.id === simulation.playerFaceId) return null;
+  if (dot3(supportFace.normal, result.gravityDirection) < 0.55) return null;
+  if (!changePlayerFace(supportFace.id, {
+    momentumScale: 1,
+    limitMomentum: false,
+    preserveHeading: true,
+    preserveGrounded: true,
+    supportFaceId: supportFace.id
+  })) return null;
+  simulation.wallWalkCooldown = WALL_WALK_COOLDOWN;
+  result.wallWalkAdopted = true;
+  result.adoptedFaceId = supportFace.id;
+  setStatus("Playing · gripping " + supportFace.label, "playing");
+  announce("Wall Walk gripped the floating core.");
+  return supportFace;
+}
+
+function wallWalkTransitionCandidates(result, currentFace, desired) {
+  const faceIds = new Set(result.sideRoomFaces || []);
+  result.contacts.forEach(function (contact) {
+    if (contact.kind === "solid" && contact.faceId !== result.surfaceId &&
+        dot3(contact.normal, result.up) < 0.55) faceIds.add(contact.faceId);
+  });
+  return Array.from(faceIds).map(function (faceId) {
+    const candidate = walkFaceById.get(faceId);
+    const edgeDirection = sharedEdgeDirection(currentFace, candidate);
+    return candidate && edgeDirection
+      ? { face: candidate, score: dot3(desired, edgeDirection) }
+      : null;
+  }).filter(function (candidate) {
+    return candidate && candidate.score > 0.08;
+  }).sort(function (first, second) {
+    return second.score - first.score || first.face.id.localeCompare(second.face.id);
+  });
 }
 
 function wallWalkActive() {
@@ -2398,7 +2606,6 @@ function forceGravityFlip(options = {}) {
   simulation.gravityFaceId = destinationFace.id;
   simulation.gravity.flipCount += 1;
   if (!wallWalkActive()) changePlayerFace(destinationFace.id);
-  relocateVisiblePickups(destinationFace.id);
   const destination = destinationFace.label + " is down now";
   triggerVisualPulse(0.65);
   playGameSound("gravity");
@@ -2708,13 +2915,25 @@ function resetGame(options = {}) {
     simulation.powers[type].remaining = 0;
     simulation.pickupRespawns[type] = 0;
     simulation.pickupObjects[type].visible = false;
+    simulation.pickupObjects[type].userData.faceId = null;
+    simulation.pickupObjects[type].userData.basePosition = null;
   });
-  powerTypes.forEach(function (type) {
-    const placement = relocatePickup(type, startFace.id);
+  resetTargets();
+  const oppositeFace = DODECA_ARENA.faces.reduce(function (best, face) {
+    return dot3(face.normal, startFace.normal) < dot3(best.normal, startFace.normal) ? face : best;
+  }, startFace);
+  const initialPickupFaces = new Map([
+    ["wallwalk", startFace.id],
+    ["jump", oppositeFace.id]
+  ]);
+  const initialPickupOrder = ["wallwalk", "jump"].concat(powerTypes.filter(function (type) {
+    return type !== "wallwalk" && type !== "jump";
+  }));
+  initialPickupOrder.forEach(function (type) {
+    const placement = relocatePickup(type, initialPickupFaces.get(type) || null);
     simulation.pickupObjects[type].visible = Boolean(placement);
     if (!placement) simulation.pickupRespawns[type] = 0.5;
   });
-  resetTargets();
   window.clearTimeout(simulation.toastTimeout);
   elements.toast.hidden = true;
   clearCelebrations();
@@ -2870,12 +3089,7 @@ function findSafeMuzzlePosition(direction, radius) {
     };
     if (!canSpawnBall(candidate.position, radius)) {
       const resolutionCollisions = [];
-      for (let pass = 0; pass < 5; pass += 1) {
-        resolveSphereRoom(candidate, WORLD.room, resolutionCollisions);
-        WORLD.obstacles.forEach(function (obstacle) {
-          resolveSphereObstacle(candidate, obstacle, resolutionCollisions);
-        });
-      }
+      for (let pass = 0; pass < 6; pass += 1) resolveSphereWorld(candidate, WORLD, resolutionCollisions);
     }
     if (!canSpawnBall(candidate.position, radius)) continue;
     const offset = subtract3(candidate.position, cameraPosition);
@@ -3191,14 +3405,14 @@ function relocateTarget(target, forcedFaceId = null) {
   let amplitude = { u: 0.7, v: 0.7 };
   for (let attempt = 0; attempt < 48; attempt += 1) {
     const radialAngle = randomUnit("target") * Math.PI * 2;
-    const radialDistance = Math.sqrt(randomUnit("target")) * 4.45;
+    const radialDistance = Math.sqrt(randomUnit("target")) * TARGET_PATROL_RADIUS;
     const candidateCenter = {
       u: Math.cos(radialAngle) * radialDistance,
       v: Math.sin(radialAngle) * radialDistance
     };
     const candidateAmplitude = {
-      u: randomBetween("target", 0.45, 1.15),
-      v: randomBetween("target", 0.45, 1.15)
+      u: randomBetween("target", 0.55, 1.4),
+      v: randomBetween("target", 0.55, 1.4)
     };
     if (targetPathIsClear(face, candidateCenter, candidateAmplitude)) {
       center = candidateCenter;
@@ -3533,7 +3747,6 @@ function advanceJourneyIfReady() {
     });
   }
   simulation.targets.forEach(function (target) { beginTargetWarp(target); });
-  relocateVisiblePickups(simulation.gravityFaceId);
   if (completedMission.id === "gravity-groove" || nextMission.id === "gravity-groove") {
     scheduleNextGravity(false);
   }
@@ -3674,15 +3887,14 @@ function updatePlayer(delta) {
   }
   simulation.jumpQueued = false;
   simulation.wallWalkCooldown = Math.max(0, simulation.wallWalkCooldown - delta);
-  if (!wallWalkRelease && wallWalkActive() && simulation.wallWalkCooldown === 0 && length > 0.12 && result.sideRoomFaces.length) {
-    const candidates = result.sideRoomFaces.map(function (faceId) { return faceById.get(faceId); }).filter(function (candidate) {
-      return candidate && facesAreAdjacent(DODECA_ARENA, face, candidate) && dot3(desired, candidate.normal) > 0.08;
-    }).sort(function (first, second) {
-      return dot3(desired, second.normal) - dot3(desired, first.normal) || first.id.localeCompare(second.id);
-    });
-    if (candidates[0] && changePlayerFace(candidates[0].id)) {
+  const adoptedSupport = !wallWalkRelease ? adoptWallWalkSupport(result) : null;
+  if (!wallWalkRelease && !adoptedSupport && wallWalkActive() &&
+      simulation.wallWalkCooldown === 0 && length > 0.12) {
+    const currentFace = playerFace();
+    const candidates = wallWalkTransitionCandidates(result, currentFace, desired);
+    if (candidates[0] && changePlayerFace(candidates[0].face.id)) {
       simulation.wallWalkCooldown = WALL_WALK_COOLDOWN;
-      setStatus("Playing · gripping " + candidates[0].label, "playing");
+      setStatus("Playing · gripping " + candidates[0].face.label, "playing");
     }
   }
   if (wallWalkRelease) {
@@ -3732,11 +3944,8 @@ function updateBallGrowth(ball, delta) {
 
 function ensureBallWorldClear(ball, collisions) {
   if (!sphereIntersectsWorld(ball.position, ball.radius, WORLD)) return true;
-  for (let pass = 0; pass < 5; pass += 1) {
-    resolveSphereRoom(ball, WORLD.room, collisions);
-    WORLD.obstacles.forEach(function (obstacle) {
-      resolveSphereObstacle(ball, obstacle, collisions);
-    });
+  for (let pass = 0; pass < 6; pass += 1) {
+    resolveSphereWorld(ball, WORLD, collisions);
     if (!sphereIntersectsWorld(ball.position, ball.radius, WORLD)) return true;
   }
   return !sphereIntersectsWorld(ball.position, ball.radius, WORLD);
@@ -4155,6 +4364,9 @@ window.__ballBlasterDebug = {
   },
   setRandomSeed,
   resetRandomSeed: function () { return setRandomSeed(DEFAULT_RANDOM_SEED); },
+  refillPickupFaceBag,
+  takePickupFace,
+  faceUsableRadius,
   relocatePickup,
   relocatePickups: relocateVisiblePickups,
   relocateTarget,
@@ -4175,6 +4387,10 @@ window.__ballBlasterDebug = {
   updateGravity,
   scheduleNextGravity,
   changePlayerFace,
+  walkFacesAreAdjacent,
+  sharedEdgeDirection,
+  adoptWallWalkSupport,
+  wallWalkTransitionCandidates,
   releaseWallWalkForJump,
   playGameSound,
   playNoise,
@@ -4205,6 +4421,8 @@ window.__ballBlasterDebug = {
   updateCamera,
   world: WORLD,
   arena: DODECA_ARENA,
+  centralSolid,
+  walkFaceById,
   screenControlSign,
   pauseGame,
   beginKeyboardMode,
@@ -4264,6 +4482,10 @@ window.__ballBlasterDebug = {
     gravityIntervalRange: [GRAVITY_INTERVAL_MIN, GRAVITY_INTERVAL_MAX],
     gravityWarningTime: GRAVITY_WARNING_TIME,
     wallWalkCooldown: WALL_WALK_COOLDOWN,
+    centralDodecaInradius: CENTRAL_DODECA_INRADIUS,
+    pickupHeight: PICKUP_HEIGHT,
+    pickupClearanceRadius: PICKUP_CLEARANCE_RADIUS,
+    targetPatrolRadius: TARGET_PATROL_RADIUS,
     defaultRandomSeed: DEFAULT_RANDOM_SEED
   }
 };
