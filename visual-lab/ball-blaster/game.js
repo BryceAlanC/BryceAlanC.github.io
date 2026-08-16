@@ -56,6 +56,7 @@ const BALL_SPEED = 17;
 const BASE_FIRE_INTERVAL = 0.28;
 const RAPID_FIRE_INTERVALS = [0.28, 0.09, 0.065, 0.05, 0.04];
 const GIANT_BALL_RADII = [BASE_BALL_RADIUS, 0.38, 0.65, 1, 1.4];
+const BALL_LIFETIMES = [PROJECTILE.lifetime, 9, 12, 16, 21];
 const BALL_GROWTH_DURATION = 0.36;
 const SPLAT_SCALE_MULTIPLIERS = [1, 1, 1.45, 1.9, 2.4];
 const SPLAT_CHILD_COUNTS = [0, 2, 3, 4, 6];
@@ -92,6 +93,20 @@ const CAMERA_ALIGN_SPEED = 5.4;
 const WALL_WALK_COOLDOWN = 0.55;
 const DEFAULT_RANDOM_SEED = 0x52f15e3d;
 const TARGET_COUNT = 6;
+const JOURNEY_MISSIONS = Object.freeze([
+  { id: "target-party", name: "Target Party", goal: 4, hint: "Every target earns 1 star", reward: ["rapid"], points: 2000 },
+  { id: "bank-shot-bash", name: "Bank-Shot Bash", goal: 6, hint: "Bank shots earn a bonus star", reward: ["giant"], points: 4000 },
+  { id: "power-parade", name: "Power Parade", goal: 7, hint: "Pickups earn 2 bonus stars", reward: ["linger"], points: 6000 },
+  { id: "combo-chase", name: "Combo Chase", goal: 8, hint: "Combo hits earn a bonus star", reward: ["splat"], points: 8000 },
+  { id: "gravity-groove", name: "Gravity Groove", goal: 8, hint: "First hit after a shift earns 2 bonus stars", reward: ["speed"], points: 10000 },
+  { id: "gold-rush", name: "Gold Rush", goal: 10, hint: "The double-ring target earns 2 bonus stars", reward: ["jump", "wallwalk"], points: 20000 }
+]);
+const JOURNEY_GOAL_BONUS_CAP = 2;
+const JOURNEY_TARGET_SPEED_MAX = 1.2;
+const JOURNEY_PICKUP_RESPAWN_MIN = 3;
+const JOURNEY_PICKUP_RESPAWN_MAX = 5;
+const JOURNEY_GRAVITY_INTERVAL_MIN = 14;
+const JOURNEY_GRAVITY_INTERVAL_MAX = 18;
 const SOUND_MASTER_GAIN = 0.68;
 const SFX_BUS_GAIN = 0.95;
 const MUSIC_BASE_GAIN = 0.52;
@@ -145,11 +160,14 @@ const elements = {
   hudSpeed: document.getElementById("hud-speed"),
   hudJump: document.getElementById("hud-jump"),
   hudWallwalk: document.getElementById("hud-wallwalk"),
+  hudLinger: document.getElementById("hud-linger"),
   hudScore: document.getElementById("hud-score"),
   hudCombo: document.getElementById("hud-combo"),
   hudGravity: document.getElementById("hud-gravity"),
   hudGravityCountdown: document.getElementById("hud-gravity-countdown"),
   hudTarget: document.getElementById("hud-target"),
+  hudJourney: document.getElementById("hud-journey"),
+  hudJourneyProgress: document.getElementById("hud-journey-progress"),
   toast: document.getElementById("pickup-toast"),
   comfort: document.getElementById("comfort-mode"),
   soundEffects: document.getElementById("sound-effects"),
@@ -166,18 +184,24 @@ const elements = {
   ballCount: document.getElementById("ball-count"),
   bounceCount: document.getElementById("bounce-count"),
   splatCount: document.getElementById("splat-count"),
+  journeyStage: document.getElementById("journey-stage"),
+  journeyMission: document.getElementById("journey-mission"),
+  journeyProgress: document.getElementById("journey-progress"),
+  journeyProgressFill: document.getElementById("journey-progress-fill"),
   powerRapid: document.querySelector("#power-rapid .power-value"),
   powerGiant: document.querySelector("#power-giant .power-value"),
   powerSplat: document.querySelector("#power-splat .power-value"),
   powerSpeed: document.querySelector("#power-speed .power-value"),
   powerJump: document.querySelector("#power-jump .power-value"),
   powerWallwalk: document.querySelector("#power-wallwalk .power-value"),
+  powerLinger: document.querySelector("#power-linger .power-value"),
   powerRapidRow: document.getElementById("power-rapid"),
   powerGiantRow: document.getElementById("power-giant"),
   powerSplatRow: document.getElementById("power-splat"),
   powerSpeedRow: document.getElementById("power-speed"),
   powerJumpRow: document.getElementById("power-jump"),
   powerWallwalkRow: document.getElementById("power-wallwalk"),
+  powerLingerRow: document.getElementById("power-linger"),
   callout: document.getElementById("event-callout"),
   calloutKicker: document.getElementById("event-callout-kicker"),
   calloutTitle: document.getElementById("event-callout-title"),
@@ -194,7 +218,8 @@ const powerDefinitions = {
   splat: { label: "Splat shot", hud: "SPLAT", color: 0xff6f61, symbol: "✹" },
   speed: { label: "Turbo boots", hud: "SPEED", color: 0x4a9ee8, symbol: "»" },
   jump: { label: "Moon jump", hud: "JUMP", color: 0xa988ea, symbol: "↑" },
-  wallwalk: { label: "Wall Walk", hud: "GRIP", color: 0x37c994, symbol: "◆" }
+  wallwalk: { label: "Wall Walk", hud: "GRIP", color: 0x37c994, symbol: "◆" },
+  linger: { label: "Long Bounce", hud: "LONG", color: 0xf062d6, symbol: "∞" }
 };
 const powerTypes = Object.keys(powerDefinitions);
 const faceById = new Map(DODECA_ARENA.faces.map(function (face) { return [face.id, face]; }));
@@ -273,9 +298,10 @@ const simulation = {
     splat: { level: 0, remaining: 0 },
     speed: { level: 0, remaining: 0 },
     jump: { level: 0, remaining: 0 },
-    wallwalk: { level: 0, remaining: 0 }
+    wallwalk: { level: 0, remaining: 0 },
+    linger: { level: 0, remaining: 0 }
   },
-  pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0 },
+  pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0, linger: 0 },
   pickupObjects: {},
   randomSeed: DEFAULT_RANDOM_SEED,
   randomStreams: { pickup: 1, target: 1, gravity: 1, cascade: 1 },
@@ -288,6 +314,18 @@ const simulation = {
     warningIssued: false,
     flipCount: 0
   },
+  journey: {
+    stage: 1,
+    stars: 0,
+    goal: JOURNEY_MISSIONS[0].goal,
+    missionId: JOURNEY_MISSIONS[0].id,
+    pendingAdvance: false,
+    goldTargetId: null,
+    gravityBonusFlip: 0,
+    completedRounds: 0,
+    lastProgress: null,
+    pendingCallout: null
+  },
   wallWalkCooldown: 0,
   wallWalkReleaseCount: 0,
   lastWallWalkRelease: null,
@@ -299,6 +337,7 @@ const simulation = {
   bloomSuppressed: false,
   fullscreenActive: false,
   fullscreenInitialized: false,
+  fullscreenFocusTransfer: false,
   cameraQuaternion: new THREE.Quaternion(),
   callout: { remaining: 0, priority: 0 },
   lastCelebrationAt: -Infinity,
@@ -388,6 +427,7 @@ const instanceDummy = new THREE.Object3D();
 const zAxis = new THREE.Vector3(0, 0, 1);
 const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 const targetFlashColor = new THREE.Color(0xffffff);
+const goldTargetColor = new THREE.Color(0xffd166);
 const localZ = new THREE.Vector3(0, 0, 1);
 const localY = new THREE.Vector3(0, 1, 0);
 const cameraMatrix = new THREE.Matrix4();
@@ -776,8 +816,10 @@ function musicIntensityTarget() {
     const power = simulation.powers[type];
     return sum + (power.remaining > 0 ? power.level : 0);
   }, 0);
+  const journeyHeat = Math.min(0.16,
+    (journeyRoundForStage() - 1) * 0.018 + (journeyTourForStage() - 1) * 0.025);
   let target = clamp(
-    0.3 + 0.065 * Math.max(0, simulation.combo - 1) + 0.035 * stacks +
+    0.3 + journeyHeat + 0.065 * Math.max(0, simulation.combo - 1) + 0.035 * stacks +
       0.22 * simulation.visualExcitement + 0.12 * Math.min(1, simulation.balls.length / 50) +
       (audioState.context.currentTime < audioState.musicRushUntil ? 0.28 : 0),
     0,
@@ -1012,6 +1054,12 @@ function setText(element, text) {
   if (element && element.textContent !== text) element.textContent = text;
 }
 
+function setAttributeIfChanged(element, name, value) {
+  if (!element) return;
+  const text = String(value);
+  if (element.getAttribute(name) !== text) element.setAttribute(name, text);
+}
+
 function formatNumber(value) {
   return Math.round(value).toLocaleString("en-US");
 }
@@ -1229,12 +1277,90 @@ function currentBallRadius() {
   return GIANT_BALL_RADII[powerLevel("giant")];
 }
 
+function currentBallLifetime() {
+  return BALL_LIFETIMES[powerLevel("linger")];
+}
+
+function ballLifetime(ball) {
+  const lifetime = Number(ball?.lifetime);
+  return Number.isFinite(lifetime) && lifetime > 0 ? lifetime : PROJECTILE.lifetime;
+}
+
 function currentWalkSpeed() {
   return WALK_SPEEDS[powerLevel("speed")];
 }
 
 function currentJumpSpeed() {
   return JUMP_SPEEDS[powerLevel("jump")];
+}
+
+function journeyMissionForStage(stage = simulation.journey.stage) {
+  const normalizedStage = Math.max(1, Math.floor(Number(stage) || 1));
+  const tourIndex = Math.floor((normalizedStage - 1) / JOURNEY_MISSIONS.length);
+  const roundIndex = (normalizedStage - 1) % JOURNEY_MISSIONS.length;
+  return JOURNEY_MISSIONS[(roundIndex + tourIndex) % JOURNEY_MISSIONS.length];
+}
+
+function journeyTourForStage(stage = simulation.journey.stage) {
+  const normalizedStage = Math.max(1, Math.floor(Number(stage) || 1));
+  return Math.floor((normalizedStage - 1) / JOURNEY_MISSIONS.length) + 1;
+}
+
+function journeyRoundForStage(stage = simulation.journey.stage) {
+  const normalizedStage = Math.max(1, Math.floor(Number(stage) || 1));
+  return (normalizedStage - 1) % JOURNEY_MISSIONS.length + 1;
+}
+
+function journeyGoalForStage(stage = simulation.journey.stage) {
+  const mission = journeyMissionForStage(stage);
+  return mission.goal + Math.min(JOURNEY_GOAL_BONUS_CAP, journeyTourForStage(stage) - 1);
+}
+
+function currentJourneyMission() {
+  return journeyMissionForStage(simulation.journey.stage);
+}
+
+function journeyTargetSpeedMultiplier(stage = simulation.journey.stage) {
+  return Math.min(JOURNEY_TARGET_SPEED_MAX, 1 + Math.max(0, stage - 1) * 0.0125);
+}
+
+function journeyPickupRespawnRange() {
+  return currentJourneyMission().id === "power-parade"
+    ? [JOURNEY_PICKUP_RESPAWN_MIN, JOURNEY_PICKUP_RESPAWN_MAX]
+    : [PICKUP_RESPAWN_MIN, PICKUP_RESPAWN_MAX];
+}
+
+function journeyGravityIntervalRange() {
+  return currentJourneyMission().id === "gravity-groove"
+    ? [JOURNEY_GRAVITY_INTERVAL_MIN, JOURNEY_GRAVITY_INTERVAL_MAX]
+    : [GRAVITY_INTERVAL_MIN, GRAVITY_INTERVAL_MAX];
+}
+
+function journeyStarsForEvent(eventType, details = {}) {
+  const missionId = currentJourneyMission().id;
+  let stars = eventType === "target" ? 1 : 0;
+  if (eventType === "target" && missionId === "bank-shot-bash" && (details.ricochets || 0) > 0) stars += 1;
+  if (eventType === "pickup" && missionId === "power-parade") stars += 2;
+  if (eventType === "target" && missionId === "combo-chase" && (details.combo || 1) >= 2) stars += 1;
+  if (eventType === "target" && missionId === "gravity-groove" &&
+      simulation.gravity.flipCount > simulation.journey.gravityBonusFlip) stars += 2;
+  if (eventType === "target" && missionId === "gold-rush" && details.targetId === simulation.journey.goldTargetId) stars += 2;
+  return stars;
+}
+
+function recordJourneyEvent(eventType, details = {}) {
+  if (simulation.journey.pendingAdvance) return 0;
+  const stars = journeyStarsForEvent(eventType, details);
+  if (!(stars > 0)) return 0;
+  if (eventType === "target" && currentJourneyMission().id === "gravity-groove" &&
+      simulation.gravity.flipCount > simulation.journey.gravityBonusFlip) {
+    simulation.journey.gravityBonusFlip = simulation.gravity.flipCount;
+  }
+  simulation.journey.stars = Math.min(simulation.journey.goal, simulation.journey.stars + stars);
+  simulation.journey.lastProgress = { eventType, stars, details: { ...details } };
+  if (simulation.journey.stars >= simulation.journey.goal) simulation.journey.pendingAdvance = true;
+  updateHud();
+  return stars;
 }
 
 function setStatus(text, className) {
@@ -1289,7 +1415,7 @@ function showReadyGate() {
   }
   setGate({
     title: "Ready to bounce?",
-    copy: "Bank bright shots into six roaming targets, chain different colors for combo points, and chase stackable power-ups across all twelve faces. There is still no way to lose — even when gravity shifts.",
+    copy: "Follow the no-fail Star Tour, bank bright shots into six roaming targets, and chase seven stackable power-ups across all twelve faces. Every target moves the tour forward, even when gravity shifts.",
     controls: true,
     mouse: true,
     keyboard: true,
@@ -1413,8 +1539,14 @@ function createTargetMeshes(scene) {
       new THREE.CircleGeometry(0.41, 28),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.48), side: THREE.DoubleSide })
     );
+    const goldRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.94, 1.08, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, side: THREE.DoubleSide })
+    );
     center.position.z = 0.002;
-    group.add(ring, center);
+    goldRing.position.z = 0.004;
+    goldRing.visible = false;
+    group.add(ring, center, goldRing);
     group.visible = false;
     scene.add(group);
     simulation.targets.push({
@@ -1426,6 +1558,7 @@ function createTargetMeshes(scene) {
       group,
       ring,
       center,
+      goldRing,
       faceQuaternion: new THREE.Quaternion(),
       localCenter: { u: 0, v: 0 },
       amplitude: { u: 0, v: 0 },
@@ -1646,8 +1779,9 @@ function updateTrailInstances() {
     const count = simulation.trailCounts[slot];
     const head = simulation.trailHeads[slot];
     const colorIndex = slot * 3;
-    const ballLifetimeFade = ball.age > PROJECTILE.lifetime - BALL_FADE_TIME
-      ? clamp((PROJECTILE.lifetime - ball.age) / BALL_FADE_TIME, 0, 1)
+    const lifetime = ballLifetime(ball);
+    const ballLifetimeFade = ball.age > lifetime - BALL_FADE_TIME
+      ? clamp((lifetime - ball.age) / BALL_FADE_TIME, 0, 1)
       : 1;
 
     for (let ageIndex = 0; ageIndex < count && written < maximumSamples; ageIndex += 1) {
@@ -1709,10 +1843,10 @@ function initializeInstances(scene) {
     color: 0xffffff,
     map: createSplatTexture(),
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.5,
     alphaTest: 0.06,
     side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     depthTest: true,
     depthWrite: false,
     polygonOffset: true,
@@ -1999,7 +2133,7 @@ function updateVisualEffects(delta = FIXED_STEP) {
     if (simulation.bloomPass) simulation.bloomPass.strength = 0;
     ballMaterial.emissiveIntensity = 0.08;
     ballGlowMaterial.opacity = 0.24;
-    if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.78;
+    if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.4;
     simulation.arenaMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
     simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
     powerTypes.forEach(function (type) {
@@ -2040,7 +2174,7 @@ function updateVisualEffects(delta = FIXED_STEP) {
 
   ballMaterial.emissiveIntensity = 0.08 + excitement * 0.08;
   ballGlowMaterial.opacity = 0.48 + excitement * 0.14;
-  if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.88 + excitement * 0.1;
+  if (simulation.splatMaterial) simulation.splatMaterial.opacity = 0.46 + excitement * 0.08;
   simulation.arenaMaterials.forEach(function (material) {
     material.emissiveIntensity = 0.1;
   });
@@ -2182,9 +2316,10 @@ function takeNextGravityFace() {
 }
 
 function scheduleNextGravity(initial = false) {
+  const intervalRange = journeyGravityIntervalRange();
   const interval = initial
     ? GRAVITY_FIRST_FLIP
-    : randomBetween("gravity", GRAVITY_INTERVAL_MIN, GRAVITY_INTERVAL_MAX);
+    : randomBetween("gravity", intervalRange[0], intervalRange[1]);
   simulation.gravity.nextFlipAt = simulation.simulationTime + interval;
   simulation.gravity.nextFaceId = takeNextGravityFace();
   simulation.gravity.warningIssued = false;
@@ -2425,6 +2560,10 @@ function isFormTarget(target) {
   return Boolean(target.closest("input, select, textarea, button, a, [contenteditable='true']"));
 }
 
+function isFullscreenToggleTarget(target) {
+  return target instanceof Element && Boolean(target.closest("#fullscreen-toggle"));
+}
+
 function isPlaying() {
   return simulation.mode === "mouse" || simulation.mode === "keyboard";
 }
@@ -2562,6 +2701,7 @@ function resetGame(options = {}) {
   simulation.heading = 0;
   simulation.pitch = 0;
   setRandomSeed();
+  resetJourney();
   scheduleNextGravity(true);
   powerTypes.forEach(function (type) {
     simulation.powers[type].level = 0;
@@ -2792,6 +2932,7 @@ function fireBall() {
     targetRadius,
     growthElapsed: launch.radius < targetRadius ? 0 : BALL_GROWTH_DURATION,
     age: 0,
+    lifetime: currentBallLifetime(),
     color,
     splatLevel: powerLevel("splat"),
     ricochets: 0,
@@ -2837,12 +2978,12 @@ function addSplat(ball, collision) {
   const scale = clamp(
     splatRadius * (2.2 + collision.speed * 0.035) * scaleMultiplier,
     0.34,
-    4.2
+    3.4
   );
   quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(zAxis, (ball.id * 1.618 + simulation.splatCount * 0.7) % (Math.PI * 2)));
   const splat = { id: simulation.nextSplatId, age: 0, slot, position, quaternion, scale, released: false };
   setSplatInstance(splat, 1);
-  glowColorScratch.setHex(ball.color).multiplyScalar(2.15);
+  glowColorScratch.setHex(ball.color).multiplyScalar(0.72);
   simulation.splatInstances.setColorAt(slot, glowColorScratch);
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceColor.needsUpdate = true;
@@ -2924,7 +3065,8 @@ function spawnSplatFragments(ball, collision) {
       launchRadius: radius,
       targetRadius: radius,
       growthElapsed: BALL_GROWTH_DURATION,
-      age: Math.max(0, PROJECTILE.lifetime - SPLAT_FRAGMENT_LIFETIME),
+      age: 0,
+      lifetime: SPLAT_FRAGMENT_LIFETIME,
       color: ball.color,
       splatLevel: 0,
       ricochets: ball.ricochets || 0,
@@ -2947,6 +3089,12 @@ function spawnSplatFragments(ball, collision) {
   return spawned;
 }
 
+function splatVisualPulse(level, major = false) {
+  const pulseByLevel = [0, 0.14, 0.22, 0.3, 0.42];
+  const pulse = pulseByLevel[clamp(Math.round(level || 0), 0, MAX_POWER_LEVEL)];
+  return major ? Math.min(0.5, pulse + 0.08) : pulse;
+}
+
 function scoreSplatCascade(ball) {
   const level = clamp(Math.round(ball.splatLevel || 0), 0, MAX_POWER_LEVEL);
   const childCount = SPLAT_CHILD_COUNTS[level];
@@ -2954,7 +3102,7 @@ function scoreSplatCascade(ball) {
   if (!childCount || !points) return { level: 0, childCount: 0, points: 0, award: null };
   simulation.cascadeCount += 1;
   if (simulation.simulationTime - simulation.lastCascadeAwardAt < SPLAT_AWARD_COOLDOWN) {
-    triggerVisualPulse(Math.min(0.82, 0.3 + level * 0.13));
+    triggerVisualPulse(splatVisualPulse(level));
     playGameSound("splat", { level });
     return { level, childCount, points: 0, award: null, awarded: false };
   }
@@ -2971,7 +3119,7 @@ function scoreSplatCascade(ball) {
   simulation.cascadeAwardCount += 1;
   simulation.cascadePoints += award.points;
   const cascadeIsMajor = jackpot || award.crossedMilestones.length > 0;
-  triggerVisualPulse(cascadeIsMajor ? 1 : Math.min(0.82, 0.3 + level * 0.13));
+  triggerVisualPulse(splatVisualPulse(level, cascadeIsMajor));
   playGameSound(cascadeIsMajor ? "jackpot" : "splat", { level });
 
   if (simulation.simulationTime - simulation.lastCascadeCalloutAt >= SPLAT_CALLOUT_COOLDOWN) {
@@ -3072,8 +3220,7 @@ function relocateTarget(target, forcedFaceId = null) {
   target.active = true;
   target.group.visible = true;
   target.group.scale.setScalar(1);
-  target.ring.material.color.copy(target.baseColor);
-  target.center.material.color.copy(target.baseColor).multiplyScalar(0.48);
+  updateJourneyTargetStyle(target);
   positionTarget(target);
   return { targetId: target.id, faceId: face.id, center: { ...center } };
 }
@@ -3086,6 +3233,57 @@ function beginTargetWarp(target) {
   return true;
 }
 
+function updateJourneyTargetStyle(target, flashAmount = 0) {
+  if (!target) return false;
+  const isGold = currentJourneyMission().id === "gold-rush" && target.id === simulation.journey.goldTargetId;
+  const baseColor = isGold ? goldTargetColor : target.baseColor;
+  const glow = elements.comfort.checked ? 1.05 : 1.05 + simulation.visualExcitement * 0.42;
+  target.radius = isGold ? TARGET_RADIUS * 1.18 : TARGET_RADIUS;
+  target.ring.material.color.copy(baseColor).multiplyScalar(glow).lerp(targetFlashColor, flashAmount);
+  target.center.material.color.copy(baseColor).multiplyScalar(0.5 + simulation.visualExcitement * 0.16)
+    .lerp(targetFlashColor, flashAmount * 0.82);
+  if (target.goldRing) {
+    target.goldRing.visible = isGold;
+    target.goldRing.material.color.setHex(0xffd166).multiplyScalar(elements.comfort.checked ? 1 : 1.16);
+  }
+  return isGold;
+}
+
+function configureJourneyRound(options = {}) {
+  const mission = currentJourneyMission();
+  simulation.journey.missionId = mission.id;
+  simulation.journey.goal = journeyGoalForStage();
+  simulation.journey.stars = options.keepStars
+    ? Math.min(simulation.journey.goal, simulation.journey.stars)
+    : 0;
+  simulation.journey.pendingAdvance = false;
+  simulation.journey.gravityBonusFlip = simulation.gravity.flipCount;
+  simulation.journey.goldTargetId = mission.id === "gold-rush"
+    ? (journeyTourForStage() - 1) % TARGET_COUNT
+    : null;
+  simulation.targets.forEach(function (target) { updateJourneyTargetStyle(target); });
+  updateHud();
+  return {
+    stage: simulation.journey.stage,
+    tour: journeyTourForStage(),
+    round: journeyRoundForStage(),
+    mission: mission.id,
+    goal: simulation.journey.goal,
+    goldTargetId: simulation.journey.goldTargetId
+  };
+}
+
+function resetJourney() {
+  simulation.journey.stage = 1;
+  simulation.journey.stars = 0;
+  simulation.journey.pendingAdvance = false;
+  simulation.journey.completedRounds = 0;
+  simulation.journey.lastProgress = null;
+  simulation.journey.pendingCallout = null;
+  simulation.journey.gravityBonusFlip = simulation.gravity.flipCount;
+  return configureJourneyRound();
+}
+
 function resetTargets() {
   simulation.targets.forEach(function (target) {
     target.faceId = null;
@@ -3095,6 +3293,7 @@ function resetTargets() {
     target.flash = 0;
   });
   simulation.targets.forEach(function (target) { relocateTarget(target); });
+  simulation.targets.forEach(function (target) { updateJourneyTargetStyle(target); });
 }
 
 function scoreTargetHit(ball, target) {
@@ -3145,6 +3344,12 @@ function scoreTargetHit(ball, target) {
   if (!showScoreMilestone(award) && (simulation.combo >= 3 || earnsTierBonus)) {
     announce(title + " " + formatNumber(award.points) + " points.");
   }
+  recordJourneyEvent("target", {
+    targetId: target.id,
+    ricochets,
+    combo: simulation.combo,
+    gravityFlip: simulation.gravity.flipCount
+  });
   beginTargetWarp(target);
   updateHud();
   return award.points;
@@ -3191,47 +3396,172 @@ function updateTargets(delta) {
       if (target.warpRemaining === 0) relocateTarget(target);
       return;
     }
-    target.motionTime += delta * (elements.comfort.checked ? 0.45 : 1);
+    target.motionTime += delta * (elements.comfort.checked ? 0.45 : 1) * journeyTargetSpeedMultiplier();
     target.relocateIn = Math.max(0, target.relocateIn - delta);
     if (target.relocateIn === 0) {
       beginTargetWarp(target);
       return;
     }
     positionTarget(target);
-    const flashAmount = clamp(target.flash / 0.48, 0, 1);
-    const glow = elements.comfort.checked ? 1.05 : 1.05 + simulation.visualExcitement * 0.42;
-    target.ring.material.color.copy(target.baseColor).multiplyScalar(glow).lerp(targetFlashColor, flashAmount);
-    target.center.material.color.copy(target.baseColor).multiplyScalar(0.5 + simulation.visualExcitement * 0.16)
-      .lerp(targetFlashColor, flashAmount * 0.82);
+    const flashAmount = elements.comfort.checked ? 0 : clamp(target.flash / 0.48, 0, 1);
+    const isGold = updateJourneyTargetStyle(target, flashAmount);
     const pulse = elements.comfort.checked ? 0 : Math.sin(flashAmount * Math.PI) * 0.16;
-    target.group.scale.setScalar(1 + pulse);
+    const goldPulse = isGold && !elements.comfort.checked
+      ? 0.035 + Math.sin(simulation.simulationTime * 3.2) * 0.025
+      : 0;
+    target.group.scale.setScalar(1 + pulse + goldPulse);
   });
 }
 
-function activatePower(type) {
+function activatePower(type, options = {}) {
   const power = simulation.powers[type];
   if (!power || !simulation.pickupObjects[type]) return false;
+  const collectPickup = options.collectPickup !== false;
   const wasActive = power.level > 0 && power.remaining > 0;
   power.level = Math.min(MAX_POWER_LEVEL, wasActive ? power.level + 1 : 1);
   power.remaining = wasActive
     ? Math.min(POWER_MAX_DURATION, Math.max(power.remaining, POWER_INITIAL_DURATION) + POWER_STACK_TIME)
     : POWER_INITIAL_DURATION;
   if (type === "rapid") simulation.fireCooldown = Math.min(simulation.fireCooldown, currentFireInterval());
-  simulation.pickupRespawns[type] = randomBetween("pickup", PICKUP_RESPAWN_MIN, PICKUP_RESPAWN_MAX);
-  simulation.pickupObjects[type].visible = false;
+  if (collectPickup) {
+    const respawnRange = journeyPickupRespawnRange();
+    simulation.pickupRespawns[type] = randomBetween("pickup", respawnRange[0], respawnRange[1]);
+    simulation.pickupObjects[type].visible = false;
+  }
   const label = powerDefinitions[type].label;
-  elements.toast.textContent = label + " — level " + power.level + "!";
-  elements.toast.hidden = false;
-  window.clearTimeout(simulation.toastTimeout);
-  simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 820);
-  triggerVisualPulse(0.26);
-  playGameSound("pickup", { level: power.level });
-  if (type === "wallwalk" && !wasActive) {
+  if (options.toast !== false) {
+    elements.toast.textContent = label + " — level " + power.level + "!";
+    elements.toast.hidden = false;
+    window.clearTimeout(simulation.toastTimeout);
+    simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 820);
+  }
+  if (options.effects !== false) {
+    triggerVisualPulse(0.26);
+    playGameSound("pickup", { level: power.level });
+  }
+  if (type === "wallwalk" && !wasActive && options.callout !== false) {
     showCallout("score", "Power up", "Wall Walk!", "Run into a seam to climb", 0.55, 3);
   }
-  announce(label + " level " + power.level + ". " + Math.ceil(power.remaining) + " seconds remaining.");
+  if (collectPickup && options.recordJourney !== false) recordJourneyEvent("pickup", { type, level: power.level });
+  if (options.announceEvent !== false) {
+    announce(label + " level " + power.level + ". " + Math.ceil(power.remaining) + " seconds remaining.");
+  }
   updateHud();
   return true;
+}
+
+function flushJourneyCompletionCallout() {
+  const callout = simulation.journey.pendingCallout;
+  if (!callout) return false;
+  if (callout.shown) {
+    if (simulation.simulationTime + 1e-6 >= callout.expiresAt) {
+      simulation.journey.pendingCallout = null;
+      return true;
+    }
+    const isStillVisible = simulation.callout.remaining > 0 &&
+      simulation.callout.priority === 4.6 && elements.calloutTitle.textContent === callout.title;
+    if (isStillVisible) return true;
+    callout.shown = false;
+    callout.expiresAt = 0;
+  }
+  const shown = showCallout(
+    "combo",
+    "Star Tour",
+    callout.title,
+    callout.copy,
+    0.7,
+    4.6,
+    callout.tier
+  );
+  if (shown) {
+    callout.shown = true;
+    callout.expiresAt = simulation.simulationTime + 0.7;
+  }
+  return shown;
+}
+
+function advanceJourneyIfReady() {
+  if (!simulation.journey.pendingAdvance) return null;
+  const completedStage = simulation.journey.stage;
+  const completedMission = currentJourneyMission();
+  const completedTour = journeyTourForStage(completedStage);
+  const completedRound = journeyRoundForStage(completedStage);
+  simulation.journey.pendingAdvance = false;
+  simulation.journey.completedRounds += 1;
+
+  const rewardDescriptions = [];
+  let cappedRewardBonus = 0;
+  completedMission.reward.forEach(function (type) {
+    const power = simulation.powers[type];
+    const previousLevel = power.level;
+    const previousRemaining = power.remaining;
+    activatePower(type, {
+      collectPickup: false,
+      recordJourney: false,
+      announceEvent: false,
+      toast: false,
+      callout: false,
+      effects: false
+    });
+    const label = powerDefinitions[type].label;
+    if (power.level > previousLevel) {
+      rewardDescriptions.push(label + " level " + power.level);
+    } else if (power.remaining > previousRemaining + 0.05) {
+      rewardDescriptions.push(label + " +" + Math.ceil(power.remaining - previousRemaining) + " s");
+    } else {
+      const bonus = 5000 * Math.min(4, completedTour);
+      cappedRewardBonus += bonus;
+      rewardDescriptions.push(label + " maxed · +" + formatNumber(bonus));
+    }
+  });
+  const award = awardPoints(completedMission.points + cappedRewardBonus, {
+    source: "star-tour",
+    kind: "combo",
+    tier: completedRound === JOURNEY_MISSIONS.length || cappedRewardBonus > 0 ? "jackpot" : "bonus",
+    deferMilestone: true,
+    updateHud: false
+  });
+
+  simulation.journey.stage += 1;
+  const nextMission = journeyMissionForStage();
+  configureJourneyRound();
+  if (completedMission.id === "power-parade") {
+    powerTypes.forEach(function (type) {
+      if (simulation.pickupRespawns[type] > 0) {
+        simulation.pickupRespawns[type] = Math.max(PICKUP_RESPAWN_MIN, simulation.pickupRespawns[type]);
+      }
+    });
+  }
+  simulation.targets.forEach(function (target) { beginTargetWarp(target); });
+  relocateVisiblePickups(simulation.gravityFaceId);
+  if (completedMission.id === "gravity-groove" || nextMission.id === "gravity-groove") {
+    scheduleNextGravity(false);
+  }
+
+  const title = completedRound === JOURNEY_MISSIONS.length
+    ? "TOUR " + completedTour + " COMPLETE!"
+    : "ROUND " + completedRound + " CLEAR!";
+  simulation.journey.pendingCallout = {
+    title,
+    copy: "+" + formatNumber(award.points) + " points · " + rewardDescriptions.join(" + "),
+    tier: completedRound === JOURNEY_MISSIONS.length || cappedRewardBonus > 0 ? "jackpot" : "cascade",
+    shown: false,
+    expiresAt: 0
+  };
+  flushJourneyCompletionCallout();
+  playGameSound("jackpot");
+  simulation.journey.lastProgress = {
+    completedStage,
+    completedTour,
+    completedRound,
+    points: award.points,
+    rewards: completedMission.reward.slice(),
+    rewardDescriptions,
+    cappedRewardBonus
+  };
+  announce(title + " " + formatNumber(award.points) + " points. " + rewardDescriptions.join("; ") + ". Next: " + nextMission.name + ".");
+  updateHud();
+  return simulation.journey.lastProgress;
 }
 
 function updatePickups(delta) {
@@ -3454,9 +3784,10 @@ function fixedUpdate(delta) {
       removeBallMesh(ball);
       continue;
     }
-    if (ball.age < PROJECTILE.lifetime) {
-      if (ball.age > PROJECTILE.lifetime - BALL_FADE_TIME) {
-        const fade = clamp((PROJECTILE.lifetime - ball.age) / BALL_FADE_TIME, 0, 1);
+    const lifetime = ballLifetime(ball);
+    if (ball.age < lifetime) {
+      if (ball.age > lifetime - BALL_FADE_TIME) {
+        const fade = clamp((lifetime - ball.age) / BALL_FADE_TIME, 0, 1);
         setBallInstance(ball, fade);
       } else {
         setBallInstance(ball, 1);
@@ -3487,6 +3818,8 @@ function fixedUpdate(delta) {
     }
   }
   simulation.splats = survivingSplats;
+  advanceJourneyIfReady();
+  flushJourneyCompletionCallout();
   simulation.ballInstances.instanceMatrix.needsUpdate = true;
   simulation.ballGlowInstances.instanceMatrix.needsUpdate = true;
   simulation.splatInstances.instanceMatrix.needsUpdate = true;
@@ -3513,6 +3846,24 @@ function updateHud() {
   setText(elements.hudGravityCountdown, "Shift in " + countdown + " s");
   setText(elements.targetCount, String(simulation.targetHits));
   setText(elements.hudTarget, "Targets hit: " + simulation.targetHits);
+  const mission = currentJourneyMission();
+  const journeyTour = journeyTourForStage();
+  const journeyRound = journeyRoundForStage();
+  const journeyProgressText = "★ " + simulation.journey.stars + " / " + simulation.journey.goal + " · " + mission.hint;
+  setText(elements.journeyStage, "Tour " + journeyTour + " · Round " + journeyRound);
+  setText(elements.journeyMission, mission.name);
+  setText(elements.journeyProgress, journeyProgressText);
+  setText(elements.hudJourney, "TOUR " + journeyTour + " · ROUND " + journeyRound + " — " + mission.name.toUpperCase());
+  setText(elements.hudJourneyProgress, journeyProgressText);
+  if (elements.journeyProgress) {
+    setAttributeIfChanged(elements.journeyProgress, "aria-valuemin", 0);
+    setAttributeIfChanged(elements.journeyProgress, "aria-valuemax", simulation.journey.goal);
+    setAttributeIfChanged(elements.journeyProgress, "aria-valuenow", simulation.journey.stars);
+    setAttributeIfChanged(elements.journeyProgress, "aria-valuetext", simulation.journey.stars + " of " + simulation.journey.goal + " stars. " + mission.hint + ".");
+  }
+  if (elements.journeyProgressFill) {
+    elements.journeyProgressFill.style.width = clamp(simulation.journey.stars / Math.max(1, simulation.journey.goal) * 100, 0, 100) + "%";
+  }
   elements.hudCombo.classList.toggle("is-active", simulation.combo > 1 && simulation.comboRemaining > 0);
   elements.hudGravity.classList.toggle("is-active", simulation.gravityFaceId !== startFace.id || simulation.playerFaceId !== simulation.gravityFaceId);
   const comboMeterWidth = clamp(simulation.comboRemaining / COMBO_WINDOW * 100, 0, 100) + "%";
@@ -3570,7 +3921,7 @@ window.addEventListener("keydown", function (event) {
     requestPause("Paused");
     return;
   }
-  if (isFormTarget(event.target)) return;
+  if (isFormTarget(event.target) && !isFullscreenToggleTarget(event.target)) return;
   if (event.code === "Space") {
     event.preventDefault();
     if (!event.repeat) simulation.jumpQueued = true;
@@ -3656,9 +4007,10 @@ document.addEventListener("visibilitychange", function () {
   }
 });
 
-elements.canvas.addEventListener("blur", function () {
+elements.canvas.addEventListener("blur", function (event) {
   clearInput();
-  if (simulation.mode === "keyboard") pauseGame("Paused");
+  const movingToFullscreenControl = simulation.fullscreenFocusTransfer || isFullscreenToggleTarget(event.relatedTarget);
+  if (simulation.mode === "keyboard" && !movingToFullscreenControl) pauseGame("Paused");
 });
 
 elements.canvas.addEventListener("webglcontextlost", function (event) {
@@ -3668,14 +4020,27 @@ elements.canvas.addEventListener("webglcontextlost", function (event) {
 
 if (elements.fullscreenToggle) {
   elements.fullscreenToggle.addEventListener("pointerdown", function (event) {
-    if (simulation.mode === "keyboard" && isPlaying()) event.preventDefault();
+    if (simulation.mode === "keyboard" && isPlaying()) {
+      simulation.fullscreenFocusTransfer = true;
+      event.preventDefault();
+      window.setTimeout(function () { simulation.fullscreenFocusTransfer = false; }, 600);
+    }
   });
   elements.fullscreenToggle.addEventListener("click", function () {
     const restoreKeyboardFocus = simulation.mode === "keyboard" && isPlaying();
+    simulation.fullscreenFocusTransfer = restoreKeyboardFocus;
+    if (restoreKeyboardFocus) {
+      try { elements.canvas.focus({ preventScroll: true }); }
+      catch (error) { elements.canvas.focus(); }
+    }
     toggleFullscreen().finally(function () {
       if (restoreKeyboardFocus && isPlaying()) {
-        window.requestAnimationFrame(function () { elements.canvas.focus(); });
-      }
+        window.requestAnimationFrame(function () {
+          try { elements.canvas.focus({ preventScroll: true }); }
+          catch (error) { elements.canvas.focus(); }
+          simulation.fullscreenFocusTransfer = false;
+        });
+      } else simulation.fullscreenFocusTransfer = false;
     });
   });
 }
@@ -3767,6 +4132,8 @@ window.__ballBlasterDebug = {
   updatePlayer,
   resetGame,
   activatePower,
+  currentBallLifetime,
+  ballLifetime,
   addSplat,
   spawnSplatFragments,
   seedBallTrail,
@@ -3792,6 +4159,18 @@ window.__ballBlasterDebug = {
   relocatePickups: relocateVisiblePickups,
   relocateTarget,
   resetTargets,
+  journeyMissionForStage,
+  journeyTourForStage,
+  journeyRoundForStage,
+  journeyGoalForStage,
+  journeyTargetSpeedMultiplier,
+  journeyStarsForEvent,
+  recordJourneyEvent,
+  configureJourneyRound,
+  resetJourney,
+  advanceJourneyIfReady,
+  flushJourneyCompletionCallout,
+  updateJourneyTargetStyle,
   forceGravityFlip,
   updateGravity,
   scheduleNextGravity,
@@ -3818,6 +4197,7 @@ window.__ballBlasterDebug = {
   initializeFullscreenControl,
   syncFullscreenState,
   toggleFullscreen,
+  isFullscreenToggleTarget,
   resizeRenderer,
   render,
   gravityFace,
@@ -3847,6 +4227,7 @@ window.__ballBlasterDebug = {
     baseFireInterval: BASE_FIRE_INTERVAL,
     rapidFireIntervals: RAPID_FIRE_INTERVALS,
     giantBallRadii: GIANT_BALL_RADII,
+    ballLifetimes: BALL_LIFETIMES,
     ballGrowthDuration: BALL_GROWTH_DURATION,
     splatChildCounts: SPLAT_CHILD_COUNTS,
     splatCascadePoints: SPLAT_CASCADE_POINTS,
@@ -3862,6 +4243,11 @@ window.__ballBlasterDebug = {
     walkSpeeds: WALK_SPEEDS,
     jumpSpeeds: JUMP_SPEEDS,
     maxPowerLevel: MAX_POWER_LEVEL,
+    journeyMissions: JOURNEY_MISSIONS,
+    journeyGoalBonusCap: JOURNEY_GOAL_BONUS_CAP,
+    journeyTargetSpeedMax: JOURNEY_TARGET_SPEED_MAX,
+    journeyPickupRespawnRange: [JOURNEY_PICKUP_RESPAWN_MIN, JOURNEY_PICKUP_RESPAWN_MAX],
+    journeyGravityIntervalRange: [JOURNEY_GRAVITY_INTERVAL_MIN, JOURNEY_GRAVITY_INTERVAL_MAX],
     powerDuration: POWER_INITIAL_DURATION,
     powerInitialDuration: POWER_INITIAL_DURATION,
     powerStackTime: POWER_STACK_TIME,

@@ -374,6 +374,7 @@
   left: 1rem;
   display: flex;
   flex-wrap: wrap;
+  max-width: calc(100% - 18rem);
   gap: 0.45rem;
 }
 
@@ -391,6 +392,12 @@
 
 .hud-powers span.is-active {
   display: block;
+}
+
+.hud-powers #hud-linger.is-active {
+  border-color: rgba(255, 127, 211, 0.72);
+  color: #ffb5e5;
+  box-shadow: 0 0 10px rgba(232, 73, 173, 0.24);
 }
 
 .hud-scoreboard {
@@ -450,6 +457,8 @@
 }
 
 .hud-combo,
+.hud-journey,
+.hud-journey-progress,
 .hud-gravity,
 .hud-gravity-countdown,
 .hud-target {
@@ -463,6 +472,23 @@
   font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.hud-journey,
+.hud-journey-progress {
+  display: block;
+}
+
+.hud-journey {
+  border-color: rgba(255, 225, 90, 0.65);
+  background: linear-gradient(90deg, rgba(98, 28, 87, 0.9), rgba(12, 100, 94, 0.9));
+  color: #fff3a4;
+  box-shadow: 0 0 12px rgba(255, 209, 77, 0.18);
+}
+
+.hud-journey-progress {
+  border-color: rgba(117, 245, 229, 0.48);
+  color: #75f5e5;
 }
 
 .hud-combo.is-active,
@@ -833,6 +859,103 @@
   opacity: 0.5;
 }
 
+.journey-card {
+  margin: 0 0 0.8rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(109, 78, 154, 0.3);
+  background: linear-gradient(145deg, rgba(116, 74, 157, 0.08), rgba(16, 142, 126, 0.08));
+  box-shadow: inset 0 3px 0 rgba(255, 208, 72, 0.14);
+}
+
+.journey-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+}
+
+.journey-heading h3 {
+  margin: 0;
+  color: #6f3e91;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.journey-heading h3 span {
+  color: #bd7a0c;
+}
+
+.journey-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.journey-stats {
+  display: grid;
+  grid-template-columns: minmax(42px, 0.5fr) minmax(0, 1.55fr) minmax(58px, 0.7fr);
+  margin: 0.65rem 0 0.5rem;
+  border-top: 1px solid rgba(109, 78, 154, 0.22);
+  border-left: 1px solid rgba(109, 78, 154, 0.22);
+}
+
+.journey-stats > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.12rem;
+  padding: 0.48rem 0.38rem;
+  border-right: 1px solid rgba(109, 78, 154, 0.22);
+  border-bottom: 1px solid rgba(109, 78, 154, 0.22);
+}
+
+.journey-stats dt {
+  color: var(--muted);
+  font-size: 0.54rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.journey-stats dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.69rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+#journey-stage,
+#journey-progress {
+  color: #8c5a0c;
+  font-size: 0.77rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.journey-meter {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(109, 78, 154, 0.35);
+  border-radius: 999px;
+  background: rgba(56, 26, 76, 0.1);
+}
+
+.journey-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #6b4aa0, #0fa58f 55%, #e5ad27);
+  box-shadow: 0 0 8px rgba(15, 165, 143, 0.55);
+  transition: width 180ms ease-out;
+}
+
 #reset-game {
   width: 100%;
 }
@@ -893,6 +1016,7 @@
 .power-rapid .power-icon { color: #b7791f; }
 .power-giant .power-icon { color: var(--teal); }
 .power-splat .power-icon { color: var(--orange); }
+.power-linger .power-icon { color: #b52e82; }
 .power-speed .power-icon { color: #2563a4; }
 .power-jump .power-icon { color: #7552a3; }
 .power-wallwalk .power-icon { color: #18735a; }
@@ -938,7 +1062,10 @@ body:has(#comfort-mode:checked) .pickup-toast {
 
 body.comfort-mode .hud-combo-meter span,
 .ball-stage.is-comfort-mode .hud-combo-meter span,
-body:has(#comfort-mode:checked) .hud-combo-meter span {
+body:has(#comfort-mode:checked) .hud-combo-meter span,
+body.comfort-mode .journey-meter span,
+.ball-stage.is-comfort-mode .journey-meter span,
+body:has(#comfort-mode:checked) .journey-meter span {
   transition: none !important;
 }
 
@@ -998,7 +1125,7 @@ body:has(#comfort-mode:checked) .hud-combo-meter span {
     left: 0.65rem;
     display: grid;
     max-width: none;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .hud-powers span {
@@ -1045,6 +1172,14 @@ body:has(#comfort-mode:checked) .hud-combo-meter span {
     grid-template-columns: 28px minmax(0, 1fr) minmax(54px, auto);
   }
 
+  .journey-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .journey-heading p {
+    text-align: left;
+  }
+
   .hud-score {
     min-width: 5.5rem;
     padding: 0.38rem 0.48rem;
@@ -1055,6 +1190,8 @@ body:has(#comfort-mode:checked) .hud-combo-meter span {
   }
 
   .hud-combo,
+  .hud-journey,
+  .hud-journey-progress,
   .hud-gravity,
   .hud-gravity-countdown,
   .hud-target {
@@ -1142,6 +1279,10 @@ body:has(#comfort-mode:checked) .hud-combo-meter span {
   }
 
   .hud-combo-meter span {
+    transition: none !important;
+  }
+
+  .journey-meter span {
     transition: none !important;
   }
 }
