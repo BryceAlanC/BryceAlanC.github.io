@@ -400,6 +400,12 @@
   box-shadow: 0 0 10px rgba(232, 73, 173, 0.24);
 }
 
+.hud-powers #hud-rocket.is-active {
+  border-color: rgba(183, 255, 74, 0.76);
+  color: #dcffa7;
+  box-shadow: 0 0 10px rgba(183, 255, 74, 0.26);
+}
+
 .hud-scoreboard {
   position: absolute;
   top: 1rem;
@@ -794,6 +800,15 @@
   font-size: 0.72rem;
 }
 
+.god-mode-row {
+  color: #8c5a0c;
+  font-weight: 500;
+}
+
+.god-mode-row input {
+  accent-color: #d39b16;
+}
+
 .run-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1020,6 +1035,7 @@
 .power-speed .power-icon { color: #2563a4; }
 .power-jump .power-icon { color: #7552a3; }
 .power-wallwalk .power-icon { color: #18735a; }
+.power-rocket .power-icon { color: #5f8700; }
 
 body.comfort-mode .event-callout,
 .ball-stage.is-comfort-mode .event-callout,

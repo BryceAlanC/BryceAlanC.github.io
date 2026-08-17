@@ -53,6 +53,7 @@ const VISUAL_LAUNCH_CLEARANCE_CANDIDATES = [
 const VISUAL_LAUNCH_RETRACTION_SCALES = [1, 0.72, 0.42, 0.25, 0.12, 0];
 const BASE_BALL_RADIUS = 0.18;
 const BALL_SPEED = 17;
+const BALL_LAUNCH_SPEEDS = [BALL_SPEED, 21.25, 25.5, 29.75, 34];
 const BASE_FIRE_INTERVAL = 0.28;
 const RAPID_FIRE_INTERVALS = [0.28, 0.09, 0.065, 0.05, 0.04];
 const GIANT_BALL_RADII = [BASE_BALL_RADIUS, 0.38, 0.65, 1, 1.4];
@@ -99,7 +100,7 @@ const PICKUP_HEIGHT = 1;
 const PICKUP_CLEARANCE_RADIUS = 0.84;
 const TARGET_PATROL_RADIUS = 7.25;
 const JOURNEY_MISSIONS = Object.freeze([
-  { id: "target-party", name: "Target Party", goal: 4, hint: "Every target earns 1 star", reward: ["rapid"], points: 2000 },
+  { id: "target-party", name: "Target Party", goal: 4, hint: "Every target earns 1 star", reward: ["rapid", "rocket"], points: 2000 },
   { id: "bank-shot-bash", name: "Bank-Shot Bash", goal: 6, hint: "Bank shots earn a bonus star", reward: ["giant"], points: 4000 },
   { id: "power-parade", name: "Power Parade", goal: 7, hint: "Pickups earn 2 bonus stars", reward: ["linger"], points: 6000 },
   { id: "combo-chase", name: "Combo Chase", goal: 8, hint: "Combo hits earn a bonus star", reward: ["splat"], points: 8000 },
@@ -166,6 +167,7 @@ const elements = {
   hudJump: document.getElementById("hud-jump"),
   hudWallwalk: document.getElementById("hud-wallwalk"),
   hudLinger: document.getElementById("hud-linger"),
+  hudRocket: document.getElementById("hud-rocket"),
   hudScore: document.getElementById("hud-score"),
   hudCombo: document.getElementById("hud-combo"),
   hudGravity: document.getElementById("hud-gravity"),
@@ -176,6 +178,7 @@ const elements = {
   toast: document.getElementById("pickup-toast"),
   comfort: document.getElementById("comfort-mode"),
   soundEffects: document.getElementById("sound-effects"),
+  godMode: document.getElementById("god-mode"),
   lookSpeed: document.getElementById("look-speed"),
   lookSpeedValue: document.getElementById("look-speed-value"),
   reset: document.getElementById("reset-game"),
@@ -200,6 +203,7 @@ const elements = {
   powerJump: document.querySelector("#power-jump .power-value"),
   powerWallwalk: document.querySelector("#power-wallwalk .power-value"),
   powerLinger: document.querySelector("#power-linger .power-value"),
+  powerRocket: document.querySelector("#power-rocket .power-value"),
   powerRapidRow: document.getElementById("power-rapid"),
   powerGiantRow: document.getElementById("power-giant"),
   powerSplatRow: document.getElementById("power-splat"),
@@ -207,6 +211,7 @@ const elements = {
   powerJumpRow: document.getElementById("power-jump"),
   powerWallwalkRow: document.getElementById("power-wallwalk"),
   powerLingerRow: document.getElementById("power-linger"),
+  powerRocketRow: document.getElementById("power-rocket"),
   callout: document.getElementById("event-callout"),
   calloutKicker: document.getElementById("event-callout-kicker"),
   calloutTitle: document.getElementById("event-callout-title"),
@@ -224,7 +229,8 @@ const powerDefinitions = {
   speed: { label: "Turbo boots", hud: "SPEED", color: 0x4a9ee8, symbol: "»" },
   jump: { label: "Moon jump", hud: "JUMP", color: 0xa988ea, symbol: "↑" },
   wallwalk: { label: "Wall Walk", hud: "GRIP", color: 0x37c994, symbol: "◆" },
-  linger: { label: "Long Bounce", hud: "LONG", color: 0xf062d6, symbol: "∞" }
+  linger: { label: "Long Bounce", hud: "LONG", color: 0xf062d6, symbol: "∞" },
+  rocket: { label: "Rocket shot", hud: "ROCKET", color: 0xb7ff4a, symbol: "➤" }
 };
 const powerTypes = Object.keys(powerDefinitions);
 const faceById = new Map(DODECA_ARENA.faces.map(function (face) { return [face.id, face]; }));
@@ -315,6 +321,7 @@ const simulation = {
   lastTargetId: null,
   comboTierAwards: new Set(),
   scoreMilestones: new Set(),
+  godMode: false,
   lastPointAward: null,
   lastCascadeCalloutAt: -Infinity,
   lastCascadeAwardAt: -Infinity,
@@ -326,9 +333,10 @@ const simulation = {
     speed: { level: 0, remaining: 0 },
     jump: { level: 0, remaining: 0 },
     wallwalk: { level: 0, remaining: 0 },
-    linger: { level: 0, remaining: 0 }
+    linger: { level: 0, remaining: 0 },
+    rocket: { level: 0, remaining: 0 }
   },
-  pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0, linger: 0 },
+  pickupRespawns: { rapid: 0, giant: 0, splat: 0, speed: 0, jump: 0, wallwalk: 0, linger: 0, rocket: 0 },
   pickupObjects: {},
   pickupFaceBag: [],
   randomSeed: DEFAULT_RANDOM_SEED,
@@ -450,8 +458,19 @@ const ballGlowMaterial = new THREE.MeshBasicMaterial({
   toneMapped: false
 });
 const splatGeometry = new THREE.CircleGeometry(1, 18);
-const pickupCoreGeometry = new THREE.OctahedronGeometry(0.48, 0);
-const pickupRingGeometry = new THREE.TorusGeometry(0.72, 0.08, 8, 24);
+const pickupShellGeometry = new THREE.CylinderGeometry(0.34, 0.34, 0.72, 6, 1, true);
+const pickupCapGeometry = new THREE.CylinderGeometry(0.41, 0.41, 0.12, 6);
+const pickupRailGeometry = new THREE.BoxGeometry(0.07, 0.78, 0.07);
+const pickupCoreGeometries = Object.freeze({
+  rapid: new THREE.TetrahedronGeometry(0.31, 0),
+  giant: new THREE.DodecahedronGeometry(0.31, 0),
+  splat: new THREE.IcosahedronGeometry(0.31, 0),
+  speed: new THREE.ConeGeometry(0.28, 0.52, 6),
+  jump: new THREE.OctahedronGeometry(0.34, 0),
+  wallwalk: new THREE.BoxGeometry(0.46, 0.46, 0.46),
+  linger: new THREE.TorusKnotGeometry(0.22, 0.07, 36, 6),
+  rocket: new THREE.CapsuleGeometry(0.18, 0.32, 3, 6)
+});
 const instanceDummy = new THREE.Object3D();
 const zAxis = new THREE.Vector3(0, 0, 1);
 const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -842,8 +861,7 @@ function scheduleArcadeMusicStep(step, start, intensity, stepDuration) {
 
 function musicIntensityTarget() {
   const stacks = powerTypes.reduce(function (sum, type) {
-    const power = simulation.powers[type];
-    return sum + (power.remaining > 0 ? power.level : 0);
+    return sum + powerLevel(type);
   }, 0);
   const journeyHeat = Math.min(0.16,
     (journeyRoundForStage() - 1) * 0.018 + (journeyTourForStage() - 1) * 0.025);
@@ -1296,7 +1314,46 @@ function awardPoints(value, options = {}) {
 }
 
 function powerLevel(type) {
+  if (simulation.godMode) return MAX_POWER_LEVEL;
   return simulation.powers[type].remaining > 0 ? simulation.powers[type].level : 0;
+}
+
+function setGodMode(enabled, options = {}) {
+  const next = Boolean(enabled);
+  const changed = simulation.godMode !== next;
+  simulation.godMode = next;
+  if (elements.godMode && elements.godMode.checked !== next) elements.godMode.checked = next;
+  elements.stage.classList.toggle("is-god-mode", next);
+
+  if (!next && simulation.playerFaceId !== simulation.gravityFaceId && !wallWalkActive()) {
+    changePlayerFace(simulation.gravityFaceId);
+    simulation.wallWalkCooldown = WALL_WALK_COOLDOWN;
+  }
+  simulation.fireCooldown = next
+    ? Math.min(simulation.fireCooldown, currentFireInterval())
+    : Math.max(simulation.fireCooldown, currentFireInterval());
+
+  if (changed && options.effects !== false) {
+    triggerVisualPulse(next ? 0.82 : 0.18);
+    if (isPlaying()) playGameSound(next ? "jackpot" : "splat", { level: next ? MAX_POWER_LEVEL : 1 });
+    showCallout(
+      next ? "combo" : "score",
+      next ? "Cheat unlocked" : "Cheat disabled",
+      next ? "GOD MODE!" : "Back to normal",
+      next ? "All eight power-ups · Level 4 · Forever" : "Normal power timers resumed",
+      0.62,
+      4.4,
+      next ? "jackpot" : ""
+    );
+  }
+  if (changed && options.announceEvent !== false) {
+    announce(next
+      ? "God Mode enabled. All eight power-ups are permanently at level 4."
+      : "God Mode disabled. Normal power timers resumed.");
+  }
+  if (simulation.renderer) updateVisualEffects(1);
+  updateHud();
+  return simulation.godMode;
 }
 
 function currentFireInterval() {
@@ -1309,6 +1366,10 @@ function currentBallRadius() {
 
 function currentBallLifetime() {
   return BALL_LIFETIMES[powerLevel("linger")];
+}
+
+function currentBallSpeed() {
+  return BALL_LAUNCH_SPEEDS[powerLevel("rocket")];
 }
 
 function ballLifetime(ball) {
@@ -1445,7 +1506,7 @@ function showReadyGate() {
   }
   setGate({
     title: "Ready to bounce?",
-    copy: "Follow the no-fail Star Tour, bank bright shots into six roaming targets, and chase seven stackable power-ups scattered among the twelve outer faces. With Wall Walk, you can even land on and circle the floating core.",
+    copy: "Follow the no-fail Star Tour, bank bright shots into six roaming targets, and chase eight stackable arcade capsules scattered among the twelve outer faces. With Wall Walk, you can even land on and circle the floating core.",
     controls: true,
     mouse: true,
     keyboard: true,
@@ -1975,6 +2036,40 @@ function createLabelSprite(text, color) {
   return sprite;
 }
 
+function createPickupBadgeSprite(definition) {
+  const badgeCanvas = document.createElement("canvas");
+  badgeCanvas.width = 192;
+  badgeCanvas.height = 128;
+  const context = badgeCanvas.getContext("2d");
+  const accent = "#" + definition.color.toString(16).padStart(6, "0");
+  context.fillStyle = "rgba(2, 4, 11, 0.9)";
+  context.fillRect(6, 6, 180, 116);
+  context.strokeStyle = accent;
+  context.lineWidth = 6;
+  context.strokeRect(7, 7, 178, 114);
+  context.fillStyle = "#ffffff";
+  context.font = "500 58px monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(definition.symbol, 96, 50);
+  context.fillStyle = accent;
+  context.font = "500 24px monospace";
+  context.fillText(definition.hud, 96, 98);
+  const texture = new THREE.CanvasTexture(badgeCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.z = 0.43;
+  sprite.scale.set(0.74, 0.5, 1);
+  return sprite;
+}
+
 function pickupSpawnIsClear(point, type, faceId) {
   const playerDistance = Math.hypot(
     simulation.player.position.x - point.x,
@@ -2105,21 +2200,55 @@ function createPickups(scene) {
   powerTypes.forEach(function (type) {
     const definition = powerDefinitions[type];
     const group = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(definition.color).multiplyScalar(0.16),
+      emissive: new THREE.Color(definition.color).multiplyScalar(0.32),
+      emissiveIntensity: 0.4,
+      roughness: 0.58,
+      metalness: 0.18,
+      transparent: true,
+      opacity: 0.52,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const coreMaterial = new THREE.MeshStandardMaterial({
       color: definition.color,
       emissive: definition.color,
-      emissiveIntensity: 0.55,
-      roughness: 0.35
+      emissiveIntensity: 0.68,
+      roughness: 0.28,
+      metalness: 0.08
     });
-    const core = new THREE.Mesh(pickupCoreGeometry, material);
-    const ring = new THREE.Mesh(pickupRingGeometry, material);
-    group.add(core, ring);
+    const frameMaterial = new THREE.MeshStandardMaterial({
+      color: definition.color,
+      emissive: definition.color,
+      emissiveIntensity: 0.82,
+      roughness: 0.24,
+      metalness: 0.22
+    });
+    const shell = new THREE.Mesh(pickupShellGeometry, bodyMaterial);
+    const core = new THREE.Mesh(pickupCoreGeometries[type] || pickupCoreGeometries.jump, coreMaterial);
+    const frame = new THREE.Group();
+    const topCap = new THREE.Mesh(pickupCapGeometry, frameMaterial);
+    const bottomCap = new THREE.Mesh(pickupCapGeometry, frameMaterial);
+    const leftRail = new THREE.Mesh(pickupRailGeometry, frameMaterial);
+    const rightRail = new THREE.Mesh(pickupRailGeometry, frameMaterial);
+    topCap.position.y = 0.42;
+    bottomCap.position.y = -0.42;
+    leftRail.position.x = -0.37;
+    rightRail.position.x = 0.37;
+    frame.add(topCap, bottomCap, leftRail, rightRail);
+    const badge = createPickupBadgeSprite(definition);
+    group.add(shell, core, frame, badge);
     const label = createLabelSprite(definition.hud, definition.color);
     group.add(label);
     group.userData.type = type;
     group.userData.label = label;
+    group.userData.badge = badge;
+    group.userData.shell = shell;
     group.userData.core = core;
-    group.userData.ring = ring;
+    group.userData.frame = frame;
+    group.userData.ring = frame;
+    group.userData.emissiveMaterials = [bodyMaterial, coreMaterial, frameMaterial];
     group.visible = false;
     scene.add(group);
     simulation.pickupObjects[type] = group;
@@ -2133,11 +2262,13 @@ function updatePickupLabels() {
     const object = simulation.pickupObjects[type];
     if (!object) return;
     object.userData.label.visible = false;
+    object.userData.badge.visible = false;
     if (!object.visible) return;
     const x = simulation.player.position.x - object.position.x;
     const y = simulation.player.position.y - object.position.y;
     const z = simulation.player.position.z - object.position.z;
     const distanceSquared = x * x + y * y + z * z;
+    object.userData.badge.visible = distanceSquared < 15 * 15;
     if (distanceSquared < nearestDistanceSquared) {
       nearestDistanceSquared = distanceSquared;
       nearestLabel = object.userData.label;
@@ -2266,8 +2397,11 @@ function updateVisualEffects(delta = FIXED_STEP) {
     simulation.centralMaterials.forEach(function (material) { material.emissiveIntensity = 0.14; });
     simulation.terrainMaterials.forEach(function (material) { material.emissiveIntensity = 0.1; });
     powerTypes.forEach(function (type) {
-      const material = simulation.pickupObjects[type]?.userData.core?.material;
-      if (material) material.emissiveIntensity = 0.72;
+      const materials = simulation.pickupObjects[type]?.userData.emissiveMaterials;
+      if (!materials) return;
+      materials[0].emissiveIntensity = 0.18;
+      materials[1].emissiveIntensity = 0.72;
+      materials[2].emissiveIntensity = 0.62;
     });
     simulation.arcadeLights.forEach(function (light) { light.intensity = 12; });
     if (simulation.playerLight) simulation.playerLight.intensity = 10;
@@ -2314,8 +2448,11 @@ function updateVisualEffects(delta = FIXED_STEP) {
     material.emissiveIntensity = 0.1;
   });
   powerTypes.forEach(function (type) {
-    const material = simulation.pickupObjects[type]?.userData.core?.material;
-    if (material) material.emissiveIntensity = 0.5 + excitement * 0.8;
+    const materials = simulation.pickupObjects[type]?.userData.emissiveMaterials;
+    if (!materials) return;
+    materials[0].emissiveIntensity = 0.24 + excitement * 0.28;
+    materials[1].emissiveIntensity = 0.58 + excitement * 0.78;
+    materials[2].emissiveIntensity = 0.72 + excitement * 0.9;
   });
 
   const time = simulation.simulationTime * 0.34;
@@ -3123,6 +3260,7 @@ function fireBall() {
   const direction = new THREE.Vector3();
   simulation.camera.getWorldDirection(direction);
   const targetRadius = currentBallRadius();
+  const launchSpeed = currentBallSpeed();
   const launch = findLaunchSphere(direction, targetRadius);
   if (!launch) return false;
 
@@ -3137,9 +3275,9 @@ function fireBall() {
     id: simulation.nextBallId,
     position: launch.position,
     velocity: {
-      x: direction.x * BALL_SPEED + simulation.player.velocity.x * 0.25,
-      y: direction.y * BALL_SPEED + simulation.player.velocity.y * 0.25,
-      z: direction.z * BALL_SPEED + simulation.player.velocity.z * 0.25
+      x: direction.x * launchSpeed + simulation.player.velocity.x * 0.25,
+      y: direction.y * launchSpeed + simulation.player.velocity.y * 0.25,
+      z: direction.z * launchSpeed + simulation.player.velocity.z * 0.25
     },
     radius: launch.radius,
     launchRadius: launch.radius,
@@ -3147,6 +3285,7 @@ function fireBall() {
     growthElapsed: launch.radius < targetRadius ? 0 : BALL_GROWTH_DURATION,
     age: 0,
     lifetime: currentBallLifetime(),
+    launchSpeed,
     color,
     splatLevel: powerLevel("splat"),
     ricochets: 0,
@@ -3643,22 +3782,27 @@ function activatePower(type, options = {}) {
     simulation.pickupObjects[type].visible = false;
   }
   const label = powerDefinitions[type].label;
+  const displayedLevel = powerLevel(type);
   if (options.toast !== false) {
-    elements.toast.textContent = label + " — level " + power.level + "!";
+    elements.toast.textContent = simulation.godMode
+      ? label + " — God Mode max!"
+      : label + " — level " + power.level + "!";
     elements.toast.hidden = false;
     window.clearTimeout(simulation.toastTimeout);
     simulation.toastTimeout = window.setTimeout(function () { elements.toast.hidden = true; }, 820);
   }
   if (options.effects !== false) {
     triggerVisualPulse(0.26);
-    playGameSound("pickup", { level: power.level });
+    playGameSound("pickup", { level: displayedLevel });
   }
   if (type === "wallwalk" && !wasActive && options.callout !== false) {
     showCallout("score", "Power up", "Wall Walk!", "Run into a seam to climb", 0.55, 3);
   }
-  if (collectPickup && options.recordJourney !== false) recordJourneyEvent("pickup", { type, level: power.level });
+  if (collectPickup && options.recordJourney !== false) recordJourneyEvent("pickup", { type, level: displayedLevel });
   if (options.announceEvent !== false) {
-    announce(label + " level " + power.level + ". " + Math.ceil(power.remaining) + " seconds remaining.");
+    announce(simulation.godMode
+      ? label + " collected. God Mode keeps it at level 4 permanently."
+      : label + " level " + power.level + ". " + Math.ceil(power.remaining) + " seconds remaining.");
   }
   updateHud();
   return true;
@@ -3719,9 +3863,13 @@ function advanceJourneyIfReady() {
     });
     const label = powerDefinitions[type].label;
     if (power.level > previousLevel) {
-      rewardDescriptions.push(label + " level " + power.level);
+      rewardDescriptions.push(simulation.godMode
+        ? label + " saved at level " + power.level
+        : label + " level " + power.level);
     } else if (power.remaining > previousRemaining + 0.05) {
-      rewardDescriptions.push(label + " +" + Math.ceil(power.remaining - previousRemaining) + " s");
+      rewardDescriptions.push(simulation.godMode
+        ? label + " banked +" + Math.ceil(power.remaining - previousRemaining) + " s"
+        : label + " +" + Math.ceil(power.remaining - previousRemaining) + " s");
     } else {
       const bonus = 5000 * Math.min(4, completedTour);
       cappedRewardBonus += bonus;
@@ -3798,12 +3946,14 @@ function updatePickups(delta) {
           base.y + face.inwardNormal.y * bob,
           base.z + face.inwardNormal.z * bob
         );
-        object.userData.ring.rotation.z += delta * (0.8 + index * 0.13);
-        object.userData.core.rotation.z -= delta * (0.42 + index * 0.07);
+        object.userData.frame.rotation.z = simulation.simulationTime * (0.68 + index * 0.09) + index * 0.47;
+        object.userData.core.rotation.x = simulation.simulationTime * (0.5 + index * 0.04);
+        object.userData.core.rotation.y = simulation.simulationTime * (0.74 + index * 0.05) + index * 0.31;
+        object.userData.core.rotation.z = simulation.simulationTime * 0.28;
       } else {
         object.position.set(base.x, base.y, base.z);
-        object.userData.ring.rotation.z = 0;
-        object.userData.core.rotation.z = 0;
+        object.userData.frame.rotation.set(0, 0, 0);
+        object.userData.core.rotation.set(0, 0, 0);
       }
       const x = simulation.player.position.x - object.position.x;
       const y = simulation.player.position.y - object.position.y;
@@ -3814,6 +3964,7 @@ function updatePickups(delta) {
 
   powerTypes.forEach(function (type) {
     const power = simulation.powers[type];
+    if (simulation.godMode) return;
     if (power.remaining <= 0) return;
     power.remaining = Math.max(0, power.remaining - delta);
     if (power.remaining === 0) {
@@ -4083,12 +4234,15 @@ function updateHud() {
   setText(elements.splatCount, String(simulation.splatCount));
   powerTypes.forEach(function (type) {
     const power = simulation.powers[type];
-    const active = power.remaining > 0 && power.level > 0;
+    const active = simulation.godMode || (power.remaining > 0 && power.level > 0);
+    const displayedLevel = powerLevel(type);
     const output = elements["power" + type.charAt(0).toUpperCase() + type.slice(1)];
     const row = elements["power" + type.charAt(0).toUpperCase() + type.slice(1) + "Row"];
     const hud = elements["hud" + type.charAt(0).toUpperCase() + type.slice(1)];
-    setText(output, active ? "Level " + power.level + " · " + Math.ceil(power.remaining) + " s" : "Level 0");
-    setText(hud, active ? powerDefinitions[type].hud + " ×" + power.level : powerDefinitions[type].hud);
+    setText(output, simulation.godMode
+      ? "Level 4 · ∞"
+      : active ? "Level " + displayedLevel + " · " + Math.ceil(power.remaining) + " s" : "Level 0");
+    setText(hud, active ? powerDefinitions[type].hud + " ×" + displayedLevel : powerDefinitions[type].hud);
     row.classList.toggle("is-active", active);
     hud.classList.toggle("is-active", active);
   });
@@ -4287,6 +4441,10 @@ elements.soundEffects.addEventListener("change", function () {
   }
   else muteAudio();
 });
+elements.godMode.addEventListener("change", function () {
+  setGodMode(elements.godMode.checked);
+  if (isPlaying() && simulation.mode === "keyboard") elements.canvas.focus({ preventScroll: true });
+});
 elements.comfort.addEventListener("change", function () {
   elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
   if (elements.comfort.checked) {
@@ -4306,6 +4464,8 @@ elements.comfort.addEventListener("change", function () {
 document.getElementById("current-year").textContent = String(new Date().getFullYear());
 elements.comfort.checked = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 elements.stage.classList.toggle("is-comfort-mode", elements.comfort.checked);
+simulation.godMode = elements.godMode.checked;
+elements.stage.classList.toggle("is-god-mode", simulation.godMode);
 
 try {
   initializeScene();
@@ -4341,6 +4501,9 @@ window.__ballBlasterDebug = {
   updatePlayer,
   resetGame,
   activatePower,
+  setGodMode,
+  currentBallSpeed,
+  ballLaunchSpeeds: BALL_LAUNCH_SPEEDS,
   currentBallLifetime,
   ballLifetime,
   addSplat,
@@ -4367,6 +4530,7 @@ window.__ballBlasterDebug = {
   refillPickupFaceBag,
   takePickupFace,
   faceUsableRadius,
+  createPickups,
   relocatePickup,
   relocatePickups: relocateVisiblePickups,
   relocateTarget,
