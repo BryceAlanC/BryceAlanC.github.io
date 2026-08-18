@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="A bright, touch-friendly lane defense game with magical garden guardians, elemental attacks, and eight escalating waves.">
+  <meta name="author" content="Bryce A. Christopherson">
+  <meta name="theme-color" content="#132c2a">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Rune Garden | Bryce Christopherson">
+  <meta property="og:description" content="Choose a garden friend, protect five paths, and grow a magical defense through eight waves.">
+  <title>Rune Garden | Bryce Christopherson</title>
+  <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <header class="topbar">
+      <a class="home" href="../" aria-label="Back to Visual Lab" title="Back">&#x2190;</a>
+      <div class="brand" aria-label="Rune Garden"><span class="brand-mark">&#x2736;</span><span>RUNE GARDEN</span></div>
+      <div class="status" aria-label="Game status">
+        <div class="counter nectar" id="nectarStatus" aria-label="250 nectar"><span aria-hidden="true">&#x2726;</span><b id="nectarCount">250</b></div>
+        <div class="counter wave" id="waveStatus" aria-label="Wave 1 of 8"><span aria-hidden="true">&#x223F;</span><b id="waveCount">1/8</b></div>
+      </div>
+      <div class="top-actions">
+        <button id="soundButton" class="round-button" aria-label="Mute sound" aria-pressed="false" title="Sound">&#x266B;</button>
+        <button id="pauseButton" class="round-button" aria-label="Pause game" aria-pressed="false" title="Pause">&#x2016;</button>
+        <button id="fullscreenButton" class="round-button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen">&#x26F6;</button>
+      </div>
+    </header>
+
+    <section id="gameShell" class="game-shell" aria-label="Rune Garden game">
+      <canvas id="gameCanvas" role="application" tabindex="0" aria-label="Five lane magical garden. Choose a garden friend below, then tap an empty garden tile to place it. Arrow keys move across the garden; Enter places or selects a defender."></canvas>
+
+      <div id="toast" class="toast" aria-live="polite"></div>
+
+      <div id="tutorial" class="overlay tutorial" role="dialog" aria-modal="true" aria-label="How to play">
+        <div class="tutorial-card">
+          <div class="tutorial-scene" aria-hidden="true">
+            <span class="demo-card">&#x1F33B;</span><span class="demo-arrow">&#x279C;</span><span class="demo-tile">&#x25A6;</span>
+          </div>
+          <div class="tutorial-dots"><i></i><i></i><i></i></div>
+          <p id="tutorialText">Pick a garden friend. Tap a glowing tile.</p>
+          <button id="tutorialNext" class="big-button" aria-label="Next tutorial step"><span aria-hidden="true">&#x279C;</span></button>
+        </div>
+      </div>
+
+      <div id="endOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="endTitle" aria-live="assertive">
+        <div class="end-card">
+          <div id="endIcon" class="end-icon" aria-hidden="true">&#x2728;</div>
+          <h1 id="endTitle">Garden Glows!</h1>
+          <button id="restartButton" class="big-button" aria-label="Play again"><span aria-hidden="true">&#x21BB;</span><span>PLAY</span></button>
+        </div>
+      </div>
+
+      <div id="pauseOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Game paused">
+        <button id="resumeButton" class="big-button" aria-label="Resume game"><span aria-hidden="true">&#x25B6;</span></button>
+      </div>
+    </section>
+
+    <div class="tray" role="toolbar" aria-label="Garden friends">
+      <button class="seed-card basic selected" data-kind="basic" aria-label="Sun sprout, costs 50 nectar. Fast magic bolts." aria-pressed="true">
+        <span class="seed-icon" aria-hidden="true"><i></i></span><span class="cost"><b>&#x2726;</b>50</span>
+      </button>
+      <button class="seed-card frost" data-kind="frost" aria-label="Frost fern, costs 75 nectar. Slows enemies." aria-pressed="false">
+        <span class="seed-icon" aria-hidden="true"><i></i></span><span class="cost"><b>&#x2726;</b>75</span>
+      </button>
+      <button class="seed-card ember" data-kind="ember" aria-label="Ember bloom, costs 100 nectar. Bursts hit groups." aria-pressed="false">
+        <span class="seed-icon" aria-hidden="true"><i></i></span><span class="cost"><b>&#x2726;</b>100</span>
+      </button>
+      <button class="seed-card glow" data-kind="glow" aria-label="Glow cap, costs 75 nectar. Makes nectar and has a shield." aria-pressed="false">
+        <span class="seed-icon" aria-hidden="true"><i></i></span><span class="cost"><b>&#x2726;</b>75</span>
+      </button>
+      <div class="tray-divider"></div>
+      <button id="upgradeButton" class="upgrade-card" disabled aria-label="Upgrade selected garden friend, costs 75 nectar">
+        <span aria-hidden="true">&#x2B06;</span><small>&#x2726;75</small>
+      </button>
+    </div>
+  </main>
+  <noscript>Rune Garden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
+  <script src="game.js"></script>
+</body>
+</html>

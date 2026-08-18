@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="A single-player action-strategy game where summoning extra enemies increases both the danger and your permanent income.">
+  <meta name="author" content="Bryce A. Christopherson">
+  <meta name="theme-color" content="#071018">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Linewarden | Bryce Christopherson">
+  <meta property="og:description" content="Defend the crystal, grow a hero, and summon danger into your own line to build a stronger economy.">
+  <title>Linewarden | Bryce Christopherson</title>
+  <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell" id="gameShell">
+    <header class="topbar" aria-label="Game status">
+      <div class="brand" aria-label="Linewarden">
+        <a class="home-link" href="../" aria-label="Back to Visual Lab" title="Back">←</a>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div><strong>LINEWARDEN</strong><small>CRYSTAL SIEGE</small></div>
+      </div>
+      <div class="economy">
+        <div class="stat gold"><span class="dot"></span><span id="gold">120</span><small>GOLD</small></div>
+        <div class="stat income"><span class="arrow">↗</span><span id="income">+10</span><small>EVERY 5s</small></div>
+        <div class="tick"><span id="tickFill"></span></div>
+      </div>
+      <div class="top-actions">
+        <button id="helpBtn" class="icon-button" aria-label="Open field guide" title="Field guide">?</button>
+        <button id="soundBtn" class="icon-button" aria-label="Mute sound" aria-pressed="false" title="Sound">♪</button>
+        <button id="pauseBtn" class="icon-button" aria-label="Pause game" aria-pressed="false" title="Pause">Ⅱ</button>
+        <button id="fullBtn" class="icon-button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen">⛶</button>
+      </div>
+    </header>
+
+    <section class="playfield" id="playfield" aria-label="Linewarden game arena">
+      <canvas id="game" width="1600" height="900" tabindex="0" aria-label="Arena. Move your hero to defend the crystal from enemies."></canvas>
+
+      <div class="wave-panel">
+        <small id="waveLabel">WAVE 1</small>
+        <strong id="waveTimer">00:00</strong>
+        <span id="threatLabel">THREAT LOW</span>
+      </div>
+
+      <div class="boss-bar hidden" id="bossBar" hidden>
+        <div><small>BOSS</small><strong id="bossName">THE IRON WITNESS</strong></div>
+        <div class="bar" id="bossProgress" role="progressbar" aria-label="Boss health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="bossFill"></span></div>
+      </div>
+
+      <aside class="shop panel" aria-label="Upgrade shop">
+        <div class="panel-title"><span>FIELD FORGE</span><small>PERMANENT THIS RUN</small></div>
+        <button class="shop-item" data-upgrade="might" aria-label="Upgrade weapon damage">
+          <span class="shop-icon might">◇</span><span><b>EDGE</b><small>+20% attack</small></span><em id="cost-might">80</em>
+        </button>
+        <button class="shop-item" data-upgrade="vigor" aria-label="Upgrade hero maximum health">
+          <span class="shop-icon vigor">♥</span><span><b>VIGOR</b><small>+45 max health</small></span><em id="cost-vigor">90</em>
+        </button>
+        <button class="shop-item" data-upgrade="focus" aria-label="Upgrade ability cooldown speed">
+          <span class="shop-icon focus">✦</span><span><b>FOCUS</b><small>faster abilities</small></span><em id="cost-focus">110</em>
+        </button>
+        <button class="shop-item repair" data-upgrade="repair" aria-label="Repair crystal">
+          <span class="shop-icon repair-icon">＋</span><span><b>MEND</b><small>restore crystal</small></span><em id="cost-repair">70</em>
+        </button>
+      </aside>
+
+      <section class="summon-dock panel" aria-labelledby="summonTitle">
+        <div class="dock-copy">
+          <span class="eyebrow">TEMPT FATE</span>
+          <strong id="summonTitle">SUMMON HOSTILES</strong>
+          <small>More danger now. More income forever.</small>
+        </div>
+        <div class="summon-list">
+          <button class="summon-card" data-summon="runner" aria-label="Summon one fast runner for 25 gold and gain 2 recurring income">
+            <span class="creature runner-shape" aria-hidden="true"></span>
+            <span><b>RUNNER</b><small>Fast • Fragile</small></span><span class="trade"><em>25</em><i>+2 ↗</i></span>
+          </button>
+          <button class="summon-card" data-summon="bulwark" aria-label="Summon one armored bulwark for 70 gold and gain 6 recurring income">
+            <span class="creature bulwark-shape" aria-hidden="true"></span>
+            <span><b>BULWARK</b><small>Slow • Armored</small></span><span class="trade"><em>70</em><i>+6 ↗</i></span>
+          </button>
+          <button class="summon-card" data-summon="swarm" aria-label="Summon a swarm of five enemies for 90 gold and gain 8 recurring income">
+            <span class="creature swarm-shape" aria-hidden="true">•••</span>
+            <span><b>SWARM</b><small>5 units • Spreads</small></span><span class="trade"><em>90</em><i>+8 ↗</i></span>
+          </button>
+          <button class="summon-card locked" data-summon="brute" aria-label="Summon one elite brute for 170 gold and gain 16 recurring income. Unlocks at level 4">
+            <span class="creature brute-shape" aria-hidden="true"></span>
+            <span><b>BRUTE</b><small id="bruteNote">Unlocks level 4</small></span><span class="trade"><em>170</em><i>+16 ↗</i></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="hero-hud" aria-label="Hero status and abilities">
+        <div class="portrait-wrap">
+          <div class="portrait"><span></span></div><div class="level">LV <b id="level">1</b></div>
+        </div>
+        <div class="vitals">
+          <div class="health-row"><span>WARDEN</span><b id="hpText">240 / 240</b></div>
+          <div class="bar health" id="healthProgress" role="progressbar" aria-label="Warden health" aria-valuemin="0" aria-valuemax="240" aria-valuenow="240"><span id="hpFill"></span></div>
+          <div class="bar xp" id="xpProgress" role="progressbar" aria-label="Experience toward next level" aria-valuemin="0" aria-valuemax="60" aria-valuenow="0"><span id="xpFill"></span></div>
+          <small id="xpText">0 / 60 XP</small>
+        </div>
+        <div class="abilities">
+          <button class="ability" data-ability="dash" aria-label="Rift Dash ability, shortcut Q">
+            <span class="glyph dash-glyph">➤</span><kbd>Q</kbd><i class="cooldown"></i><em class="cooldown-text"></em><small>RIFT DASH</small>
+          </button>
+          <button class="ability" data-ability="nova" aria-label="Prism Nova ability, shortcut E">
+            <span class="glyph nova-glyph">✦</span><kbd>E</kbd><i class="cooldown"></i><em class="cooldown-text"></em><small>PRISM NOVA</small>
+          </button>
+          <button class="ability" data-ability="sentinel" aria-label="Sentinel ability, shortcut R">
+            <span class="glyph sentinel-glyph">⬡</span><kbd>R</kbd><i class="cooldown"></i><em class="cooldown-text"></em><small>SENTINEL</small>
+          </button>
+        </div>
+        <div class="crystal-vital">
+          <span>CRYSTAL</span><b id="crystalText">1000</b>
+          <div class="bar" id="crystalProgress" role="progressbar" aria-label="Crystal health" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="1000"><span id="crystalFill"></span></div>
+        </div>
+      </section>
+
+      <div class="touch-stick" id="touchStick" aria-label="Touch movement control">
+        <span class="stick-ring"></span><span class="stick-knob" id="stickKnob"></span>
+      </div>
+
+      <div class="announce" id="announce" aria-hidden="true"></div>
+      <div class="float-note" id="floatNote" aria-hidden="true"></div>
+    </section>
+
+    <div class="overlay open" id="introOverlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <div class="modal intro-modal">
+        <span class="modal-kicker">CRYSTAL DEFENSE // RUN 01</span>
+        <h1 id="introTitle">Hold the line.<br><em>Choose the pressure.</em></h1>
+        <p>Enemies never stop. Defeat them before they reach the crystal — or summon extra hostiles to permanently grow your gold income.</p>
+        <div class="tutorial-grid">
+          <div><span class="tutorial-icon keys">WASD</span><b>MOVE</b><small>Keys, arrows, click, or touch</small></div>
+          <div><span class="tutorial-icon blade">⌁</span><b>AUTO-ATTACK</b><small>Approach enemies to strike</small></div>
+          <div><span class="tutorial-icon danger">↗</span><b>INVEST IN DANGER</b><small>Summons attack you, but raise income</small></div>
+        </div>
+        <button id="startBtn" class="primary">BEGIN THE WATCH <span>→</span></button>
+        <small class="fineprint">Tip: early risk compounds. Greed without control ends a run.</small>
+      </div>
+    </div>
+
+    <div class="overlay" id="pauseOverlay" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+      <div class="modal compact"><span class="modal-kicker">WATCH INTERRUPTED</span><h2 id="pauseTitle">Paused</h2><button id="resumeBtn" class="primary">RESUME <span>→</span></button></div>
+    </div>
+
+    <div class="overlay" id="gameOverOverlay" role="dialog" aria-modal="true" aria-labelledby="overTitle">
+      <div class="modal compact defeat"><span class="modal-kicker">THE LINE HAS BROKEN</span><h2 id="overTitle">Crystal shattered</h2><div class="run-stats"><div><b id="finalTime">00:00</b><small>TIME</small></div><div><b id="finalLevel">1</b><small>LEVEL</small></div><div><b id="finalIncome">10</b><small>INCOME</small></div></div><button id="restartBtn" class="primary">REBUILD THE LINE <span>↻</span></button></div>
+    </div>
+
+    <div class="overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Gold arrives every 5 seconds. Self-summoned foes join the enemy stream immediately, while their income bonus lasts for the entire run. Build only as much pressure as you can clear.</p><div class="guide-list"><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock and income timer both stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
+    </div>
+    <div class="sr-only" id="liveRegion" aria-live="polite"></div>
+  </main>
+  <noscript>Linewarden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
+  <script src="game.js"></script>
+</body>
+</html>
