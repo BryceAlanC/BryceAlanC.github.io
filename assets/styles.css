@@ -1819,6 +1819,7 @@ summary:focus-visible {
 .course-detail-bar .section-shell > div:first-child { border-left: 1px solid rgba(255, 253, 247, 0.18); }
 .course-detail-bar span { color: rgba(255, 253, 247, 0.5); font-family: var(--mono); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .course-detail-bar strong { margin-top: 0.35rem; font-size: 0.82rem; font-weight: 500; }
+.meeting-time { display: inline-block; white-space: nowrap; }
 
 .resource-layout {
   display: grid;
