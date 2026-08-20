@@ -11,7 +11,7 @@
   <meta property="og:description" content="Defend a winding siege lane, grow a hero, forge stackable relics, and build a hostile roster that returns every wave.">
   <title>Linewarden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <main class="game-shell" id="gameShell">
@@ -98,73 +98,53 @@
         </div>
       </aside>
 
-      <button id="summonDrawerToggle" class="summon-drawer-toggle" aria-expanded="false" aria-controls="summonDock" aria-label="Open summon roster">SUMMON</button>
+      <button id="summonDrawerToggle" class="summon-drawer-toggle" type="button" aria-expanded="false" aria-controls="summonDock" aria-label="Open summon roster"><span id="drawerLabel">SUMMONS</span> <b id="drawerRosterTotal">0</b></button>
 
       <section class="summon-dock panel drawer-closed" id="summonDock" aria-labelledby="summonTitle">
-        <div class="dock-copy">
-          <span class="eyebrow">TEMPT FATE</span>
-          <strong id="summonTitle">SUMMON HOSTILES</strong>
-          <small>Toggle unit Autos; the cheapest ready contract buys first. Stock steadily returns.</small>
-          <b id="rosterTotal" class="roster-total">ROSTER 0</b>
+        <header class="summon-head">
+          <div class="summon-heading">
+            <span class="eyebrow">TEMPT FATE</span>
+            <strong id="summonTitle">SUMMON HOSTILES</strong>
+            <small id="rosterTotal" class="roster-total">PERMANENT ROSTER: 0 BODIES / WAVE</small>
+            <small id="rosterWaveProgress" class="roster-wave-progress">THIS WAVE: 0 / 0 DEPLOYED</small>
+          </div>
+          <nav id="summonFilters" class="summon-filters" aria-label="Contract cost tiers">
+            <button type="button" data-tier="1" aria-pressed="true" aria-label="Show tier one contracts">I</button>
+            <button type="button" data-tier="2" aria-pressed="false" aria-label="Show tier two contracts">II</button>
+            <button type="button" data-tier="3" aria-pressed="false" aria-label="Show tier three contracts">III</button>
+            <button type="button" data-tier="4" aria-pressed="false" aria-label="Show tier four contracts">IV</button>
+            <button type="button" data-tier="5" aria-pressed="false" aria-label="Show tier five contracts">V</button>
+            <button type="button" data-tier="auto" aria-pressed="false" aria-label="Show contracts with continuous Auto enabled">AUTO <span id="autoCount">0</span></button>
+          </nav>
+          <button id="summonDrawerClose" class="drawer-close" type="button">RETURN TO BATTLE</button>
+        </header>
+
+        <div class="summon-viewport" role="region" aria-label="Summon contracts, sorted by increasing cost">
+          <div id="summonList" class="summon-list" role="list"></div>
         </div>
-        <div class="summon-list">
-          <article class="summon-card" data-summon="runner">
-            <button class="summon-buy" type="button" aria-label="Buy one Runner contract for 30 gold and gain 5 recurring income">
-              <span class="creature runner-shape" aria-hidden="true"></span><span><b>RUNNER <i class="owned">0</i></b><small>Fast • Fragile</small><small class="stock-line"><b class="stock-count">10/10</b> STOCK • FULL</small></span><span class="trade"><em>30</em><i>+5 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="bulwark">
-            <button class="summon-buy" type="button" aria-label="Buy one Bulwark contract for 75 gold and gain 12 recurring income. Unlocks at level 2">
-              <span class="creature bulwark-shape" aria-hidden="true"></span><span><b>BULWARK <i class="owned">0</i></b><small>Level 2 • Armored</small><small class="stock-line"><b class="stock-count">10/10</b> STOCK • FULL</small></span><span class="trade"><em>75</em><i>+12 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card" data-summon="swarm">
-            <button class="summon-buy" type="button" aria-label="Buy one Skitter pack contract for 85 gold and gain 14 recurring income">
-              <span class="creature swarm-shape" aria-hidden="true">•••</span><span><b>SKITTER PACK <i class="owned">0</i></b><small>4 bodies • Scatters</small><small class="stock-line"><b class="stock-count">10/10</b> STOCK • FULL</small></span><span class="trade"><em>85</em><i>+14 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="hexer">
-            <button class="summon-buy" type="button" aria-label="Buy one Hexer contract for 120 gold and gain 20 recurring income. Unlocks at level 3">
-              <span class="creature hexer-shape" aria-hidden="true">✦</span><span><b>HEXER <i class="owned">0</i></b><small>Level 3 • Slows warden</small><small class="stock-line"><b class="stock-count">8/8</b> STOCK • FULL</small></span><span class="trade"><em>120</em><i>+20 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="brute">
-            <button class="summon-buy" type="button" aria-label="Buy one Brute contract for 180 gold and gain 30 recurring income. Unlocks at level 4">
-              <span class="creature brute-shape" aria-hidden="true"></span><span><b>BRUTE <i class="owned">0</i></b><small>Level 4 • Crushing</small><small class="stock-line"><b class="stock-count">7/7</b> STOCK • FULL</small></span><span class="trade"><em>180</em><i>+30 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="phantom">
-            <button class="summon-buy" type="button" aria-label="Buy one Phantom contract for 245 gold and gain 40 recurring income. Unlocks at level 5">
-              <span class="creature phantom-shape" aria-hidden="true"></span><span><b>PHANTOM <i class="owned">0</i></b><small>Level 5 • Speed surges</small><small class="stock-line"><b class="stock-count">6/6</b> STOCK • FULL</small></span><span class="trade"><em>245</em><i>+40 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="siege">
-            <button class="summon-buy" type="button" aria-label="Buy one Siege beast contract for 340 gold and gain 56 recurring income. Unlocks at level 6">
-              <span class="creature siege-shape" aria-hidden="true"></span><span><b>SIEGE BEAST <i class="owned">0</i></b><small>Level 6 • Ignores hero</small><small class="stock-line"><b class="stock-count">5/5</b> STOCK • FULL</small></span><span class="trade"><em>340</em><i>+56 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-          <article class="summon-card locked" data-summon="hydra">
-            <button class="summon-buy" type="button" aria-label="Buy one Void hydra contract for 520 gold and gain 86 recurring income. Unlocks at level 8">
-              <span class="creature hydra-shape" aria-hidden="true"></span><span><b>VOID HYDRA <i class="owned">0</i></b><small>Level 8 • Regenerates</small><small class="stock-line"><b class="stock-count">4/4</b> STOCK • FULL</small></span><span class="trade"><em>520</em><i>+86 ↗</i></span>
-            </button>
-            <button class="unit-auto" type="button" aria-pressed="false">AUTO<br>OFF</button>
-          </article>
-        </div>
+
         <div class="auto-controls" aria-label="Automatic summoning controls">
-          <strong>CONTINUOUS AUTO</strong>
-          <small>Toggle any unit. One cheapest ready contract is bought every 0.4s.</small>
+          <span class="auto-copy"><strong>CONTINUOUS AUTO</strong><small>Toggle any unit. The cheapest ready enabled contract buys first every 0.4s.</small></span>
           <button id="reserveBtn" title="Shared gold reserve protected from all automatic purchases">RESERVE 100</button>
           <button id="allAutoOff" title="Turn every unit Auto off">ALL AUTOS OFF</button>
-          <button id="summonDrawerClose" class="drawer-close" type="button">RETURN TO BATTLE</button>
         </div>
       </section>
+
+      <template id="summonCardTemplate">
+        <article class="summon-card" role="listitem">
+          <button class="summon-buy" type="button" aria-label="Buy summon contract">
+            <span class="creature" aria-hidden="true"></span>
+            <span class="summon-copy">
+              <span class="name-row"><b class="summon-name"></b><i class="owned"></i></span>
+              <small class="trait-line"></small>
+              <small class="roster-line"><span class="contract-count">0</span> CONTRACTS • <span class="body-count">0</span> BODIES/WAVE</small>
+              <small class="stock-line"><b class="stock-count"></b> STOCK • <span class="stock-state"></span></small>
+            </span>
+            <span class="trade"><em class="summon-cost"></em><i class="summon-income"></i></span>
+          </button>
+          <button class="unit-auto" type="button" aria-pressed="false" aria-label="Enable continuous automatic purchases"><span>AUTO</span><b class="auto-state">OFF</b></button>
+        </article>
+      </template>
 
       <section class="hero-hud" aria-label="Hero status and abilities">
         <div class="portrait-wrap">
@@ -225,11 +205,28 @@
     </div>
 
     <div class="overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Your current income pays again forever on one fixed, visible 5-second cycle. Buying a hostile raises that recurring amount exactly once and adds it to your permanent roster; every roster body returns gradually in every later wave. Each actual kill pays one immediate bounty only—never a passive bounty. A returning enemy can pay another bounty when killed again because that is a new kill.</p><div class="guide-list"><div><b>Continuous unit Autos</b><span>Every unit has its own Auto toggle. Enabled Autos check continuously and buy one affordable, in-stock contract at a time, cheapest first. The single Reserve setting protects that much gold from every Auto.</span></div><div><b>Stock and restocking</b><span>Each contract consumes one stock, even packs with several bodies. Runner and Skitter stock starts at 10; stronger contracts have smaller caps and slower, predictable restocks.</span></div><div><b>Gear and relics</b><span>The Forge spends the same gold as summons. Gear raises core stats; relics stack distinct-target projectiles, non-repeating bounces, first-impact AOE, and autonomous revenants. Grave Pact raises ambient non-boss foes as allies until its fixed cap is full.</span></div><div><b>Late siege</b><span>The opening waves retain their steady curve. After wave 8, enemy durability, damage, and wave size accelerate nonlinearly, so a relic build becomes increasingly important.</span></div><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock, restocks, Autos, and 5-second payday meter all stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
+      <div class="modal help-modal">
+        <button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button>
+        <span class="modal-kicker">FIELD GUIDE</span>
+        <h2 id="helpTitle">The economy is a weapon.</h2>
+        <p>Income pays forever on one fixed, visible 5-second cycle. Buying one of the 50 hostile contracts raises that recurring payday exactly once and permanently adds its listed bodies to every later wave. Hardest roster enemies return first, followed gradually by easier ones. Each actual kill awards one immediate bounty only.</p>
+        <div class="guide-list">
+          <div><b>Fifty contracts</b><span>Five cost tiers run from expendable scouts to catastrophic late-game threats. Every purchased body remains in your permanent roster and returns each wave.</span></div>
+          <div><b>Continuous unit Autos</b><span>Every contract has its own Auto toggle. Enabled Autos buy one affordable, in-stock contract at a time, always choosing the cheapest ready option first. Reserve protects shared gold from every Auto.</span></div>
+          <div><b>Stock and restocking</b><span>Each contract consumes one stock, even packs containing several bodies. Larger inventories restock steadily, so unchecked purchasing can overwhelm a future wave.</span></div>
+          <div><b>Gear and relics</b><span>The Forge spends the same gold as summons. Gear raises core stats; relics stack distinct-target projectiles, non-repeating bounces, first-impact AOE, and autonomous revenants. Grave Pact raises ambient non-boss foes as allies until its fixed cap is full.</span></div>
+          <div><b>Late siege</b><span>Later waves accelerate sharply in size and strength. Expensive contracts compound that pressure, so income, summons, gear, and relics must stay balanced.</span></div>
+          <div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div>
+          <div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div>
+          <div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div>
+          <div><b>Space — Pause</b><span>The wave clock, restocks, Autos, and fixed 5-second payday meter all stop.</span></div>
+        </div>
+        <button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button>
+      </div>
     </div>
     <div class="sr-only" id="liveRegion" aria-live="polite"></div>
   </main>
   <noscript>Linewarden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
-  <script src="game.js?v=4"></script>
+  <script src="game.js?v=6"></script>
 </body>
 </html>
