@@ -9,7 +9,8 @@
     { x: 150, y: 450 }, { x: 150, y: 625 }, { x: 1390, y: 625 }
   ];
   const PAYDAY_SECONDS = 5;
-  const WAVE_SECONDS = 18;
+  const WAVE_SECONDS = 20;
+  const AUTO_PURCHASE_SECONDS = .4;
   const RESERVES = [0, 100, 250, 500];
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compactDrawerMedia = matchMedia('(max-width: 900px) and (max-height: 560px)');
@@ -20,19 +21,19 @@
     crystalText: $('crystalText'), crystalFill: $('crystalFill'), announce: $('announce'), note: $('floatNote'), live: $('liveRegion'),
     bossBar: $('bossBar'), bossName: $('bossName'), bossFill: $('bossFill'), bossProgress: $('bossProgress'),
     healthProgress: $('healthProgress'), xpProgress: $('xpProgress'), crystalProgress: $('crystalProgress'),
-    rosterTotal: $('rosterTotal'), autoType: $('autoType'), autoBtn: $('autoBtn'), reserveBtn: $('reserveBtn'),
+    rosterTotal: $('rosterTotal'), reserveBtn: $('reserveBtn'), allAutoOff: $('allAutoOff'),
     summonDock: $('summonDock'), drawerToggle: $('summonDrawerToggle'), drawerClose: $('summonDrawerClose')
   };
 
   const summonDefs = {
-    runner: { name: 'Runner', unlock: 1, cost: 30, income: 2, count: 1, hp: 72, speed: 188, damage: 17, reward: 5, xp: 11, r: 16, color: '#ff6577' },
-    swarm: { name: 'Skitter pack', unlock: 1, cost: 85, income: 7, count: 4, hp: 58, speed: 156, damage: 10, reward: 3, xp: 7, r: 12, color: '#ff8d78' },
-    bulwark: { name: 'Bulwark', unlock: 2, cost: 75, income: 5, count: 1, hp: 345, speed: 84, damage: 38, reward: 12, xp: 26, r: 27, armor: .24, color: '#d66088' },
-    hexer: { name: 'Hexer', unlock: 3, cost: 120, income: 9, count: 1, hp: 225, speed: 108, damage: 31, reward: 17, xp: 34, r: 23, trait: 'hexer', color: '#9e68d5' },
-    brute: { name: 'Brute', unlock: 4, cost: 180, income: 15, count: 1, hp: 790, speed: 76, damage: 72, reward: 28, xp: 62, r: 39, armor: .14, color: '#bf72df' },
-    phantom: { name: 'Phantom', unlock: 5, cost: 245, income: 21, count: 1, hp: 430, speed: 142, damage: 58, reward: 36, xp: 70, r: 28, armor: .08, trait: 'surge', color: '#826be6' },
-    siege: { name: 'Siege beast', unlock: 6, cost: 340, income: 30, count: 1, hp: 1280, speed: 66, damage: 92, reward: 52, xp: 105, r: 46, armor: .18, trait: 'siege', crystalDamage: 1.7, color: '#cb5b4c' },
-    hydra: { name: 'Void hydra', unlock: 8, cost: 520, income: 48, count: 1, hp: 2050, speed: 72, damage: 118, reward: 78, xp: 165, r: 54, armor: .2, trait: 'regen', regen: .018, color: '#7c59bd' }
+    runner: { name: 'Runner', unlock: 1, cost: 30, income: 5, count: 1, hp: 56, speed: 188, damage: 11, reward: 5, xp: 9, r: 16, stockCap: 10, restockSeconds: 20, color: '#ff6577' },
+    bulwark: { name: 'Bulwark', unlock: 2, cost: 75, income: 12, count: 1, hp: 280, speed: 84, damage: 27, reward: 10, xp: 22, r: 27, armor: .22, stockCap: 10, restockSeconds: 30, color: '#d66088' },
+    swarm: { name: 'Skitter pack', unlock: 1, cost: 85, income: 14, count: 4, hp: 42, speed: 156, damage: 7, reward: 3, xp: 5, r: 12, stockCap: 10, restockSeconds: 40, color: '#ff8d78' },
+    hexer: { name: 'Hexer', unlock: 3, cost: 120, income: 20, count: 1, hp: 185, speed: 108, damage: 22, reward: 15, xp: 29, r: 23, trait: 'hexer', stockCap: 8, restockSeconds: 40, color: '#9e68d5' },
+    brute: { name: 'Brute', unlock: 4, cost: 180, income: 30, count: 1, hp: 650, speed: 76, damage: 54, reward: 25, xp: 54, r: 39, armor: .12, stockCap: 7, restockSeconds: 55, color: '#bf72df' },
+    phantom: { name: 'Phantom', unlock: 5, cost: 245, income: 40, count: 1, hp: 360, speed: 142, damage: 44, reward: 33, xp: 62, r: 28, armor: .06, trait: 'surge', stockCap: 6, restockSeconds: 65, color: '#826be6' },
+    siege: { name: 'Siege beast', unlock: 6, cost: 340, income: 56, count: 1, hp: 1050, speed: 66, damage: 72, reward: 48, xp: 92, r: 46, armor: .16, trait: 'siege', crystalDamage: 1.55, stockCap: 5, restockSeconds: 85, color: '#cb5b4c' },
+    hydra: { name: 'Void hydra', unlock: 8, cost: 520, income: 86, count: 1, hp: 1680, speed: 72, damage: 90, reward: 70, xp: 145, r: 54, armor: .18, trait: 'regen', regen: .015, stockCap: 4, restockSeconds: 120, color: '#7c59bd' }
   };
   const ambientDefs = [
     { key: 'drone', unlockWave: 1, hp: 66, speed: 132, damage: 14, reward: 6, xp: 10, r: 16, color: '#de5267' },
@@ -59,6 +60,15 @@
   function emptyRoster() {
     return Object.fromEntries(Object.keys(summonDefs).map(type => [type, 0]));
   }
+  function emptyAutos() {
+    return Object.fromEntries(Object.keys(summonDefs).map(type => [type, false]));
+  }
+  function fullStock() {
+    return Object.fromEntries(Object.entries(summonDefs).map(([type, def]) => [type, def.stockCap]));
+  }
+  function emptyStockClocks() {
+    return Object.fromEntries(Object.keys(summonDefs).map(type => [type, 0]));
+  }
 
   function openOverlays() { return [...document.querySelectorAll('.overlay.open')]; }
   function syncOverlayAccess(focusId = null) {
@@ -79,20 +89,20 @@
 
   function initialState() {
     return {
-      started: false, paused: false, over: false, time: 0, gold: 140, income: 10, incomeClock: 0,
-      wave: 0, nextWave: 1, shake: 0, flash: 0, dangerSpent: 0,
+      started: false, paused: false, over: false, time: 0, gold: 175, income: 12, incomeClock: 0,
+      wave: 0, nextWave: 6, shake: 0, flash: 0, dangerSpent: 0,
       hero: {
-        x: 1160, y: 625, r: 24, hp: 250, maxHp: 250, level: 1, xp: 0, xpNeed: 65,
-        damage: 31, attackCd: 0, attackRate: .61, range: 245, crit: .05, speed: 270,
+        x: 1160, y: 625, r: 24, hp: 300, maxHp: 300, level: 1, xp: 0, xpNeed: 60,
+        damage: 35, attackCd: 0, attackRate: .56, range: 265, crit: .06, speed: 275,
         focus: 0, aimX: -1, aimY: 0, destination: null, invuln: 0, hexed: false
       },
-      crystal: { x: 1470, y: 625, r: 53, hp: 1100, maxHp: 1100, pulse: 0 },
+      crystal: { x: 1470, y: 625, r: 53, hp: 1400, maxHp: 1400, pulse: 0 },
       enemies: [], spawnQueue: [], projectiles: [], particles: [], slashes: [], sentinels: [],
       cooldowns: { dash: 0, nova: 0, sentinel: 0 },
       maxCooldowns: { dash: 5, nova: 9, sentinel: 18 },
       items: Object.fromEntries(itemKeys.map(type => [type, 0])),
-      roster: emptyRoster(), contracts: emptyRoster(),
-      auto: { enabled: false, type: 'runner', reserveIndex: 1 }, drawerOpen: false,
+      roster: emptyRoster(), contracts: emptyRoster(), stock: fullStock(), stockClocks: emptyStockClocks(),
+      autos: emptyAutos(), autoClock: 0, reserveIndex: 1, drawerOpen: false,
       boss: null, spawnId: 0
     };
   }
@@ -100,10 +110,11 @@
   function reset() {
     game = initialState();
     last = performance.now();
-    ui.autoType.value = 'runner';
-    ui.autoBtn.textContent = 'OFF';
-    ui.autoBtn.setAttribute('aria-pressed', 'false');
-    ui.reserveBtn.textContent = `KEEP ${RESERVES[game.auto.reserveIndex]}`;
+    ui.reserveBtn.textContent = `RESERVE ${RESERVES[game.reserveIndex]}`;
+    document.querySelectorAll('.unit-auto').forEach(button => {
+      button.innerHTML = 'AUTO<br>OFF';
+      button.setAttribute('aria-pressed', 'false');
+    });
     $('pauseBtn').textContent = 'Ⅱ';
     $('pauseBtn').setAttribute('aria-label', 'Pause game');
     $('pauseBtn').setAttribute('aria-pressed', 'false');
@@ -189,11 +200,13 @@
 
   function spawnEnemy(def, options = {}) {
     const playerMade = Boolean(options.playerMade), boss = Boolean(options.boss);
-    const baseScale = playerMade ? 1 + Math.max(0, options.wave - 1) * .032 : 1 + Math.max(0, options.wave - 1) * .06;
+    const waveIndex = Math.max(0, options.wave - 1);
+    const hpScale = boss ? 1 : playerMade ? 1 + waveIndex * .015 : 1 + waveIndex * .035;
+    const damageScale = boss ? 1 : playerMade ? 1 + waveIndex * .01 : 1 + waveIndex * .02;
     const enemy = {
       id: ++game.spawnId, x: PATH[0].x, y: PATH[0].y, pathIndex: 1, type: options.type || def.key || 'ambient',
-      r: def.r, hp: def.hp * baseScale, maxHp: def.hp * baseScale, speed: def.speed,
-      damage: def.damage * baseScale, reward: def.reward, xp: def.xp, armor: def.armor || 0,
+      r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, speed: def.speed,
+      damage: def.damage * damageScale, reward: def.reward, xp: def.xp, armor: def.armor || 0,
       trait: def.trait || '', regen: def.regen || 0, crystalDamage: def.crystalDamage || 1,
       color: def.color, playerMade, boss, attackCd: 0, slow: 0, slowTimer: 0, hit: 0, phase: Math.random() * 6.28
     };
@@ -219,7 +232,7 @@
 
   function bossDefinition(wave) {
     const tier = Math.floor(wave / 5);
-    return { key: 'boss', hp: 2100 + tier * 820, speed: 72 + tier * 2, damage: 88 + tier * 16, reward: 210 + tier * 55, xp: 190 + tier * 30, r: 58, armor: .2, color: '#ed4f78' };
+    return { key: 'boss', hp: 1600 + tier * 655, speed: 68 + tier * 1.5, damage: 54 + tier * 12, reward: 180 + tier * 45, xp: 170 + tier * 28, r: 58, armor: .18, color: '#ed4f78' };
   }
 
   function activateBoss(enemy, wave) {
@@ -237,7 +250,7 @@
   function startWave() {
     game.wave++;
     const wave = game.wave;
-    const ambientCount = Math.min(4 + Math.floor(wave * .8), 38);
+    const ambientCount = Math.min(3 + Math.floor(wave * .55), 28);
     const ambientSpread = Math.min(12, 5 + ambientCount * .22);
     for (let i = 0; i < ambientCount; i++) {
       queueSpawn(chooseAmbient(wave), { due: game.time + .15 + i * ambientSpread / Math.max(1, ambientCount - 1), wave });
@@ -271,12 +284,19 @@
       note(`UNLOCKS AT LEVEL ${def.unlock}`);
       return false;
     }
+    if (game.stock[type] <= 0) {
+      if (!automatic) note('OUT OF STOCK • RESTOCKING');
+      return false;
+    }
     if (game.gold < def.cost) {
       if (!automatic) note('NOT ENOUGH GOLD');
       return false;
     }
 
     game.gold -= def.cost;
+    const wasFullStock = game.stock[type] >= def.stockCap;
+    game.stock[type]--;
+    if (wasFullStock) game.stockClocks[type] = 0;
     game.income += def.income;
     game.dangerSpent += def.cost;
     game.contracts[type]++;
@@ -285,10 +305,12 @@
       queueSpawn(def, { due: game.time + i * .38, playerMade: true, type, wave: Math.max(1, game.wave) });
     }
     game.spawnQueue.sort((a, b) => a.due - b.due);
-    note(`${def.name.toUpperCase()} CONTRACT • +${def.income} INCOME ONCE`);
-    ui.live.textContent = `${def.name} purchased. ${def.count} joined the permanent roster. Income increased once by ${def.income}.`;
-    tone(190, .08, 'square', .035);
-    setTimeout(() => tone(280, .1, 'square', .025), 80);
+    if (!automatic) {
+      note(`${def.name.toUpperCase()} CONTRACT • +${def.income} INCOME ONCE`);
+      ui.live.textContent = `${def.name} purchased. One stock used; ${game.stock[type]} of ${def.stockCap} remain. ${def.count} ${def.count === 1 ? 'body joined' : 'bodies joined'} the permanent roster. Income increased once by ${def.income}.`;
+      tone(190, .08, 'square', .035);
+      setTimeout(() => tone(280, .1, 'square', .025), 80);
+    }
     updateUI();
     return true;
   }
@@ -297,32 +319,45 @@
     return game.enemies.reduce((sum, enemy) => sum + enemy.hp / 115, 0) + Math.min(18, game.spawnQueue.length * .45);
   }
 
-  function tryAutoSummon() {
-    if (!game.auto.enabled) return;
-    const type = game.auto.type, def = summonDefs[type];
-    if (game.hero.level < def.unlock) {
-      setAuto(false);
-      note(`AUTO OFF • ${def.name.toUpperCase()} LOCKED`);
-      return;
-    }
-    const reserve = RESERVES[game.auto.reserveIndex];
-    if (game.crystal.hp / game.crystal.maxHp < .34 || activeThreat() > 48) {
-      ui.live.textContent = 'Automatic summon held because danger is critical.';
-      return;
-    }
-    if (game.gold - def.cost < reserve) {
-      ui.live.textContent = `Automatic summon waiting while ${reserve} gold remains protected.`;
-      return;
-    }
-    buySummon(type, true);
+  function updateStock(dt) {
+    Object.entries(summonDefs).forEach(([type, def]) => {
+      if (game.stock[type] >= def.stockCap) {
+        game.stock[type] = def.stockCap;
+        game.stockClocks[type] = 0;
+        return;
+      }
+      game.stockClocks[type] += dt;
+      if (game.stockClocks[type] >= def.restockSeconds) {
+        game.stock[type]++;
+        game.stockClocks[type] -= def.restockSeconds;
+        if (game.stock[type] >= def.stockCap) game.stockClocks[type] = 0;
+      }
+    });
   }
 
-  function setAuto(enabled) {
-    game.auto.enabled = enabled;
-    ui.autoBtn.textContent = enabled ? 'ON' : 'OFF';
-    ui.autoBtn.setAttribute('aria-pressed', String(enabled));
-    ui.autoBtn.setAttribute('aria-label', enabled ? 'Turn automatic summoning off' : 'Turn automatic summoning on');
-    ui.live.textContent = `Automatic summoning ${enabled ? 'enabled' : 'disabled'}.`;
+  function tryAutoSummon() {
+    const reserve = RESERVES[game.reserveIndex];
+    const ready = Object.entries(summonDefs)
+      .filter(([type, def]) => game.autos[type] && game.hero.level >= def.unlock && game.stock[type] > 0 && game.gold - def.cost >= reserve)
+      .sort(([, a], [, b]) => a.cost - b.cost);
+    if (ready.length) buySummon(ready[0][0], true);
+  }
+
+  function setUnitAuto(type, enabled, announceChange = true) {
+    const def = summonDefs[type];
+    if (!def || game.hero.level < def.unlock) return false;
+    game.autos[type] = Boolean(enabled);
+    const button = document.querySelector(`.summon-card[data-summon="${type}"] .unit-auto`);
+    button?.setAttribute('aria-pressed', String(game.autos[type]));
+    if (announceChange) ui.live.textContent = `${def.name} continuous Auto ${game.autos[type] ? 'enabled' : 'disabled'}.`;
+    updateUI();
+    return true;
+  }
+
+  function disableAllAutos() {
+    Object.keys(game.autos).forEach(type => { game.autos[type] = false; });
+    ui.live.textContent = 'All continuous unit Autos disabled.';
+    updateUI();
   }
 
   function itemCost(type) {
@@ -442,6 +477,8 @@
     if (!game.started || game.paused || game.over || game.drawerOpen) return;
     game.time += dt;
     game.incomeClock += dt;
+    updateStock(dt);
+    game.autoClock += dt;
     game.shake = Math.max(0, game.shake - dt * 18);
     game.flash = Math.max(0, game.flash - dt * 3);
     Object.keys(game.cooldowns).forEach(key => { game.cooldowns[key] = Math.max(0, game.cooldowns[key] - dt); });
@@ -456,6 +493,9 @@
       note(`PAYDAY +${payout} GOLD`);
       ui.live.textContent = `Fixed five-second payday delivered ${payout} gold.`;
       tone(680, .07, 'sine', .025);
+    }
+    if (game.autoClock >= AUTO_PURCHASE_SECONDS) {
+      game.autoClock %= AUTO_PURCHASE_SECONDS;
       tryAutoSummon();
     }
     if (game.time >= game.nextWave) {
@@ -504,7 +544,7 @@
     if (hero.hp <= 0) {
       hero.hp = Math.max(85, hero.maxHp * .43);
       hero.x = game.crystal.x - 150; hero.y = game.crystal.y;
-      game.crystal.hp -= 135;
+      game.crystal.hp -= 90;
       note('WARDEN DOWN • CRYSTAL OVERLOAD');
     }
     game.crystal.pulse = Math.max(0, game.crystal.pulse - dt * 2);
@@ -750,13 +790,29 @@
 
     const totalRoster = Object.values(game.roster).reduce((sum, count) => sum + count, 0);
     ui.rosterTotal.textContent = `ROSTER ${totalRoster}`;
-    document.querySelectorAll('.summon-card').forEach(button => {
-      const type = button.dataset.summon, def = summonDefs[type], locked = hero.level < def.unlock;
-      button.classList.toggle('locked', locked);
-      button.disabled = locked || game.gold < def.cost;
-      button.querySelector('.owned').textContent = game.roster[type];
+    document.querySelectorAll('.summon-card').forEach(card => {
+      const type = card.dataset.summon, def = summonDefs[type], locked = hero.level < def.unlock;
+      const buyButton = card.querySelector('.summon-buy'), autoButton = card.querySelector('.unit-auto');
+      const inStock = game.stock[type] > 0, affordable = game.gold >= def.cost;
+      const reserve = RESERVES[game.reserveIndex];
+      const autoAffordable = game.gold - def.cost >= reserve;
+      const nextStock = Math.max(0, def.restockSeconds - game.stockClocks[type]);
+      const stockStatus = game.stock[type] >= def.stockCap ? 'FULL' : `NEXT ${Math.ceil(nextStock)}s`;
+      const autoStatus = !inStock ? 'STOCK' : !autoAffordable ? 'WAIT' : 'READY';
+      card.classList.toggle('locked', locked);
+      card.classList.toggle('out-of-stock', !inStock);
+      card.classList.toggle('auto-enabled', game.autos[type]);
+      buyButton.disabled = locked || !affordable || !inStock;
+      buyButton.setAttribute('aria-label', `Buy one ${def.name} contract for ${def.cost} gold and gain ${def.income} recurring income. Roster ${game.roster[type]} ${game.roster[type] === 1 ? 'body' : 'bodies'}. Stock ${game.stock[type]} of ${def.stockCap}.${locked ? ` Unlocks at level ${def.unlock}.` : ''}`);
+      card.querySelector('.owned').textContent = `R${game.roster[type]}`;
+      card.querySelector('.stock-line').innerHTML = `<b class="stock-count">${game.stock[type]}/${def.stockCap}</b> STOCK • ${stockStatus}`;
+      autoButton.disabled = locked;
+      autoButton.setAttribute('aria-pressed', String(game.autos[type]));
+      autoButton.innerHTML = game.autos[type] ? `AUTO<br>${autoStatus}` : 'AUTO<br>OFF';
+      autoButton.setAttribute('aria-label', `${game.autos[type] ? 'Turn off' : 'Turn on'} continuous automatic ${def.name} purchases.${game.autos[type] ? ` Current state: ${autoStatus.toLowerCase()}.` : ''}${locked ? ` Unlocks at level ${def.unlock}.` : ''}`);
     });
-    [...ui.autoType.options].forEach(option => { option.disabled = hero.level < summonDefs[option.value].unlock; });
+    ui.allAutoOff.disabled = !Object.values(game.autos).some(Boolean);
+    ui.reserveBtn.setAttribute('aria-label', `Protect ${RESERVES[game.reserveIndex]} gold from all automatic purchases. Activate to choose another reserve.`);
 
     document.querySelectorAll('.shop-item').forEach(button => {
       const type = button.dataset.upgrade, cost = itemCost(type);
@@ -836,16 +892,24 @@
     const magnitude = Math.hypot(game.hero.aimX, game.hero.aimY) || 1;
     game.hero.aimX /= magnitude; game.hero.aimY /= magnitude;
   });
-  document.querySelectorAll('.summon-card').forEach(button => button.addEventListener('click', () => buySummon(button.dataset.summon)));
+  document.querySelectorAll('.summon-buy').forEach(button => button.addEventListener('click', () => buySummon(button.closest('.summon-card').dataset.summon)));
+  document.querySelectorAll('.unit-auto').forEach(button => button.addEventListener('click', () => {
+    const type = button.closest('.summon-card').dataset.summon;
+    setUnitAuto(type, !game.autos[type]);
+  }));
   document.querySelectorAll('.shop-item').forEach(button => button.addEventListener('click', () => buyItem(button.dataset.upgrade)));
   document.querySelectorAll('.ability').forEach(button => button.addEventListener('click', () => ability(button.dataset.ability)));
   $('startBtn').addEventListener('click', begin);
   $('pauseBtn').addEventListener('click', () => pause());
   $('resumeBtn').addEventListener('click', () => pause(false));
   $('restartBtn').addEventListener('click', () => { hideOverlay('gameOverOverlay', false); reset(); game.started = true; syncOverlayAccess(); canvas.focus(); });
-  ui.autoType.addEventListener('change', () => { game.auto.type = ui.autoType.value; ui.live.textContent = `Automatic summon target set to ${summonDefs[game.auto.type].name}.`; });
-  ui.autoBtn.addEventListener('click', () => setAuto(!game.auto.enabled));
-  ui.reserveBtn.addEventListener('click', () => { game.auto.reserveIndex = (game.auto.reserveIndex + 1) % RESERVES.length; ui.reserveBtn.textContent = `KEEP ${RESERVES[game.auto.reserveIndex]}`; ui.live.textContent = `Automatic summoning will protect ${RESERVES[game.auto.reserveIndex]} gold.`; });
+  ui.reserveBtn.addEventListener('click', () => {
+    game.reserveIndex = (game.reserveIndex + 1) % RESERVES.length;
+    ui.reserveBtn.textContent = `RESERVE ${RESERVES[game.reserveIndex]}`;
+    ui.live.textContent = `All continuous Autos now share a protected reserve of ${RESERVES[game.reserveIndex]} gold.`;
+    updateUI();
+  });
+  ui.allAutoOff.addEventListener('click', disableAllAutos);
   ui.drawerToggle.addEventListener('click', () => setSummonDrawer(!game.drawerOpen));
   ui.drawerClose.addEventListener('click', () => setSummonDrawer(false));
   $('forgeToggle').addEventListener('click', () => {
@@ -903,15 +967,19 @@
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '0.0.0.0', 'terminal.local'].includes(location.hostname)) {
     window.__linewardenTest = {
-      snapshot: () => ({ time: game.time, wave: game.wave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, enemies: game.enemies.length, selfActive: game.enemies.filter(enemy => enemy.playerMade).length, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, auto: { ...game.auto }, drawerOpen: game.drawerOpen }),
+      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, enemies: game.enemies.length, selfActive: game.enemies.filter(enemy => enemy.playerMade).length, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
       start: begin,
       purchase: type => buySummon(type),
       buyItem: type => buyItem(type),
       addXp,
-      setAuto: (enabled, type = game.auto.type) => { game.auto.type = type; ui.autoType.value = type; setAuto(enabled); },
+      setAuto: (enabled, type = 'runner') => setUnitAuto(type, enabled, false),
+      allAutoOff: disableAllAutos,
       setDrawer: open => setSummonDrawer(open, false),
       advance: seconds => { const steps = Math.ceil(seconds / .03); for (let i = 0; i < steps; i++) update(Math.min(.03, seconds - i * .03)); },
       setGold: amount => { game.gold = amount; updateUI(); },
+      setStock: (type, amount, clock = 0) => { game.stock[type] = clamp(Math.floor(amount), 0, summonDefs[type].stockCap); game.stockClocks[type] = Math.max(0, clock); updateUI(); },
+      setLevel: level => { game.hero.level = Math.max(1, Math.floor(level)); updateUI(); },
+      summonDefs: Object.fromEntries(Object.entries(summonDefs).map(([type, def]) => [type, { ...def }])),
       path: PATH.map(point => ({ ...point }))
     };
   }
