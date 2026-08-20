@@ -11,6 +11,7 @@
   const PAYDAY_SECONDS = 5;
   const WAVE_SECONDS = 20;
   const AUTO_PURCHASE_SECONDS = .4;
+  const MAX_PROJECTILES = 240;
   const RESERVES = [0, 100, 250, 500];
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compactDrawerMedia = matchMedia('(max-width: 900px) and (max-height: 560px)');
@@ -42,8 +43,11 @@
     { key: 'warden', unlockWave: 8, hp: 390, speed: 82, damage: 42, reward: 18, xp: 28, r: 29, armor: .18, color: '#b94f68' },
     { key: 'shade', unlockWave: 12, hp: 245, speed: 144, damage: 35, reward: 15, xp: 24, r: 23, trait: 'surge', color: '#8d589c' }
   ];
-  const itemBase = { edge: 85, plate: 100, boots: 125, lens: 150, focus: 175, seal: 220, repair: 75 };
-  const itemKeys = ['edge', 'plate', 'boots', 'lens', 'focus', 'seal'];
+  const itemBase = { edge: 85, plate: 100, boots: 125, lens: 150, focus: 175, seal: 220, multishot: 325, chain: 375, splash: 300, revive: 450, repair: 75 };
+  const itemGrowth = { multishot: 2.05, chain: 2.05, splash: 2.05, revive: 2.05 };
+  const itemLimits = { multishot: 4, chain: 4, splash: 4, revive: 4 };
+  const itemNames = { edge: 'RUNE EDGE', plate: 'BASTION PLATE', boots: 'WINDSTEP', lens: 'SEEKER LENS', focus: 'CHRONO CORE', seal: 'CRYSTAL SEAL', multishot: 'SPLIT PRISM', chain: 'STORM COIL', splash: 'BLAST SIGIL', revive: 'GRAVE PACT', repair: 'MEND' };
+  const itemKeys = ['edge', 'plate', 'boots', 'lens', 'focus', 'seal', 'multishot', 'chain', 'splash', 'revive'];
   const keys = {};
   const pointer = { stickX: 0, stickY: 0 };
   let audio = null;
@@ -94,16 +98,16 @@
       hero: {
         x: 1160, y: 625, r: 24, hp: 300, maxHp: 300, level: 1, xp: 0, xpNeed: 60,
         damage: 35, attackCd: 0, attackRate: .56, range: 265, crit: .06, speed: 275,
-        focus: 0, aimX: -1, aimY: 0, destination: null, invuln: 0, hexed: false
+        focus: 0, aimX: -1, aimY: 0, destination: null, invuln: 0, hexed: false, targetScanCd: 0
       },
       crystal: { x: 1470, y: 625, r: 53, hp: 1400, maxHp: 1400, pulse: 0 },
-      enemies: [], spawnQueue: [], projectiles: [], particles: [], slashes: [], sentinels: [],
+      enemies: [], allies: [], spawnQueue: [], projectiles: [], particles: [], slashes: [], sentinels: [],
       cooldowns: { dash: 0, nova: 0, sentinel: 0 },
       maxCooldowns: { dash: 5, nova: 9, sentinel: 18 },
       items: Object.fromEntries(itemKeys.map(type => [type, 0])),
       roster: emptyRoster(), contracts: emptyRoster(), stock: fullStock(), stockClocks: emptyStockClocks(),
       autos: emptyAutos(), autoClock: 0, reserveIndex: 1, drawerOpen: false,
-      boss: null, spawnId: 0
+      boss: null, spawnId: 0, allyId: 0
     };
   }
 
@@ -124,6 +128,7 @@
     ui.bossFill.style.width = '100%';
     ui.bossProgress.setAttribute('aria-valuenow', '100');
     $('gameOverOverlay').classList.remove('open');
+    setForgePage('gear', false);
     setSummonDrawer(false, false);
     updateUI();
     syncOverlayAccess();
@@ -189,6 +194,20 @@
     else if (moveFocus && compact && (wasOpen || focusWasInDock)) requestAnimationFrame(() => ui.drawerToggle.focus());
   }
 
+  function setForgePage(page, moveFocus = true) {
+    const relics = page === 'relics';
+    $('forgePanel').classList.toggle('showing-relics', relics);
+    $('gearItems').hidden = relics;
+    $('relicItems').hidden = !relics;
+    $('forgeGearTab').classList.toggle('active', !relics);
+    $('forgeRelicTab').classList.toggle('active', relics);
+    $('forgeGearTab').setAttribute('aria-selected', String(!relics));
+    $('forgeRelicTab').setAttribute('aria-selected', String(relics));
+    $('forgeGearTab').tabIndex = relics ? -1 : 0;
+    $('forgeRelicTab').tabIndex = relics ? 0 : -1;
+    if (moveFocus) (relics ? $('forgeRelicTab') : $('forgeGearTab')).focus();
+  }
+
   function closeDrawerForInterruption() {
     if (game.drawerOpen) setSummonDrawer(false, false);
     if (game.started && !game.paused && !game.over) pause(true);
@@ -201,8 +220,9 @@
   function spawnEnemy(def, options = {}) {
     const playerMade = Boolean(options.playerMade), boss = Boolean(options.boss);
     const waveIndex = Math.max(0, options.wave - 1);
-    const hpScale = boss ? 1 : playerMade ? 1 + waveIndex * .015 : 1 + waveIndex * .035;
-    const damageScale = boss ? 1 : playerMade ? 1 + waveIndex * .01 : 1 + waveIndex * .02;
+    const late = Math.max(0, (options.wave || 1) - 8);
+    const hpScale = boss ? 1 : playerMade ? 1 + waveIndex * .015 + late * late * .0022 : 1 + waveIndex * .035 + late * late * .0055;
+    const damageScale = boss ? 1 : playerMade ? 1 + waveIndex * .01 + late * late * .0011 : 1 + waveIndex * .02 + late * late * .0025;
     const enemy = {
       id: ++game.spawnId, x: PATH[0].x, y: PATH[0].y, pathIndex: 1, type: options.type || def.key || 'ambient',
       r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, speed: def.speed,
@@ -232,7 +252,8 @@
 
   function bossDefinition(wave) {
     const tier = Math.floor(wave / 5);
-    return { key: 'boss', hp: 1600 + tier * 655, speed: 68 + tier * 1.5, damage: 54 + tier * 12, reward: 180 + tier * 45, xp: 170 + tier * 28, r: 58, armor: .18, color: '#ed4f78' };
+    const late = Math.max(0, wave - 10);
+    return { key: 'boss', hp: (1600 + tier * 655) * (1 + late * late * .008), speed: Math.min(104, 68 + tier * 1.5 + late * .18), damage: (54 + tier * 12) * (1 + late * late * .0035), reward: 180 + tier * 45, xp: 170 + tier * 28, r: 58, armor: Math.min(.28, .18 + late * .0015), color: '#ed4f78' };
   }
 
   function activateBoss(enemy, wave) {
@@ -250,7 +271,8 @@
   function startWave() {
     game.wave++;
     const wave = game.wave;
-    const ambientCount = Math.min(3 + Math.floor(wave * .55), 28);
+    const late = Math.max(0, wave - 8);
+    const ambientCount = Math.min(42, Math.min(3 + Math.floor(wave * .55), 28) + Math.floor(Math.pow(late, 1.4) * .18));
     const ambientSpread = Math.min(12, 5 + ambientCount * .22);
     for (let i = 0; i < ambientCount; i++) {
       queueSpawn(chooseAmbient(wave), { due: game.time + .15 + i * ambientSpread / Math.max(1, ambientCount - 1), wave });
@@ -362,16 +384,39 @@
 
   function itemCost(type) {
     if (type === 'repair') return itemBase.repair;
-    return Math.round(itemBase[type] * Math.pow(1.58, game.items[type]));
+    return Math.round(itemBase[type] * Math.pow(itemGrowth[type] || 1.58, game.items[type]));
+  }
+
+  function isItemMaxed(type) {
+    if (itemLimits[type] !== undefined) return game.items[type] >= itemLimits[type];
+    return (type === 'focus' && game.hero.focus >= .42) || (type === 'lens' && game.hero.crit >= .4);
+  }
+
+  function revenantCap() {
+    return game.items.revive ? game.items.revive + 1 : 0;
+  }
+
+  function relicEffectAtRank(type, rank) {
+    if (type === 'multishot') return `up to ${1 + rank} distinct shots`;
+    if (type === 'chain') return `${rank} bounce${rank === 1 ? '' : 's'} • 62% carry`;
+    if (type === 'splash') return `first hit: ${44 + rank * 9}r • ${Math.round((.16 + rank * .055) * 100)}% to ${2 + rank} foes`;
+    if (type === 'revive') return `${rank + 1} revenant cap`;
+    return '';
+  }
+
+  function relicEffect(type) {
+    const rank = game.items[type];
+    if (!rank) return `Next: ${relicEffectAtRank(type, 1)}`;
+    if (type === 'revive') return `${game.allies.length}/${revenantCap()} revenants active${rank >= itemLimits[type] ? ' • maximum' : ''}`;
+    return `${relicEffectAtRank(type, rank)}${rank >= itemLimits[type] ? ' • maximum' : ''}`;
   }
 
   function buyItem(type) {
-    if (!game.started || game.paused || game.over) return;
-    if (type === 'focus' && game.hero.focus >= .42) return note('CHRONO CORE AT MAXIMUM');
-    if (type === 'lens' && game.hero.crit >= .4) return note('SEEKER LENS AT MAXIMUM');
+    if (!game.started || game.paused || game.over || !itemBase[type]) return false;
+    if (isItemMaxed(type)) { note(`${itemNames[type]} AT MAXIMUM`); return false; }
     const cost = itemCost(type);
-    if (game.gold < cost) return note('NOT ENOUGH GOLD');
-    if (type === 'repair' && game.crystal.hp >= game.crystal.maxHp) return note('CRYSTAL AT FULL POWER');
+    if (game.gold < cost) { note('NOT ENOUGH GOLD'); return false; }
+    if (type === 'repair' && game.crystal.hp >= game.crystal.maxHp) { note('CRYSTAL AT FULL POWER'); return false; }
     game.gold -= cost;
     const hero = game.hero;
     if (type === 'edge') { game.items.edge++; hero.damage *= 1.16; }
@@ -380,11 +425,15 @@
     if (type === 'lens') { game.items.lens++; hero.range += 45; hero.crit = Math.min(.4, hero.crit + .05); }
     if (type === 'focus') { game.items.focus++; hero.focus = Math.min(.42, hero.focus + .06); }
     if (type === 'seal') { game.items.seal++; game.crystal.maxHp += 180; game.crystal.hp += 180; }
+    if (['multishot', 'chain', 'splash', 'revive'].includes(type)) game.items[type]++;
     if (type === 'repair') game.crystal.hp = Math.min(game.crystal.maxHp, game.crystal.hp + 260);
-    note(type === 'repair' ? 'CRYSTAL RESTORED' : `${type.toUpperCase()} EQUIPPED`);
+    const feedback = type === 'repair' ? 'CRYSTAL RESTORED' : ['multishot', 'chain', 'splash', 'revive'].includes(type) ? `${itemNames[type]} • ${relicEffect(type)}` : `${itemNames[type]} EQUIPPED`;
+    note(feedback);
+    ui.live.textContent = type === 'repair' ? 'Crystal restored.' : `${itemNames[type]} purchased. ${relicEffect(type) || `Rank ${game.items[type]}.`}`;
     tone(420, .1, 'sine', .04);
     setTimeout(() => tone(620, .12, 'sine', .03), 85);
     updateUI();
+    return true;
   }
 
   function ability(name) {
@@ -428,6 +477,136 @@
     return distance;
   }
 
+  function addProjectile(projectile) {
+    if (game.projectiles.length >= MAX_PROJECTILES) return false;
+    game.projectiles.push(projectile);
+    return true;
+  }
+
+  function fireWardenProjectile(target, index) {
+    const hero = game.hero;
+    const dx = target.x - hero.x, dy = target.y - hero.y, magnitude = Math.hypot(dx, dy) || 1;
+    const aimX = dx / magnitude, aimY = dy / magnitude;
+    const critical = Math.random() < hero.crit;
+    const side = (index - game.items.multishot / 2) * 7;
+    addProjectile({
+      x: hero.x + aimX * 26 - aimY * side, y: hero.y + aimY * 26 + aimX * side, target, speed: 760,
+      damage: hero.damage * (index ? .55 : 1) * (critical ? 2 : 1), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5,
+      critical, wardenShot: true, chainLeft: game.items.chain, chainRange: 150 + game.items.chain * 12,
+      splashRank: game.items.splash, splashReady: true, hitIds: [], canRetarget: true
+    });
+  }
+
+  function projectileTarget(projectile, radius, excludeHit = true) {
+    let target = null, best = radius;
+    game.enemies.forEach(enemy => {
+      if (excludeHit && projectile.hitIds?.includes(enemy.id)) return;
+      const distance = dist(projectile, enemy);
+      if (distance < best) { best = distance; target = enemy; }
+    });
+    return target;
+  }
+
+  function nearestWardenTargets(limit) {
+    const targets = [], distances = [], hero = game.hero;
+    game.enemies.forEach(enemy => {
+      const distance = dist(hero, enemy);
+      if (distance >= hero.range) return;
+      let index = distances.length;
+      while (index > 0 && distance < distances[index - 1]) index--;
+      if (index >= limit) return;
+      targets.splice(index, 0, enemy);
+      distances.splice(index, 0, distance);
+      if (targets.length > limit) { targets.pop(); distances.pop(); }
+    });
+    return targets;
+  }
+
+  function impactProjectile(projectile) {
+    const target = projectile.target;
+    const impactX = target.x, impactY = target.y;
+    if (projectile.hitIds) projectile.hitIds.push(target.id);
+    damageEnemy(target, projectile.damage);
+    if (projectile.critical) burst(impactX, impactY, '#ffd269', 8);
+
+    if (projectile.wardenShot && projectile.splashRank > 0 && projectile.splashReady) {
+      projectile.splashReady = false;
+      const radius = 44 + projectile.splashRank * 9;
+      const splashDamage = projectile.damage * (.16 + projectile.splashRank * .055);
+      [...game.enemies]
+        .filter(enemy => enemy !== target && dist({ x: impactX, y: impactY }, enemy) <= radius + enemy.r)
+        .sort((a, b) => dist({ x: impactX, y: impactY }, a) - dist({ x: impactX, y: impactY }, b))
+        .slice(0, 2 + projectile.splashRank)
+        .forEach(enemy => damageEnemy(enemy, splashDamage));
+      game.slashes.push({ x: impactX, y: impactY, radius: 8, maxRadius: radius, life: .24, max: .24, ring: true, color: '#ff8fcb' });
+    }
+
+    if (projectile.wardenShot && projectile.chainLeft > 0) {
+      projectile.x = impactX; projectile.y = impactY;
+      const nextTarget = projectileTarget(projectile, projectile.chainRange, true);
+      if (nextTarget) {
+        projectile.target = nextTarget;
+        projectile.damage *= .62;
+        projectile.chainLeft--;
+        projectile.color = '#ffd269';
+        projectile.r = Math.max(3, projectile.r - .35);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function raiseRevenant(enemy) {
+    const rank = game.items.revive, cap = revenantCap();
+    if (!rank || enemy.boss || enemy.playerMade || game.allies.length >= cap) return;
+    const rankScale = 1 + (rank - 1) * .14;
+    const maxHp = Math.min(game.hero.maxHp * .72, clamp(enemy.maxHp * .22, 75, 440) * rankScale);
+    game.allies.push({
+      id: ++game.allyId, x: enemy.x, y: enemy.y, r: clamp(enemy.r * .82, 11, 31), type: enemy.type,
+      hp: maxHp, maxHp, speed: clamp(enemy.speed * 1.05, 105, 195),
+      damage: Math.min(game.hero.damage * .52, (clamp(enemy.damage * .28, 12, 70) + game.hero.damage * .06) * (1 + (rank - 1) * .1)),
+      attackCd: .2, attackRate: Math.max(.58, .86 - rank * .035), hit: 0, phase: Math.random() * Math.PI * 2,
+      color: enemy.color
+    });
+    burst(enemy.x, enemy.y, '#79efae', 12);
+  }
+
+  function damageAlly(ally, amount) {
+    ally.hp -= amount;
+    ally.hit = 1;
+    burst(ally.x, ally.y, '#79efae', 3);
+    if (ally.hp > 0) return;
+    const index = game.allies.indexOf(ally);
+    if (index >= 0) game.allies.splice(index, 1);
+    burst(ally.x, ally.y, '#79efae', 10);
+  }
+
+  function updateAlly(ally, dt) {
+    ally.attackCd -= dt;
+    ally.hit = Math.max(0, ally.hit - dt * 5);
+    ally.phase += dt * 3;
+    let target = null, best = Infinity;
+    game.enemies.forEach(enemy => {
+      const distance = dist(ally, enemy);
+      if (distance < best) { best = distance; target = enemy; }
+    });
+    if (!target) {
+      const follow = { x: game.hero.x - 58 - (ally.id % 3) * 25, y: game.hero.y + ((ally.id % 5) - 2) * 28 };
+      if (dist(ally, follow) > 55) moveToward(ally, follow, ally.speed, dt);
+      return;
+    }
+    const contact = ally.r + target.r + 7;
+    if (best > contact) {
+      moveToward(ally, target, ally.speed, dt);
+      return;
+    }
+    if (ally.attackCd <= 0) {
+      ally.attackCd = ally.attackRate;
+      damageEnemy(target, ally.damage);
+      game.slashes.push({ x1: ally.x, y1: ally.y, x2: target.x, y2: target.y, life: .16, max: .16, color: '#79efae' });
+    }
+  }
+
   function updateEnemy(enemy, dt) {
     const hero = game.hero;
     enemy.attackCd -= dt;
@@ -437,9 +616,16 @@
     if (enemy.regen) enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.maxHp * enemy.regen * dt);
 
     const heroDistance = dist(enemy, hero);
-    const chasesHero = enemy.trait !== 'siege' && heroDistance < enemy.r + hero.r + 92;
+    let allyTarget = null, allyDistance = Infinity;
+    if (enemy.trait !== 'siege') game.allies.forEach(ally => {
+      const distance = dist(enemy, ally);
+      if (distance < allyDistance) { allyDistance = distance; allyTarget = ally; }
+    });
+    const chasesAlly = Boolean(allyTarget && allyDistance < enemy.r + allyTarget.r + 105);
+    const chasesHero = !chasesAlly && enemy.trait !== 'siege' && heroDistance < enemy.r + hero.r + 92;
     let target = null;
-    if (chasesHero) target = hero;
+    if (chasesAlly) target = allyTarget;
+    else if (chasesHero) target = hero;
     else if (enemy.pathIndex < PATH.length) target = PATH[enemy.pathIndex];
     else target = game.crystal;
 
@@ -449,17 +635,19 @@
       let speedFactor = 1 - enemy.slow;
       if (enemy.trait === 'surge' && Math.sin(enemy.phase * .48) > .55) speedFactor *= 1.75;
       moveToward(enemy, target, enemy.speed * speedFactor, dt);
-      if (!chasesHero && enemy.pathIndex < PATH.length && dist(enemy, target) <= contact + 3) enemy.pathIndex++;
+      if (!chasesHero && !chasesAlly && enemy.pathIndex < PATH.length && dist(enemy, target) <= contact + 3) enemy.pathIndex++;
       return;
     }
 
-    if (!chasesHero && enemy.pathIndex < PATH.length) {
+    if (!chasesHero && !chasesAlly && enemy.pathIndex < PATH.length) {
       enemy.pathIndex++;
       return;
     }
     if (enemy.attackCd > 0) return;
     enemy.attackCd = enemy.boss ? 1.05 : 1.3;
-    if (target === hero) {
+    if (target === allyTarget) {
+      damageAlly(allyTarget, enemy.damage);
+    } else if (target === hero) {
       if (hero.invuln <= 0) {
         hero.hp -= enemy.damage;
         hero.invuln = .24;
@@ -484,6 +672,7 @@
     Object.keys(game.cooldowns).forEach(key => { game.cooldowns[key] = Math.max(0, game.cooldowns[key] - dt); });
     const hero = game.hero;
     hero.attackCd -= dt;
+    hero.targetScanCd = Math.max(0, hero.targetScanCd - dt);
     hero.invuln = Math.max(0, hero.invuln - dt);
 
     if (game.incomeClock >= PAYDAY_SECONDS) {
@@ -522,23 +711,20 @@
     }
     hero.x = clamp(hero.x, 55, 1545); hero.y = clamp(hero.y, 75, 810);
 
-    let target = null, best = hero.range;
-    game.enemies.forEach(enemy => {
-      const distance = dist(hero, enemy);
-      if (distance < best) { best = distance; target = enemy; }
-    });
-    if (target && hero.attackCd <= 0) {
-      hero.attackCd = hero.attackRate;
-      const dx = target.x - hero.x, dy = target.y - hero.y, magnitude = Math.hypot(dx, dy) || 1;
-      hero.aimX = dx / magnitude; hero.aimY = dy / magnitude;
-      const critical = Math.random() < hero.crit;
-      game.projectiles.push({
-        x: hero.x + hero.aimX * 26, y: hero.y + hero.aimY * 26, target, speed: 760,
-        damage: hero.damage * (critical ? 2 : 1), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5, critical
-      });
-      tone(330 + Math.random() * 50, .04, 'square', .018);
+    if (hero.attackCd <= 0 && hero.targetScanCd <= 0) {
+      const targets = nearestWardenTargets(1 + game.items.multishot);
+      const target = targets[0] || null;
+      if (target) {
+        hero.attackCd = hero.attackRate;
+        const dx = target.x - hero.x, dy = target.y - hero.y, magnitude = Math.hypot(dx, dy) || 1;
+        hero.aimX = dx / magnitude; hero.aimY = dy / magnitude;
+        const shotCount = Math.min(1 + game.items.multishot, targets.length);
+        for (let i = 0; i < shotCount; i++) fireWardenProjectile(targets[i], i);
+        tone(330 + Math.random() * 50, .04, 'square', .018);
+      } else hero.targetScanCd = .08;
     }
 
+    for (let i = game.allies.length - 1; i >= 0; i--) updateAlly(game.allies[i], dt);
     for (let i = game.enemies.length - 1; i >= 0; i--) updateEnemy(game.enemies[i], dt);
 
     if (hero.hp <= 0) {
@@ -552,12 +738,15 @@
 
     for (let i = game.projectiles.length - 1; i >= 0; i--) {
       const projectile = game.projectiles[i];
-      if (!projectile.target || projectile.target.hp <= 0) { game.projectiles.splice(i, 1); continue; }
+      if (!projectile.target || projectile.target.hp <= 0) {
+        const nextTarget = projectile.wardenShot && projectile.canRetarget ? projectileTarget(projectile, Math.max(260, projectile.chainRange || 0), true) : null;
+        if (!nextTarget) { game.projectiles.splice(i, 1); continue; }
+        projectile.target = nextTarget;
+      }
       const dx = projectile.target.x - projectile.x, dy = projectile.target.y - projectile.y, distance = Math.hypot(dx, dy) || 1;
       if (distance < projectile.target.r + 8) {
-        damageEnemy(projectile.target, projectile.damage);
-        if (projectile.critical) burst(projectile.target.x, projectile.target.y, '#ffd269', 8);
-        game.projectiles.splice(i, 1); continue;
+        if (!impactProjectile(projectile)) game.projectiles.splice(i, 1);
+        continue;
       }
       projectile.x += dx / distance * projectile.speed * dt;
       projectile.y += dy / distance * projectile.speed * dt;
@@ -570,7 +759,7 @@
         game.enemies.forEach(enemy => { const distance = dist(sentinel, enemy); if (distance < bestDistance) { bestDistance = distance; sentinelTarget = enemy; } });
         if (sentinelTarget) {
           sentinel.attackCd = .46;
-          game.projectiles.push({ x: sentinel.x, y: sentinel.y, target: sentinelTarget, speed: 840, damage: hero.damage * .68, color: '#ffd269', r: 4 });
+          addProjectile({ x: sentinel.x, y: sentinel.y, target: sentinelTarget, speed: 840, damage: hero.damage * .68, color: '#ffd269', r: 4, chainLeft: 0 });
         }
       }
     }
@@ -597,6 +786,7 @@
     const index = game.enemies.indexOf(enemy);
     if (index < 0) return;
     game.enemies.splice(index, 1);
+    raiseRevenant(enemy);
     game.gold += enemy.reward;
     addXp(enemy.xp);
     burst(enemy.x, enemy.y, enemy.color, enemy.boss ? 35 : 10);
@@ -621,7 +811,7 @@
       hero.hp = hero.maxHp;
       hero.damage *= 1.09;
       hero.speed += 3;
-      hero.attackRate = Math.max(.34, hero.attackRate * .985);
+      hero.attackRate = Math.max(.31, hero.attackRate * .985);
       const unlocks = Object.values(summonDefs).filter(def => def.unlock === hero.level).map(def => def.name);
       announce(`LEVEL ${hero.level}`, `+health • +damage${unlocks.length ? ` • ${unlocks.join(' + ')} unlocked` : ''}`);
       tone(480, .12, 'sine', .05);
@@ -647,6 +837,7 @@
     drawArena();
     game.slashes.forEach(drawSlash);
     game.sentinels.forEach(drawSentinel);
+    game.allies.forEach(drawAlly);
     game.enemies.forEach(drawEnemy);
     drawCrystal(); drawHero();
     game.projectiles.forEach(drawProjectile);
@@ -745,6 +936,24 @@
     }
   }
 
+  function drawAlly(ally) {
+    ctx.save(); ctx.translate(ally.x, ally.y + Math.sin(ally.phase) * 2);
+    ctx.globalAlpha = .9; ctx.shadowBlur = ally.hit > 0 ? 22 : 14; ctx.shadowColor = '#79efae';
+    ctx.fillStyle = ally.hit > 0 ? '#fff' : '#3ecb91'; ctx.strokeStyle = ally.color; ctx.lineWidth = 2;
+    ctx.beginPath(); const points = enemyPoints(ally);
+    for (let i = 0; i < points; i++) {
+      const angle = i / points * Math.PI * 2, radius = ally.r * (i % 2 ? .68 : 1), x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#07140f'; ctx.beginPath(); ctx.arc(ally.r * .24, -ally.r * .12, Math.max(2, ally.r * .12), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (ally.hp < ally.maxHp) {
+      ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(ally.x - ally.r, ally.y - ally.r - 10, ally.r * 2, 4);
+      ctx.fillStyle = '#79efae'; ctx.fillRect(ally.x - ally.r, ally.y - ally.r - 10, ally.r * 2 * Math.max(0, ally.hp / ally.maxHp), 4);
+    }
+  }
+
   function drawSentinel(sentinel) {
     ctx.save(); ctx.translate(sentinel.x, sentinel.y); ctx.rotate(sentinel.phase); ctx.strokeStyle = '#ffd269'; ctx.lineWidth = 3; ctx.shadowBlur = 15; ctx.shadowColor = '#ffd269';
     ctx.beginPath(); for (let i = 0; i < 6; i++) { const angle = i / 6 * Math.PI * 2, x = Math.cos(angle) * 19, y = Math.sin(angle) * 19; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
@@ -816,10 +1025,15 @@
 
     document.querySelectorAll('.shop-item').forEach(button => {
       const type = button.dataset.upgrade, cost = itemCost(type);
-      const maxed = (type === 'focus' && hero.focus >= .42) || (type === 'lens' && hero.crit >= .4);
+      const maxed = isItemMaxed(type);
       button.disabled = game.gold < cost || (type === 'repair' && crystal.hp >= crystal.maxHp) || maxed;
       $(`cost-${type}`).textContent = maxed ? 'MAX' : cost;
       if (type !== 'repair') $(`level-${type}`).textContent = game.items[type];
+      const effect = $(`effect-${type}`);
+      if (effect) {
+        effect.textContent = relicEffect(type);
+        button.setAttribute('aria-label', `${itemNames[type]}, rank ${game.items[type]}. ${relicEffect(type)}. ${maxed ? 'Maximum rank.' : `Costs ${cost} gold.`}`);
+      }
     });
     document.querySelectorAll('.ability').forEach(button => {
       const name = button.dataset.ability, cooldown = game.cooldowns[name], maximum = game.maxCooldowns[name] * (1 - hero.focus);
@@ -898,6 +1112,13 @@
     setUnitAuto(type, !game.autos[type]);
   }));
   document.querySelectorAll('.shop-item').forEach(button => button.addEventListener('click', () => buyItem(button.dataset.upgrade)));
+  $('forgeGearTab').addEventListener('click', () => setForgePage('gear'));
+  $('forgeRelicTab').addEventListener('click', () => setForgePage('relics'));
+  [$('forgeGearTab'), $('forgeRelicTab')].forEach(tab => tab.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.code)) return;
+    event.preventDefault();
+    setForgePage(event.code === 'ArrowLeft' || event.code === 'Home' ? 'gear' : 'relics');
+  }));
   document.querySelectorAll('.ability').forEach(button => button.addEventListener('click', () => ability(button.dataset.ability)));
   $('startBtn').addEventListener('click', begin);
   $('pauseBtn').addEventListener('click', () => pause());
@@ -967,7 +1188,7 @@
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '0.0.0.0', 'terminal.local'].includes(location.hostname)) {
     window.__linewardenTest = {
-      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, enemies: game.enemies.length, selfActive: game.enemies.filter(enemy => enemy.playerMade).length, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
+      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
       start: begin,
       purchase: type => buySummon(type),
       buyItem: type => buyItem(type),
@@ -979,6 +1200,18 @@
       setGold: amount => { game.gold = amount; updateUI(); },
       setStock: (type, amount, clock = 0) => { game.stock[type] = clamp(Math.floor(amount), 0, summonDefs[type].stockCap); game.stockClocks[type] = Math.max(0, clock); updateUI(); },
       setLevel: level => { game.hero.level = Math.max(1, Math.floor(level)); updateUI(); },
+      setHero: values => { Object.assign(game.hero, values); updateUI(); },
+      clearCombat: () => { game.enemies.length = 0; game.allies.length = 0; game.spawnQueue.length = 0; game.projectiles.length = 0; },
+      spawnEnemy: (type = 'drone', values = {}) => {
+        const def = ambientDefs.find(entry => entry.key === type);
+        if (!def) return null;
+        const enemy = spawnEnemy(def, { wave: Math.max(1, values.wave || game.wave || 1) });
+        Object.assign(enemy, Object.fromEntries(Object.entries(values).filter(([key]) => !['wave', 'boss', 'playerMade'].includes(key))));
+        if (values.hp !== undefined && values.maxHp === undefined) enemy.maxHp = Math.max(enemy.maxHp, values.hp);
+        return enemy.id;
+      },
+      damageEnemy: (id, amount) => { const enemy = game.enemies.find(entry => entry.id === id); if (enemy) damageEnemy(enemy, amount); updateUI(); },
+      setWave: wave => { game.wave = Math.max(0, Math.floor(wave)); updateUI(); },
       summonDefs: Object.fromEntries(Object.entries(summonDefs).map(([type, def]) => [type, { ...def }])),
       path: PATH.map(point => ({ ...point }))
     };

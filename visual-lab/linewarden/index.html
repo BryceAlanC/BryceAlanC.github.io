@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="description" content="A single-player action-strategy game where purchased enemies return every wave while gear, levels, and permanent income help the warden survive.">
+  <meta name="description" content="A single-player action-strategy game where purchased enemies return every wave while gear, stackable relics, levels, and permanent income help the warden survive.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#071018">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Linewarden | Bryce Christopherson">
-  <meta property="og:description" content="Defend a winding siege lane, grow a hero, buy gear, and build a hostile roster that returns every wave.">
+  <meta property="og:description" content="Defend a winding siege lane, grow a hero, forge stackable relics, and build a hostile roster that returns every wave.">
   <title>Linewarden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <main class="game-shell" id="gameShell">
@@ -50,31 +50,51 @@
 
       <aside class="shop panel" id="forgePanel" aria-label="Item shop">
         <div class="panel-title">
-          <span>WARDEN'S FORGE</span><small>GEAR OR GREED</small>
+          <span>WARDEN'S FORGE</span><small>GEAR • RELICS</small>
           <button id="forgeToggle" class="panel-toggle" aria-expanded="true" aria-controls="forgeItems" aria-label="Collapse item shop">−</button>
         </div>
         <div id="forgeItems" class="forge-items">
-          <button class="shop-item" data-upgrade="edge" aria-label="Buy Rune Edge, increasing attack damage">
-            <span class="shop-icon might">◇</span><span><b>RUNE EDGE <i id="level-edge">0</i></b><small>+16% attack damage</small></span><em id="cost-edge">85</em>
-          </button>
-          <button class="shop-item" data-upgrade="plate" aria-label="Buy Bastion Plate, increasing maximum health">
-            <span class="shop-icon vigor">♥</span><span><b>BASTION PLATE <i id="level-plate">0</i></b><small>+45 max health</small></span><em id="cost-plate">100</em>
-          </button>
-          <button class="shop-item" data-upgrade="boots" aria-label="Buy Windstep Greaves, increasing movement and attack speed">
-            <span class="shop-icon boots">➤</span><span><b>WINDSTEP <i id="level-boots">0</i></b><small>move + attack faster</small></span><em id="cost-boots">125</em>
-          </button>
-          <button class="shop-item" data-upgrade="lens" aria-label="Buy Seeker Lens, increasing attack range and critical chance">
-            <span class="shop-icon lens">◉</span><span><b>SEEKER LENS <i id="level-lens">0</i></b><small>range + critical chance</small></span><em id="cost-lens">150</em>
-          </button>
-          <button class="shop-item" data-upgrade="focus" aria-label="Buy Chrono Core, reducing ability cooldowns">
-            <span class="shop-icon focus">✦</span><span><b>CHRONO CORE <i id="level-focus">0</i></b><small>faster abilities</small></span><em id="cost-focus">175</em>
-          </button>
-          <button class="shop-item" data-upgrade="seal" aria-label="Buy Crystal Seal, increasing crystal maximum health">
-            <span class="shop-icon seal">⬡</span><span><b>CRYSTAL SEAL <i id="level-seal">0</i></b><small>+180 crystal health</small></span><em id="cost-seal">220</em>
-          </button>
-          <button class="shop-item repair" data-upgrade="repair" aria-label="Repair the crystal">
-            <span class="shop-icon repair-icon">＋</span><span><b>MEND</b><small>restore 260 crystal</small></span><em id="cost-repair">75</em>
-          </button>
+          <div class="forge-tabs" role="tablist" aria-label="Forge inventory">
+            <button id="forgeGearTab" class="forge-tab active" type="button" role="tab" aria-selected="true" aria-controls="gearItems">GEAR</button>
+            <button id="forgeRelicTab" class="forge-tab" type="button" role="tab" aria-selected="false" aria-controls="relicItems">RELICS</button>
+          </div>
+          <div id="gearItems" class="forge-page" role="tabpanel" aria-labelledby="forgeGearTab">
+            <button class="shop-item" data-upgrade="edge" aria-label="Buy Rune Edge, increasing attack damage">
+              <span class="shop-icon might">◇</span><span><b>RUNE EDGE <i id="level-edge">0</i></b><small>+16% attack damage</small></span><em id="cost-edge">85</em>
+            </button>
+            <button class="shop-item" data-upgrade="plate" aria-label="Buy Bastion Plate, increasing maximum health">
+              <span class="shop-icon vigor">♥</span><span><b>BASTION PLATE <i id="level-plate">0</i></b><small>+45 max health</small></span><em id="cost-plate">100</em>
+            </button>
+            <button class="shop-item" data-upgrade="boots" aria-label="Buy Windstep Greaves, increasing movement and attack speed">
+              <span class="shop-icon boots">➤</span><span><b>WINDSTEP <i id="level-boots">0</i></b><small>move + attack faster</small></span><em id="cost-boots">125</em>
+            </button>
+            <button class="shop-item" data-upgrade="lens" aria-label="Buy Seeker Lens, increasing attack range and critical chance">
+              <span class="shop-icon lens">◉</span><span><b>SEEKER LENS <i id="level-lens">0</i></b><small>range + critical chance</small></span><em id="cost-lens">150</em>
+            </button>
+            <button class="shop-item" data-upgrade="focus" aria-label="Buy Chrono Core, reducing ability cooldowns">
+              <span class="shop-icon focus">✦</span><span><b>CHRONO CORE <i id="level-focus">0</i></b><small>faster abilities</small></span><em id="cost-focus">175</em>
+            </button>
+            <button class="shop-item" data-upgrade="seal" aria-label="Buy Crystal Seal, increasing crystal maximum health">
+              <span class="shop-icon seal">⬡</span><span><b>CRYSTAL SEAL <i id="level-seal">0</i></b><small>+180 crystal health</small></span><em id="cost-seal">220</em>
+            </button>
+            <button class="shop-item repair" data-upgrade="repair" aria-label="Repair the crystal">
+              <span class="shop-icon repair-icon">＋</span><span><b>MEND</b><small>restore 260 crystal</small></span><em id="cost-repair">75</em>
+            </button>
+          </div>
+          <div id="relicItems" class="forge-page relic-page" role="tabpanel" aria-labelledby="forgeRelicTab" hidden>
+            <button class="shop-item relic-item" data-upgrade="multishot" aria-label="Buy Split Prism, adding one stacking projectile to each basic attack">
+              <span class="shop-icon multishot">⋔</span><span><b>SPLIT PRISM <i id="level-multishot">0</i></b><small id="effect-multishot">Next: up to 2 distinct shots</small></span><em id="cost-multishot">325</em>
+            </button>
+            <button class="shop-item relic-item" data-upgrade="chain" aria-label="Buy Storm Coil, adding one bounce to Warden projectiles">
+              <span class="shop-icon chain">ϟ</span><span><b>STORM COIL <i id="level-chain">0</i></b><small id="effect-chain">Next: 1 bounce • 62% carry</small></span><em id="cost-chain">375</em>
+            </button>
+            <button class="shop-item relic-item" data-upgrade="splash" aria-label="Buy Blast Sigil, adding area damage to Warden projectile impacts">
+              <span class="shop-icon splash">✺</span><span><b>BLAST SIGIL <i id="level-splash">0</i></b><small id="effect-splash">Next: first hit • 53r • 22% to 3</small></span><em id="cost-splash">300</em>
+            </button>
+            <button class="shop-item relic-item" data-upgrade="revive" aria-label="Buy Grave Pact, automatically raising fallen ambient enemies as autonomous revenants up to a fixed cap">
+              <span class="shop-icon revive">♙</span><span><b>GRAVE PACT <i id="level-revive">0</i></b><small id="effect-revive">Next: 2 revenant cap</small></span><em id="cost-revive">450</em>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -185,14 +205,14 @@
       <div class="modal intro-modal">
         <span class="modal-kicker">CRYSTAL DEFENSE // RUN 01</span>
         <h1 id="introTitle">Hold the line.<br><em>Choose the pressure.</em></h1>
-        <p>The first wave arrives after a short setup window, then enemies wind through a three-pass siege lane. Every hostile contract returns in every later wave and raises your forever-repeating payday once. Unit stock restocks steadily, while continuous Autos buy the cheapest ready contracts you enable. Each actual kill pays one immediate bounty.</p>
+        <p>The first wave arrives after a short setup window, then enemies wind through a three-pass siege lane. Every hostile contract returns in every later wave and raises your forever-repeating payday once. Unit stock restocks steadily, while continuous Autos buy the cheapest ready contracts you enable. Spend that same gold on gear and stackable combat relics before the late siege turns brutal.</p>
         <div class="tutorial-grid">
           <div><span class="tutorial-icon keys">WASD</span><b>MOVE</b><small>Keys, arrows, click, or touch</small></div>
           <div><span class="tutorial-icon blade">⌁</span><b>AUTO-ATTACK</b><small>Approach enemies to strike</small></div>
           <div><span class="tutorial-icon danger">↗</span><b>BUILD A HOSTILE ROSTER</b><small>Purchased enemies return every wave</small></div>
         </div>
         <button id="startBtn" class="primary">BEGIN THE WATCH <span>→</span></button>
-        <small class="fineprint">Tip: protect some gold for gear while stock limits the pace of early risk.</small>
+        <small class="fineprint">Tip: income compounds risk; gear and relics convert that risk into end-game power.</small>
       </div>
     </div>
 
@@ -205,11 +225,11 @@
     </div>
 
     <div class="overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Your current income pays again forever on one fixed, visible 5-second cycle. Buying a hostile raises that recurring amount exactly once and adds it to your permanent roster; every roster body returns gradually in every later wave. Each actual kill pays one immediate bounty only—never a passive bounty. A returning enemy can pay another bounty when killed again because that is a new kill.</p><div class="guide-list"><div><b>Continuous unit Autos</b><span>Every unit has its own Auto toggle. Enabled Autos check continuously and buy one affordable, in-stock contract at a time, cheapest first. The single Reserve setting protects that much gold from every Auto.</span></div><div><b>Stock and restocking</b><span>Each contract consumes one stock, even packs with several bodies. Runner and Skitter stock starts at 10; stronger contracts have smaller caps and slower, predictable restocks.</span></div><div><b>Levels and gear</b><span>Kills grant XP. Levels grow your base stats and unlock tougher summons; forge items consume the same gold you could invest in income.</span></div><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock, restocks, Autos, and 5-second payday meter all stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
+      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Your current income pays again forever on one fixed, visible 5-second cycle. Buying a hostile raises that recurring amount exactly once and adds it to your permanent roster; every roster body returns gradually in every later wave. Each actual kill pays one immediate bounty only—never a passive bounty. A returning enemy can pay another bounty when killed again because that is a new kill.</p><div class="guide-list"><div><b>Continuous unit Autos</b><span>Every unit has its own Auto toggle. Enabled Autos check continuously and buy one affordable, in-stock contract at a time, cheapest first. The single Reserve setting protects that much gold from every Auto.</span></div><div><b>Stock and restocking</b><span>Each contract consumes one stock, even packs with several bodies. Runner and Skitter stock starts at 10; stronger contracts have smaller caps and slower, predictable restocks.</span></div><div><b>Gear and relics</b><span>The Forge spends the same gold as summons. Gear raises core stats; relics stack distinct-target projectiles, non-repeating bounces, first-impact AOE, and autonomous revenants. Grave Pact raises ambient non-boss foes as allies until its fixed cap is full.</span></div><div><b>Late siege</b><span>The opening waves retain their steady curve. After wave 8, enemy durability, damage, and wave size accelerate nonlinearly, so a relic build becomes increasingly important.</span></div><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock, restocks, Autos, and 5-second payday meter all stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
     </div>
     <div class="sr-only" id="liveRegion" aria-live="polite"></div>
   </main>
   <noscript>Linewarden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
-  <script src="game.js?v=3"></script>
+  <script src="game.js?v=4"></script>
 </body>
 </html>
