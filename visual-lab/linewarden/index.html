@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="description" content="A single-player action-strategy game where summoning extra enemies increases both the danger and your permanent income.">
+  <meta name="description" content="A single-player action-strategy game where purchased enemies return every wave while gear, levels, and permanent income help the warden survive.">
   <meta name="author" content="Bryce A. Christopherson">
   <meta name="theme-color" content="#071018">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Linewarden | Bryce Christopherson">
-  <meta property="og:description" content="Defend the crystal, grow a hero, and summon danger into your own line to build a stronger economy.">
+  <meta property="og:description" content="Defend a winding siege lane, grow a hero, buy gear, and build a hostile roster that returns every wave.">
   <title>Linewarden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
@@ -22,7 +22,7 @@
         <div><strong>LINEWARDEN</strong><small>CRYSTAL SIEGE</small></div>
       </div>
       <div class="economy">
-        <div class="stat gold"><span class="dot"></span><span id="gold">120</span><small>GOLD</small></div>
+        <div class="stat gold"><span class="dot"></span><span id="gold">140</span><small>GOLD</small></div>
         <div class="stat income"><span class="arrow">↗</span><span id="income">+10</span><small>EVERY 5s</small></div>
         <div class="tick"><span id="tickFill"></span></div>
       </div>
@@ -48,45 +48,87 @@
         <div class="bar" id="bossProgress" role="progressbar" aria-label="Boss health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="bossFill"></span></div>
       </div>
 
-      <aside class="shop panel" aria-label="Upgrade shop">
-        <div class="panel-title"><span>FIELD FORGE</span><small>PERMANENT THIS RUN</small></div>
-        <button class="shop-item" data-upgrade="might" aria-label="Upgrade weapon damage">
-          <span class="shop-icon might">◇</span><span><b>EDGE</b><small>+20% attack</small></span><em id="cost-might">80</em>
-        </button>
-        <button class="shop-item" data-upgrade="vigor" aria-label="Upgrade hero maximum health">
-          <span class="shop-icon vigor">♥</span><span><b>VIGOR</b><small>+45 max health</small></span><em id="cost-vigor">90</em>
-        </button>
-        <button class="shop-item" data-upgrade="focus" aria-label="Upgrade ability cooldown speed">
-          <span class="shop-icon focus">✦</span><span><b>FOCUS</b><small>faster abilities</small></span><em id="cost-focus">110</em>
-        </button>
-        <button class="shop-item repair" data-upgrade="repair" aria-label="Repair crystal">
-          <span class="shop-icon repair-icon">＋</span><span><b>MEND</b><small>restore crystal</small></span><em id="cost-repair">70</em>
-        </button>
+      <aside class="shop panel" id="forgePanel" aria-label="Item shop">
+        <div class="panel-title">
+          <span>WARDEN'S FORGE</span><small>GEAR OR GREED</small>
+          <button id="forgeToggle" class="panel-toggle" aria-expanded="true" aria-controls="forgeItems" aria-label="Collapse item shop">−</button>
+        </div>
+        <div id="forgeItems" class="forge-items">
+          <button class="shop-item" data-upgrade="edge" aria-label="Buy Rune Edge, increasing attack damage">
+            <span class="shop-icon might">◇</span><span><b>RUNE EDGE <i id="level-edge">0</i></b><small>+16% attack damage</small></span><em id="cost-edge">85</em>
+          </button>
+          <button class="shop-item" data-upgrade="plate" aria-label="Buy Bastion Plate, increasing maximum health">
+            <span class="shop-icon vigor">♥</span><span><b>BASTION PLATE <i id="level-plate">0</i></b><small>+45 max health</small></span><em id="cost-plate">100</em>
+          </button>
+          <button class="shop-item" data-upgrade="boots" aria-label="Buy Windstep Greaves, increasing movement and attack speed">
+            <span class="shop-icon boots">➤</span><span><b>WINDSTEP <i id="level-boots">0</i></b><small>move + attack faster</small></span><em id="cost-boots">125</em>
+          </button>
+          <button class="shop-item" data-upgrade="lens" aria-label="Buy Seeker Lens, increasing attack range and critical chance">
+            <span class="shop-icon lens">◉</span><span><b>SEEKER LENS <i id="level-lens">0</i></b><small>range + critical chance</small></span><em id="cost-lens">150</em>
+          </button>
+          <button class="shop-item" data-upgrade="focus" aria-label="Buy Chrono Core, reducing ability cooldowns">
+            <span class="shop-icon focus">✦</span><span><b>CHRONO CORE <i id="level-focus">0</i></b><small>faster abilities</small></span><em id="cost-focus">175</em>
+          </button>
+          <button class="shop-item" data-upgrade="seal" aria-label="Buy Crystal Seal, increasing crystal maximum health">
+            <span class="shop-icon seal">⬡</span><span><b>CRYSTAL SEAL <i id="level-seal">0</i></b><small>+180 crystal health</small></span><em id="cost-seal">220</em>
+          </button>
+          <button class="shop-item repair" data-upgrade="repair" aria-label="Repair the crystal">
+            <span class="shop-icon repair-icon">＋</span><span><b>MEND</b><small>restore 260 crystal</small></span><em id="cost-repair">75</em>
+          </button>
+        </div>
       </aside>
 
-      <section class="summon-dock panel" aria-labelledby="summonTitle">
+      <button id="summonDrawerToggle" class="summon-drawer-toggle" aria-expanded="false" aria-controls="summonDock" aria-label="Open summon roster">SUMMON</button>
+
+      <section class="summon-dock panel drawer-closed" id="summonDock" aria-labelledby="summonTitle">
         <div class="dock-copy">
           <span class="eyebrow">TEMPT FATE</span>
           <strong id="summonTitle">SUMMON HOSTILES</strong>
-          <small>More danger now. More income forever.</small>
+          <small>A purchase raises recurring income once. Every kill pays one immediate bounty.</small>
+          <b id="rosterTotal" class="roster-total">ROSTER 0</b>
         </div>
         <div class="summon-list">
-          <button class="summon-card" data-summon="runner" aria-label="Summon one fast runner for 25 gold and gain 2 recurring income">
+          <button class="summon-card" data-summon="runner" aria-label="Summon one fast runner for 30 gold and gain 2 recurring income">
             <span class="creature runner-shape" aria-hidden="true"></span>
-            <span><b>RUNNER</b><small>Fast • Fragile</small></span><span class="trade"><em>25</em><i>+2 ↗</i></span>
+            <span><b>RUNNER <i class="owned">0</i></b><small>Fast • Fragile</small></span><span class="trade"><em>30</em><i>+2 ↗</i></span>
           </button>
-          <button class="summon-card" data-summon="bulwark" aria-label="Summon one armored bulwark for 70 gold and gain 6 recurring income">
-            <span class="creature bulwark-shape" aria-hidden="true"></span>
-            <span><b>BULWARK</b><small>Slow • Armored</small></span><span class="trade"><em>70</em><i>+6 ↗</i></span>
-          </button>
-          <button class="summon-card" data-summon="swarm" aria-label="Summon a swarm of five enemies for 90 gold and gain 8 recurring income">
+          <button class="summon-card" data-summon="swarm" aria-label="Summon a pack of four skitters for 85 gold and gain 7 recurring income">
             <span class="creature swarm-shape" aria-hidden="true">•••</span>
-            <span><b>SWARM</b><small>5 units • Spreads</small></span><span class="trade"><em>90</em><i>+8 ↗</i></span>
+            <span><b>SKITTER PACK <i class="owned">0</i></b><small>4 bodies • Scatters</small></span><span class="trade"><em>85</em><i>+7 ↗</i></span>
           </button>
-          <button class="summon-card locked" data-summon="brute" aria-label="Summon one elite brute for 170 gold and gain 16 recurring income. Unlocks at level 4">
+          <button class="summon-card locked" data-summon="bulwark" aria-label="Summon one armored bulwark for 75 gold and gain 5 recurring income. Unlocks at level 2">
+            <span class="creature bulwark-shape" aria-hidden="true"></span>
+            <span><b>BULWARK <i class="owned">0</i></b><small>Level 2 • Armored</small></span><span class="trade"><em>75</em><i>+5 ↗</i></span>
+          </button>
+          <button class="summon-card locked" data-summon="hexer" aria-label="Summon one slowing hexer for 120 gold and gain 9 recurring income. Unlocks at level 3">
+            <span class="creature hexer-shape" aria-hidden="true">✦</span>
+            <span><b>HEXER <i class="owned">0</i></b><small>Level 3 • Slows warden</small></span><span class="trade"><em>120</em><i>+9 ↗</i></span>
+          </button>
+          <button class="summon-card locked" data-summon="brute" aria-label="Summon one elite brute for 180 gold and gain 15 recurring income. Unlocks at level 4">
             <span class="creature brute-shape" aria-hidden="true"></span>
-            <span><b>BRUTE</b><small id="bruteNote">Unlocks level 4</small></span><span class="trade"><em>170</em><i>+16 ↗</i></span>
+            <span><b>BRUTE <i class="owned">0</i></b><small>Level 4 • Crushing</small></span><span class="trade"><em>180</em><i>+15 ↗</i></span>
           </button>
+          <button class="summon-card locked" data-summon="phantom" aria-label="Summon one surging phantom for 245 gold and gain 21 recurring income. Unlocks at level 5">
+            <span class="creature phantom-shape" aria-hidden="true"></span>
+            <span><b>PHANTOM <i class="owned">0</i></b><small>Level 5 • Speed surges</small></span><span class="trade"><em>245</em><i>+21 ↗</i></span>
+          </button>
+          <button class="summon-card locked" data-summon="siege" aria-label="Summon one crystal-hunting siege beast for 340 gold and gain 30 recurring income. Unlocks at level 6">
+            <span class="creature siege-shape" aria-hidden="true"></span>
+            <span><b>SIEGE BEAST <i class="owned">0</i></b><small>Level 6 • Ignores hero</small></span><span class="trade"><em>340</em><i>+30 ↗</i></span>
+          </button>
+          <button class="summon-card locked" data-summon="hydra" aria-label="Summon one regenerating void hydra for 520 gold and gain 48 recurring income. Unlocks at level 8">
+            <span class="creature hydra-shape" aria-hidden="true"></span>
+            <span><b>VOID HYDRA <i class="owned">0</i></b><small>Level 8 • Regenerates</small></span><span class="trade"><em>520</em><i>+48 ↗</i></span>
+          </button>
+        </div>
+        <div class="auto-controls" aria-label="Automatic summoning controls">
+          <label for="autoType">AUTO</label>
+          <select id="autoType" aria-label="Automatic summon type">
+            <option value="runner">Runner</option><option value="swarm">Skitter pack</option><option value="bulwark">Bulwark</option><option value="hexer">Hexer</option><option value="brute">Brute</option><option value="phantom">Phantom</option><option value="siege">Siege beast</option><option value="hydra">Void hydra</option>
+          </select>
+          <button id="autoBtn" aria-pressed="false" title="Buy at most one selected summon after each payday">OFF</button>
+          <button id="reserveBtn" title="Gold protected from automatic purchases">KEEP 100</button>
+          <button id="summonDrawerClose" class="drawer-close" type="button">RETURN TO BATTLE</button>
         </div>
       </section>
 
@@ -95,8 +137,8 @@
           <div class="portrait"><span></span></div><div class="level">LV <b id="level">1</b></div>
         </div>
         <div class="vitals">
-          <div class="health-row"><span>WARDEN</span><b id="hpText">240 / 240</b></div>
-          <div class="bar health" id="healthProgress" role="progressbar" aria-label="Warden health" aria-valuemin="0" aria-valuemax="240" aria-valuenow="240"><span id="hpFill"></span></div>
+          <div class="health-row"><span>WARDEN</span><b id="hpText">250 / 250</b></div>
+          <div class="bar health" id="healthProgress" role="progressbar" aria-label="Warden health" aria-valuemin="0" aria-valuemax="250" aria-valuenow="250"><span id="hpFill"></span></div>
           <div class="bar xp" id="xpProgress" role="progressbar" aria-label="Experience toward next level" aria-valuemin="0" aria-valuemax="60" aria-valuenow="0"><span id="xpFill"></span></div>
           <small id="xpText">0 / 60 XP</small>
         </div>
@@ -112,8 +154,8 @@
           </button>
         </div>
         <div class="crystal-vital">
-          <span>CRYSTAL</span><b id="crystalText">1000</b>
-          <div class="bar" id="crystalProgress" role="progressbar" aria-label="Crystal health" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="1000"><span id="crystalFill"></span></div>
+          <span>CRYSTAL</span><b id="crystalText">1100</b>
+          <div class="bar" id="crystalProgress" role="progressbar" aria-label="Crystal health" aria-valuemin="0" aria-valuemax="1100" aria-valuenow="1100"><span id="crystalFill"></span></div>
         </div>
       </section>
 
@@ -129,11 +171,11 @@
       <div class="modal intro-modal">
         <span class="modal-kicker">CRYSTAL DEFENSE // RUN 01</span>
         <h1 id="introTitle">Hold the line.<br><em>Choose the pressure.</em></h1>
-        <p>Enemies never stop. Defeat them before they reach the crystal — or summon extra hostiles to permanently grow your gold income.</p>
+        <p>Enemies wind through a three-pass siege lane. Every hostile you buy returns in every later wave, but its purchase raises your forever-repeating payday only once. Each actual kill pays one immediate bounty. Spend on danger or gear; you will need both.</p>
         <div class="tutorial-grid">
           <div><span class="tutorial-icon keys">WASD</span><b>MOVE</b><small>Keys, arrows, click, or touch</small></div>
           <div><span class="tutorial-icon blade">⌁</span><b>AUTO-ATTACK</b><small>Approach enemies to strike</small></div>
-          <div><span class="tutorial-icon danger">↗</span><b>INVEST IN DANGER</b><small>Summons attack you, but raise income</small></div>
+          <div><span class="tutorial-icon danger">↗</span><b>BUILD A HOSTILE ROSTER</b><small>Purchased enemies return every wave</small></div>
         </div>
         <button id="startBtn" class="primary">BEGIN THE WATCH <span>→</span></button>
         <small class="fineprint">Tip: early risk compounds. Greed without control ends a run.</small>
@@ -149,7 +191,7 @@
     </div>
 
     <div class="overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Gold arrives every 5 seconds. Self-summoned foes join the enemy stream immediately, while their income bonus lasts for the entire run. Build only as much pressure as you can clear.</p><div class="guide-list"><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock and income timer both stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
+      <div class="modal help-modal"><button id="closeHelp" class="modal-close" aria-label="Close field guide">×</button><span class="modal-kicker">FIELD GUIDE</span><h2 id="helpTitle">The economy is a weapon.</h2><p>Your current income pays again forever on one fixed, visible 5-second cycle. Buying a hostile raises that recurring amount exactly once and adds it to your permanent roster; every roster body returns gradually in every later wave. Each actual kill pays one immediate bounty only—never a passive bounty. A returning enemy can pay another bounty when killed again because that is a new kill.</p><div class="guide-list"><div><b>Automatic summons</b><span>Choose a unit, switch Auto on, and set protected gold. Auto buys at most once after each payday and waits during critical danger.</span></div><div><b>Levels and gear</b><span>Kills grant XP. Levels grow your base stats and unlock tougher summons; forge items consume the same gold you could invest in income.</span></div><div><b>Q — Rift Dash</b><span>Dash toward your aim, cutting through foes.</span></div><div><b>E — Prism Nova</b><span>Blast and slow all nearby enemies.</span></div><div><b>R — Sentinel</b><span>Summon a temporary turret beside the crystal.</span></div><div><b>Space — Pause</b><span>The wave clock and 5-second payday meter both stop.</span></div></div><button id="closeHelpBottom" class="secondary">BACK TO THE LINE</button></div>
     </div>
     <div class="sr-only" id="liveRegion" aria-live="polite"></div>
   </main>
