@@ -11,17 +11,20 @@
   const BOSS_EVERY = 5;
   const SPEEDS = [1, 2, 3, 5, 10];
   const FIXED_STEP = 1 / 60;
+  const MAX_TOWER_LEVEL = 3;
+  const MAX_LINEAGE_PATHS = 3;
+  const SELL_RATE = .7;
   const LIMITS = { enemies: 260, shots: 500, particles: 450, floaters: 80, drops: 60 };
 
   const PATHS = {
-    sun: { label: "Sun", glyph: "☀", color: "#ffd85e" },
-    dew: { label: "Dew", glyph: "≋", color: "#86e9f4" },
-    thorn: { label: "Thorn", glyph: "❧", color: "#83d56e" },
-    storm: { label: "Storm", glyph: "ϟ", color: "#bd91f2" }
+    sun: { label: "Sun", glyph: "☀", color: "#ffd85e", effect: "more power and one extra pierce" },
+    dew: { label: "Dew", glyph: "≋", color: "#86e9f4", effect: "stronger slowing and control" },
+    thorn: { label: "Thorn", glyph: "❧", color: "#83d56e", effect: "poison damage and faster attacks" },
+    storm: { label: "Storm", glyph: "ϟ", color: "#bd91f2", effect: "one extra chain and faster attacks" }
   };
 
   const TOWERS = {
-    basic: { label: "Sun sprout", glyph: "✿", color: "#ffd85e", cost: 50, hp: 120, damage: 17, rate: .9, speed: 230, requires: [], detail: "Fast magic bolts" },
+    basic: { label: "Rune sprout", glyph: "✿", color: "#ffd85e", cost: 50, hp: 120, damage: 17, rate: .9, speed: 230, requires: [], detail: "Fast magic bolts; an open seed lineage" },
     frost: { label: "Frost fern", glyph: "❄", color: "#87ecf5", cost: 75, hp: 125, damage: 11, rate: 1.35, speed: 215, slow: 2.7, requires: [], detail: "Slows shadows" },
     ember: { label: "Ember bloom", glyph: "✹", color: "#ff704d", cost: 100, hp: 120, damage: 24, rate: 1.7, speed: 205, splash: .9, requires: [], detail: "Bursts hit groups" },
     glow: { label: "Glow cap", glyph: "●", color: "#c592ff", cost: 75, hp: 175, income: true, requires: [], detail: "Grows nectar" },
@@ -41,7 +44,8 @@
     tutorial: "tutorialNext",
     pauseOverlay: "resumeButton",
     endOverlay: "restartButton",
-    specializationOverlay: null
+    specializationOverlay: null,
+    upgradeOverlay: "closeUpgradeButton"
   };
 
   let W = 900;
@@ -53,12 +57,14 @@
   let soundTimes = {};
   let selectedKind = "basic";
   let selectedDefender = null;
+  let upgradeTarget = null;
   let keyboardCell = { row: 2, col: 2 };
   let running = false;
   let paused = false;
   let ended = false;
   let helpOpen = false;
   let choosingPath = false;
+  let choosingUpgrade = false;
   let pathChoiceQueued = false;
   let tutorialMode = "intro";
   let tutorialStep = 0;
@@ -87,17 +93,19 @@
     "Pick a garden friend. Tap a glowing tile.",
     "Friends guard one path. Light becomes more nectar.",
     "A rune sweeps its path once. Guard it after that!",
-    "Every fifth wave brings a boss seed. Choose paths. Combine paths."
+    "Every fifth wave brings a boss seed. Choose paths. Combine paths.",
+    "Tap a friend to graft owned seeds—or sell it for most of its nectar."
   ];
   const tutorialScenes = [
     '<span class="demo-card">✿</span><span class="demo-arrow">➜</span><span class="demo-tile">▦</span>',
     '<span style="filter:drop-shadow(0 0 12px #ffd92e)">✦</span><span class="demo-arrow" style="color:#4ca467">↘</span><span class="demo-card">●</span>',
     '<span style="color:#4ad7ff">◆</span><span class="demo-arrow" style="color:#ef8957;transform:rotate(180deg)">➜</span><span style="filter:grayscale(.5)">●</span>',
-    '<span style="color:#a25fd0">◈</span><span class="demo-arrow">➜</span><span style="color:#f0b52d">☀</span><span style="font-size:35px">+</span><span style="color:#54bbd2">≋</span>'
+    '<span style="color:#a25fd0">◈</span><span class="demo-arrow">➜</span><span style="color:#f0b52d">☀</span><span style="font-size:35px">+</span><span style="color:#54bbd2">≋</span>',
+    '<span class="demo-card">✿</span><span class="demo-arrow">➜</span><span style="color:#83d56e">🌱</span><span style="font-size:34px">/</span><span style="color:#ffe66e">♻</span>'
   ];
 
   function activeOverlay() {
-    return ["tutorial", "specializationOverlay", "pauseOverlay", "endOverlay"]
+    return ["tutorial", "specializationOverlay", "upgradeOverlay", "pauseOverlay", "endOverlay"]
       .map((id) => $("#" + id))
       .find((element) => !element.classList.contains("hidden")) || null;
   }
@@ -142,11 +150,13 @@
     runes = Array.from({ length: ROWS }, () => ({ ready: true, pulse: 0 }));
     selectedKind = "basic";
     selectedDefender = null;
+    upgradeTarget = null;
     keyboardCell = { row: 2, col: 2 };
     ended = false;
     paused = false;
     helpOpen = false;
     choosingPath = false;
+    choosingUpgrade = false;
     pathChoiceQueued = false;
     speedIndex = 0;
     simulationAccumulator = 0;
@@ -158,6 +168,7 @@
     $("#endOverlay").classList.add("hidden");
     $("#pauseOverlay").classList.add("hidden");
     $("#specializationOverlay").classList.add("hidden");
+    $("#upgradeOverlay").classList.add("hidden");
     $("#pauseButton").textContent = "‖";
     $("#pauseButton").title = "Pause";
     $("#pauseButton").setAttribute("aria-label", "Pause game");
@@ -302,7 +313,8 @@
     nectar -= meta.cost;
     const defender = {
       id: nextId++, row, col, kind, hp: meta.hp, maxHp: meta.hp,
-      cooldown: rnd(.2, .8), level: 1, bob: Math.random() * TAU, incomeClock: 8
+      cooldown: rnd(.2, .8), level: 1, bob: Math.random() * TAU, incomeClock: 8,
+      infusions: [], invested: meta.cost
     };
     defenders.push(defender);
     selectedDefender = defender;
@@ -314,23 +326,142 @@
   }
 
   function upgradeCost(defender) {
-    if (!defender || defender.level >= 3) return 0;
+    if (!defender || defender.level >= MAX_TOWER_LEVEL) return 0;
     return Math.ceil((TOWERS[defender.kind].cost * (.55 + defender.level * .38)) / 5) * 5;
   }
 
-  function upgradeSelected() {
+  function towerLineage(defender) {
+    if (!defender || !TOWERS[defender.kind]) return [];
+    return [...TOWERS[defender.kind].requires, ...(defender.infusions || [])];
+  }
+
+  function lineageCounts(defender, graftsOnly = false) {
+    const counts = { sun: 0, dew: 0, thorn: 0, storm: 0 };
+    const paths = graftsOnly ? (defender?.infusions || []) : towerLineage(defender);
+    paths.forEach((path) => { if (path in counts) counts[path]++; });
+    return counts;
+  }
+
+  function canGraftPath(defender, path) {
+    if (!defender || !defenders.includes(defender) || !PATHS[path] || defender.level >= MAX_TOWER_LEVEL) return false;
+    const lineage = towerLineage(defender);
+    const distinct = new Set(lineage);
+    if (!distinct.has(path) && distinct.size >= MAX_LINEAGE_PATHS) return false;
+    return pathRanks[path] > (lineageCounts(defender)[path] || 0);
+  }
+
+  function availableGrafts(defender) {
+    return Object.keys(PATHS).filter((path) => canGraftPath(defender, path));
+  }
+
+  function sellValue(defender) {
+    if (!defender) return 0;
+    return Math.max(5, Math.floor(((defender.invested || TOWERS[defender.kind].cost) * SELL_RATE) / 5) * 5);
+  }
+
+  function closeUpgradeChoice(focusId = "upgradeButton") {
+    if (!choosingUpgrade) return;
+    choosingUpgrade = false;
+    upgradeTarget = null;
+    hideOverlay("upgradeOverlay", defenders.includes(selectedDefender) ? focusId : null);
+  }
+
+  function openUpgradeChoice() {
     const defender = selectedDefender;
+    if (!defender || !defenders.includes(defender) || defender.level >= MAX_TOWER_LEVEL || !availableGrafts(defender).length) return;
+    upgradeTarget = defender;
+    choosingUpgrade = true;
+    updateUpgradeChoiceUI();
+    showOverlay("upgradeOverlay", "closeUpgradeButton");
+    sound("plant", 1.2);
+  }
+
+  function chooseGraft(path) {
+    const defender = upgradeTarget;
     const cost = upgradeCost(defender);
-    if (!defender || !defenders.includes(defender) || defender.level >= 3 || nectar < cost) return;
+    if (!choosingUpgrade || !canGraftPath(defender, path)) return;
+    if (nectar < cost) {
+      toast(`Need ✦${cost}`);
+      sound("hit", .7);
+      return;
+    }
     nectar -= cost;
+    defender.infusions.push(path);
+    defender.invested += cost;
     defender.level++;
-    defender.maxHp *= 1.38;
+    const healthBoost = path === "thorn" ? 1.46 : path === "dew" ? 1.4 : 1.34;
+    defender.maxHp *= healthBoost;
     defender.hp = defender.maxHp;
     const point = center(defender);
-    puff(point.x, point.y, "#fff38a", 22, 100);
-    floater(point.x, point.y, "★", "#fff38a");
-    sound("upgrade");
+    puff(point.x, point.y, PATHS[path].color, 24, 105);
+    floater(point.x, point.y, PATHS[path].glyph, PATHS[path].color);
+    $("#gardenAnnouncement").textContent = `${TOWERS[defender.kind].label} grafted with ${PATHS[path].label}. Now level ${defender.level}.`;
+    sound("upgrade", 1 + defender.level * .06);
+    closeUpgradeChoice("gameCanvas");
     updateUI();
+  }
+
+  function sellSelected() {
+    const defender = selectedDefender;
+    if (!defender || !defenders.includes(defender) || choosingUpgrade) return;
+    const refund = sellValue(defender);
+    const point = center(defender);
+    nectar += refund;
+    puff(point.x, point.y, "#f5d88b", 18, 90);
+    floater(point.x, point.y, `✦+${refund}`, "#fff08a");
+    defenders.splice(defenders.indexOf(defender), 1);
+    selectedDefender = null;
+    selectedKind = null;
+    canvas.focus();
+    const saleMessage = `Sold ${TOWERS[defender.kind].label}. ${refund} nectar returned.`;
+    toast(saleMessage);
+    $("#gardenAnnouncement").textContent = saleMessage;
+    sound("collect", .8);
+    updateUI();
+  }
+
+  function updateUpgradeChoiceUI() {
+    const defender = upgradeTarget;
+    if (!defender || !defenders.includes(defender)) return closeUpgradeChoice();
+    const meta = TOWERS[defender.kind];
+    const cost = upgradeCost(defender);
+    const lineage = towerLineage(defender);
+    $("#upgradeTowerName").textContent = `${meta.label} · Level ${defender.level} → ${defender.level + 1} · ✦${cost}`;
+    $("#upgradeLineage").textContent = lineage.length
+      ? lineage.map((path) => `${PATHS[path].glyph} ${PATHS[path].label}`).join("  +  ")
+      : "Open lineage — choose its first seed";
+    $("#upgradeLineage").setAttribute("aria-label", lineage.length
+      ? `Current lineage: ${lineage.map((path) => PATHS[path].label).join(", ")}`
+      : "Current lineage is open");
+    document.querySelectorAll(".graft-choice").forEach((button) => {
+      const path = button.dataset.graftPath;
+      const owned = pathRanks[path];
+      const used = lineageCounts(defender)[path];
+      const uniqueBlocked = !lineage.includes(path) && new Set(lineage).size >= MAX_LINEAGE_PATHS;
+      const rankBlocked = owned <= used;
+      const locked = uniqueBlocked || rankBlocked;
+      const incomeEffects = {
+        sun: "MORE NECTAR",
+        dew: "FASTER NECTAR",
+        thorn: "RICHER NECTAR",
+        storm: "FASTER NECTAR"
+      };
+      const effect = meta.income ? incomeEffects[path] : PATHS[path].effect.toUpperCase();
+      const status = uniqueBlocked
+        ? "3 PATH MAX"
+        : rankBlocked
+          ? `${PATHS[path].glyph} NEED RANK ${used + 1}`
+          : nectar < cost
+            ? `NEED ✦${cost}`
+            : `GRAFT · ✦${cost}`;
+      button.querySelector("em").textContent = status;
+      button.querySelector("small").textContent = effect;
+      button.classList.toggle("locked", locked);
+      button.classList.toggle("unaffordable", !locked && nectar < cost);
+      button.classList.toggle("ready", !locked && nectar >= cost);
+      button.setAttribute("aria-disabled", String(locked || nectar < cost));
+      button.setAttribute("aria-label", `${PATHS[path].label} graft: ${effect.toLowerCase()}. Costs ${cost} nectar. Owned rank ${owned}, this tower uses rank ${used}. ${status}.`);
+    });
   }
 
   function waveTotal(whichWave = wave) {
@@ -384,20 +515,41 @@
   }
 
   function masteryMultiplier(meta) {
-    return 1 + meta.requires.reduce((boost, path) => boost + Math.max(0, pathRanks[path] - 1) * .12, 0);
+    return 1 + meta.requires.reduce((boost, path) => boost + Math.max(0, pathRanks[path] - 1) * .1, 0);
+  }
+
+  function towerCombatStats(defender) {
+    const meta = TOWERS[defender.kind];
+    const grafts = lineageCounts(defender, true);
+    const levelPower = Math.pow(1.25, defender.level - 1);
+    const damage = (meta.damage || 0) * levelPower * masteryMultiplier(meta)
+      * Math.pow(1.24, grafts.sun) * Math.pow(1.08, grafts.dew + grafts.thorn) * Math.pow(1.1, grafts.storm);
+    return {
+      damage,
+      rate: (meta.rate || 1) * Math.pow(.92, defender.level - 1) * Math.pow(.84, grafts.thorn + grafts.storm),
+      speed: meta.speed || 0,
+      slow: (meta.slow || 0) + grafts.dew * 1.65,
+      splash: meta.splash || 0,
+      chain: (meta.chain || 0) + grafts.storm,
+      poison: ((meta.poison || 0) * levelPower) + grafts.thorn * (7 + defender.level * 1.5),
+      poisonTime: Math.max(meta.poisonTime || 0, grafts.thorn ? 4 : 0),
+      hitsLeft: 1 + (meta.pierce || 0) + grafts.sun,
+      incomeValue: Math.round((15 + defender.level * 7) * Math.pow(1.28, grafts.sun) * Math.pow(1.14, grafts.thorn)),
+      incomeInterval: Math.max(4.5, (8.2 - defender.level * .72) * Math.pow(.88, grafts.dew + grafts.storm))
+    };
   }
 
   function shoot(defender) {
     if (shots.length >= LIMITS.shots) return;
     const meta = TOWERS[defender.kind];
+    const stats = towerCombatStats(defender);
     const point = center(defender);
-    const levelPower = Math.pow(1.52, defender.level - 1);
     shots.push({
       x: point.x + board.cw * .19, y: point.y - board.rh * .1, row: defender.row,
-      kind: defender.kind, color: meta.color, damage: meta.damage * levelPower * masteryMultiplier(meta),
-      speed: meta.speed, slow: meta.slow || 0, splash: meta.splash || 0,
-      chain: meta.chain || 0, poison: (meta.poison || 0) * levelPower,
-      poisonTime: meta.poisonTime || 0, hitsLeft: 1 + (meta.pierce || 0), hitIds: [], life: 3.5
+      kind: defender.kind, color: meta.color, lineage: towerLineage(defender), damage: stats.damage,
+      speed: stats.speed, slow: stats.slow, splash: stats.splash,
+      chain: stats.chain, poison: stats.poison,
+      poisonTime: stats.poisonTime, hitsLeft: stats.hitsLeft, hitIds: [], life: 3.5
     });
     sound("shoot", meta.slow ? 1.3 : meta.splash ? .72 : meta.chain ? 1.55 : 1);
   }
@@ -505,12 +657,15 @@
       const rank = pathRanks[path];
       const pips = button.querySelector(".path-pips");
       pips.textContent = rank ? "●".repeat(Math.min(rank, 5)) + (rank > 5 ? "+" : "") : "○";
-      button.setAttribute("aria-label", `Choose ${PATHS[path].label} path. Owned rank ${rank}.`);
+      const nextRank = rank + 1;
+      const description = `Rank ${nextRank} unlocks ${PATHS[path].label} lineage depth ${nextRank} and ${PATHS[path].effect}.`;
+      button.title = description;
+      button.setAttribute("aria-label", `Choose ${PATHS[path].label} path. Owned rank ${rank}. ${description}`);
     });
   }
 
   function update(dt) {
-    if (!running || paused || ended || helpOpen || choosingPath) return;
+    if (!running || paused || ended || helpOpen || choosingPath || choosingUpgrade) return;
 
     spawnClock -= dt;
     const total = waveTotal();
@@ -536,23 +691,24 @@
 
     defenders.forEach((defender) => {
       const meta = TOWERS[defender.kind];
+      const stats = towerCombatStats(defender);
       defender.bob += dt * 2;
       defender.cooldown -= dt;
       const point = center(defender);
       if (meta.income) {
         defender.incomeClock -= dt;
         if (defender.incomeClock <= 0) {
-          const value = 15 + defender.level * 7;
+          const value = stats.incomeValue;
           if (drops.length < LIMITS.drops) drops.push({ x: point.x, y: point.y - 20, baseY: point.y, value, life: 9, phase: Math.random() * TAU });
           else nectar += value;
-          defender.incomeClock += Math.max(5.4, 8.2 - defender.level * .9);
+          defender.incomeClock += stats.incomeInterval;
         }
         return;
       }
       const target = enemiesByRow[defender.row].find((enemy) => !enemy.dead && enemy.x > point.x - board.cw * .05);
       if (target && defender.cooldown <= 0) {
         shoot(defender);
-        defender.cooldown += meta.rate * Math.pow(.72, defender.level - 1);
+        defender.cooldown += stats.rate;
       }
     });
 
@@ -604,7 +760,11 @@
     defenders.filter((defender) => defender.hp <= 0).forEach((defender) => {
       const point = center(defender);
       puff(point.x, point.y, "#8c6658", 14, 70);
-      if (selectedDefender === defender) selectedDefender = null;
+      if (selectedDefender === defender) {
+        if (choosingUpgrade) closeUpgradeChoice();
+        selectedDefender = null;
+        canvas.focus();
+      }
     });
     defenders = defenders.filter((defender) => defender.hp > 0);
     enemies = enemies.filter((enemy) => !enemy.dead);
@@ -660,7 +820,10 @@
     ended = true;
     pathChoiceQueued = false;
     choosingPath = false;
+    choosingUpgrade = false;
+    upgradeTarget = null;
     $("#specializationOverlay").classList.add("hidden");
+    $("#upgradeOverlay").classList.add("hidden");
     sound("lose");
     $("#endIcon").textContent = "🌱";
     $("#endTitle").textContent = `Wave ${wave}`;
@@ -684,8 +847,9 @@
   }
 
   function pointer(event) {
-    if (!running || paused || ended || helpOpen || choosingPath) return;
+    if (!running || paused || ended || helpOpen || choosingPath || choosingUpgrade) return;
     event.preventDefault();
+    canvas.focus({ preventScroll: true });
     const point = canvasPoint(event);
     const drop = drops.find((item) => Math.hypot(item.x - point.x, item.y - point.y) < Math.min(board.rh, board.cw) * .45);
     if (drop) return collectDrop(drop);
@@ -713,6 +877,7 @@
       selectedKind = null;
       sound("plant", .8);
       updateUI();
+      announceKeyboardCell();
     } else if (selectedKind) addDefender(row, col, selectedKind);
     else {
       selectedKind = "basic";
@@ -721,7 +886,16 @@
     }
   }
 
+  function announceKeyboardCell() {
+    const occupant = defenders.find((defender) => defender.row === keyboardCell.row && defender.col === keyboardCell.col);
+    const message = occupant
+      ? `Row ${keyboardCell.row + 1}, column ${keyboardCell.col + 1}. ${TOWERS[occupant.kind].label}, level ${occupant.level}, ${Math.ceil(occupant.hp)} of ${Math.ceil(occupant.maxHp)} health.`
+      : `Row ${keyboardCell.row + 1}, column ${keyboardCell.col + 1}, empty. ${selectedKind ? `${TOWERS[selectedKind].label} selected to plant.` : "Choose a garden friend to plant."}`;
+    if ($("#gardenAnnouncement").textContent !== message) $("#gardenAnnouncement").textContent = message;
+  }
+
   function updateUI() {
+    if (selectedDefender && !defenders.includes(selectedDefender)) selectedDefender = null;
     $("#nectarCount").textContent = Math.floor(nectar);
     $("#waveCount").textContent = wave;
     const totalRanks = Object.values(pathRanks).reduce((sum, rank) => sum + rank, 0);
@@ -738,17 +912,51 @@
       button.setAttribute("aria-pressed", String(active));
     });
 
-    const cost = upgradeCost(selectedDefender);
-    const canUpgrade = selectedDefender && defenders.includes(selectedDefender) && selectedDefender.level < 3 && nectar >= cost;
-    $("#upgradeButton").disabled = !canUpgrade;
-    $("#upgradeButton").classList.toggle("ready", Boolean(canUpgrade));
-    $("#upgradeButton small").textContent = cost ? `✦${cost}` : "MAX";
-    const upgradeLabel = !selectedDefender
-      ? "Select a garden friend to upgrade"
-      : cost
-        ? `Upgrade selected garden friend, costs ${cost} nectar`
-        : "Selected garden friend is fully upgraded";
+    const defender = selectedDefender;
+    const inspector = $("#towerInspector");
+    if (defender) {
+      const meta = TOWERS[defender.kind];
+      const lineage = towerLineage(defender);
+      const lineageText = lineage.length ? lineage.map((path) => PATHS[path].glyph).join(" ") : "OPEN";
+      inspector.classList.remove("hidden");
+      $("#towerInspectorGlyph").textContent = meta.glyph;
+      $("#towerInspectorGlyph").style.setProperty("--inspector-color", meta.color);
+      $("#towerInspectorName").textContent = meta.label.toUpperCase();
+      const inspectorLine = `LEVEL ${defender.level} · ${lineageText} · ${Math.ceil(defender.hp)}/${Math.ceil(defender.maxHp)} HP`;
+      if ($("#towerInspectorLine").textContent !== inspectorLine) $("#towerInspectorLine").textContent = inspectorLine;
+      inspector.setAttribute("aria-label", `${meta.label}, level ${defender.level}, ${Math.ceil(defender.hp)} of ${Math.ceil(defender.maxHp)} health. ${lineage.length ? `Lineage ${lineage.map((path) => PATHS[path].label).join(", ")}.` : "Open seed lineage."}`);
+    } else {
+      inspector.classList.add("hidden");
+      const occupant = defenders.find((item) => item.row === keyboardCell.row && item.col === keyboardCell.col);
+      const placement = selectedKind ? `${TOWERS[selectedKind].label} selected to plant` : "no friend selected";
+      inspector.setAttribute("aria-label", `Row ${keyboardCell.row + 1}, column ${keyboardCell.col + 1}, ${occupant ? `${TOWERS[occupant.kind].label}, level ${occupant.level}` : `empty; ${placement}`}.`);
+    }
+
+    const cost = upgradeCost(defender);
+    const grafts = availableGrafts(defender);
+    const graftable = Boolean(defender && defender.level < MAX_TOWER_LEVEL && grafts.length);
+    const canAffordGraft = graftable && nectar >= cost;
+    $("#upgradeButton").disabled = !graftable;
+    $("#upgradeButton").classList.toggle("ready", Boolean(canAffordGraft));
+    $("#upgradeButton").setAttribute("aria-expanded", String(choosingUpgrade));
+    $("#upgradeButton small").textContent = !defender ? "SELECT" : defender.level >= MAX_TOWER_LEVEL ? "MAX" : !grafts.length ? "NEED SEED" : `✦${cost}`;
+    const upgradeLabel = !defender
+      ? "Select a garden friend to graft a seed"
+      : defender.level >= MAX_TOWER_LEVEL
+        ? `${TOWERS[defender.kind].label} is fully grafted`
+        : !grafts.length
+          ? `${TOWERS[defender.kind].label} needs another boss seed rank before it can be grafted`
+          : `Choose a seed graft for ${TOWERS[defender.kind].label}, level ${defender.level}. Upgrade costs ${cost} nectar.`;
     $("#upgradeButton").setAttribute("aria-label", upgradeLabel);
+
+    const refund = sellValue(defender);
+    $("#sellButton").disabled = !defender;
+    $("#sellButton small").textContent = `✦${refund}`;
+    $("#sellButton").setAttribute("aria-label", defender
+      ? `Sell ${TOWERS[defender.kind].label}, level ${defender.level}, for ${refund} nectar`
+      : "Select a garden friend to sell");
+
+    if (choosingUpgrade) updateUpgradeChoiceUI();
 
     const speed = SPEEDS[speedIndex];
     const nextSpeed = SPEEDS[(speedIndex + 1) % SPEEDS.length];
@@ -787,51 +995,83 @@
 
   function drawBackground() {
     const gradient = ctx.createLinearGradient(0, 0, 0, H);
-    gradient.addColorStop(0, "#4f9a72");
-    gradient.addColorStop(1, "#276148");
+    gradient.addColorStop(0, "#68b786");
+    gradient.addColorStop(.55, "#34755b");
+    gradient.addColorStop(1, "#1c4b3e");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#173b36";
+    ctx.fillStyle = "#173e38";
     ctx.fillRect(0, 0, board.x * .76, H);
-    ctx.fillStyle = "#31583f";
+    ctx.fillStyle = "#284d3d";
     ctx.fillRect(board.x + board.w, 0, W - (board.x + board.w), H);
+    const edgeGlow = ctx.createLinearGradient(0, 0, W, 0);
+    edgeGlow.addColorStop(0, "#071f20aa");
+    edgeGlow.addColorStop(.16, "transparent");
+    edgeGlow.addColorStop(.84, "transparent");
+    edgeGlow.addColorStop(1, "#071f20aa");
+    ctx.fillStyle = edgeGlow;
+    ctx.fillRect(0, 0, W, H);
     for (let i = 0; i < 28; i++) {
       const x = (i * 83) % Math.max(W, 1);
       const y = (i * 47) % Math.max(H, 1);
-      circle(x, y, 1.5);
-      ctx.fillStyle = "#d8ffba33";
+      circle(x, y, i % 3 ? 1.4 : 2.1);
+      ctx.fillStyle = i % 4 ? "#d8ffba2b" : "#fff0a638";
       ctx.fill();
     }
+    ctx.fillStyle = "#553d2b";
+    roundedRect(board.x - 8, board.y - 9, board.w + 16, board.h + 18, 15);
+    ctx.fill();
+    ctx.strokeStyle = "#b6dc83aa";
+    ctx.lineWidth = 3;
+    ctx.stroke();
     for (let row = 0; row < ROWS; row++) {
       for (let col = 0; col < COLS; col++) {
         const x = board.x + col * board.cw;
         const y = board.y + row * board.rh;
-        ctx.fillStyle = (row + col) % 2 ? "#73b66b" : "#7dc172";
+        const tileGradient = ctx.createLinearGradient(x, y, x, y + board.rh);
+        tileGradient.addColorStop(0, (row + col) % 2 ? "#8fd178" : "#98da80");
+        tileGradient.addColorStop(.16, (row + col) % 2 ? "#79c06a" : "#83c971");
+        tileGradient.addColorStop(1, (row + col) % 2 ? "#62a65d" : "#6aaf62");
+        ctx.fillStyle = tileGradient;
         ctx.fillRect(x, y, board.cw + 1, board.rh + 1);
-        ctx.fillStyle = "rgba(255,255,220,.08)";
-        roundedRect(x + 3, y + 3, board.cw - 6, board.rh - 6, Math.min(10, board.rh * .12));
-        ctx.fill();
-        ctx.strokeStyle = "rgba(25,92,50,.2)";
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#315f3a55";
+        ctx.lineWidth = 1.25;
+        roundedRect(x + 2, y + 2, board.cw - 4, board.rh - 4, Math.min(11, board.rh * .13));
+        ctx.stroke();
+        ctx.strokeStyle = "#e4ffc032";
+        ctx.beginPath();
+        ctx.moveTo(x + board.cw * .18, y + board.rh * .24);
+        ctx.quadraticCurveTo(x + board.cw * .21, y + board.rh * .12, x + board.cw * .25, y + board.rh * .08);
+        ctx.moveTo(x + board.cw * .74, y + board.rh * .84);
+        ctx.quadraticCurveTo(x + board.cw * .78, y + board.rh * .7, x + board.cw * .83, y + board.rh * .66);
         ctx.stroke();
       }
+    }
+    if (selectedDefender) {
+      ctx.fillStyle = "#fff4a311";
+      ctx.fillRect(board.x, board.y + selectedDefender.row * board.rh, board.w, board.rh);
     }
     if (document.activeElement === canvas) {
       const x = board.x + keyboardCell.col * board.cw;
       const y = board.y + keyboardCell.row * board.rh;
-      ctx.strokeStyle = "#fff7a8";
+      const occupied = defenders.some((defender) => defender.row === keyboardCell.row && defender.col === keyboardCell.col);
+      const affordable = selectedKind && nectar >= TOWERS[selectedKind].cost;
+      ctx.fillStyle = occupied ? "#fff3a016" : affordable ? "#d7ffb02c" : "#ff857a1f";
+      roundedRect(x + 4, y + 4, board.cw - 8, board.rh - 8, Math.min(11, board.rh * .12));
+      ctx.fill();
+      ctx.strokeStyle = occupied || affordable ? "#fff7a8" : "#ffaaa0";
       ctx.lineWidth = 4;
       ctx.setLineDash([8, 5]);
       roundedRect(x + 4, y + 4, board.cw - 8, board.rh - 8, Math.min(11, board.rh * .12));
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    ctx.fillStyle = "#386443";
+    ctx.fillStyle = "#d0e89a";
     roundedRect(board.x - 3, board.y - 4, board.w + 6, 6, 3);
     ctx.fill();
     for (let row = 0; row < ROWS; row++) {
       const y = board.y + (row + .5) * board.rh;
-      ctx.fillStyle = "#d8f4bb55";
+      ctx.fillStyle = "#d8f4bb88";
       ctx.font = `${Math.max(14, board.rh * .27)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -846,6 +1086,10 @@
     const size = Math.min(board.cw, board.rh) * .25;
     ctx.save();
     ctx.translate(x, y);
+    ctx.fillStyle = "#132d28";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 1.35, size * 1.4, size * .45, 0, 0, TAU);
+    ctx.fill();
     if (rune.ready) {
       ctx.shadowColor = "#66eaff";
       ctx.shadowBlur = 10 + Math.sin(rune.pulse) * 5;
@@ -867,6 +1111,72 @@
     ctx.restore();
   }
 
+  function starPath(points, outer, inner, rotation = -Math.PI / 2) {
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const radius = i % 2 ? inner : outer;
+      const angle = rotation + i * Math.PI / points;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      if (!i) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawPlantFace(x, y, radius, color) {
+    ctx.fillStyle = color;
+    circle(x, y, radius);
+    ctx.fill();
+    ctx.strokeStyle = "#244238";
+    ctx.lineWidth = Math.max(1.4, radius * .1);
+    ctx.stroke();
+    ctx.fillStyle = "#17332e";
+    circle(x - radius * .3, y - radius * .12, radius * .1); ctx.fill();
+    circle(x + radius * .3, y - radius * .12, radius * .1); ctx.fill();
+    ctx.strokeStyle = "#7a4d31";
+    ctx.lineWidth = Math.max(1.2, radius * .075);
+    ctx.beginPath();
+    ctx.arc(x, y + radius * .04, radius * .31, .25, Math.PI - .25);
+    ctx.stroke();
+  }
+
+  function drawLineageAccents(defender, size) {
+    const lineage = [...new Set(towerLineage(defender))];
+    lineage.forEach((path, index) => {
+      const span = lineage.length === 1 ? 0 : index / (lineage.length - 1) - .5;
+      const x = span * size * .52;
+      const y = -size * (.43 + Math.abs(span) * .05);
+      ctx.fillStyle = PATHS[path].color;
+      ctx.strokeStyle = "#16342e";
+      ctx.lineWidth = 1.5;
+      if (path === "dew") {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size * .065);
+        ctx.quadraticCurveTo(x + size * .075, y + size * .015, x, y + size * .07);
+        ctx.quadraticCurveTo(x - size * .075, y + size * .015, x, y - size * .065);
+        ctx.fill(); ctx.stroke();
+      } else if (path === "storm") {
+        ctx.beginPath();
+        ctx.moveTo(x - size * .04, y - size * .07);
+        ctx.lineTo(x + size * .025, y - size * .01);
+        ctx.lineTo(x - size * .005, y + size * .02);
+        ctx.lineTo(x + size * .045, y + size * .07);
+        ctx.lineTo(x - size * .065, y + size * .015);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.save(); ctx.translate(x, y);
+        starPath(path === "sun" ? 7 : 4, size * .07, size * .032);
+        ctx.fill(); ctx.stroke(); ctx.restore();
+      }
+    });
+    (defender.infusions || []).forEach((path, index, grafts) => {
+      ctx.fillStyle = PATHS[path].color;
+      circle((index - (grafts.length - 1) / 2) * size * .11, size * .34, size * .035);
+      ctx.fill();
+    });
+  }
+
   function drawDefender(defender) {
     const meta = TOWERS[defender.kind];
     const point = center(defender);
@@ -874,59 +1184,78 @@
     const bob = Math.sin(defender.bob) * size * .025;
     ctx.save();
     ctx.translate(point.x, point.y + bob);
+    ctx.fillStyle = "#193f3455";
+    ctx.beginPath(); ctx.ellipse(0, size * .34, size * .3, size * .09, 0, 0, TAU); ctx.fill();
     if (selectedDefender === defender) {
-      ctx.strokeStyle = "#fff28a";
-      ctx.lineWidth = 4;
-      ctx.setLineDash([7, 5]);
-      circle(0, 0, size * .39);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.fillStyle = "#fff07c38";
+      ctx.strokeStyle = "#fff6aa";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(0, size * .3, size * .37, size * .14, 0, 0, TAU); ctx.fill(); ctx.stroke();
     }
-    ctx.fillStyle = "#28683f";
-    ctx.fillRect(-size * .045, size * .02, size * .09, size * .3);
-    leaf(-size * .12, size * .2, size * .16, size * .07, -.45, "#3f9d50");
-    leaf(size * .12, size * .16, size * .16, size * .07, .5, "#55b95f");
+    if (!meta.income && defender.kind !== "bogroot") {
+      ctx.fillStyle = "#28683f";
+      roundedRect(-size * .047, -.01 * size, size * .094, size * .34, size * .04); ctx.fill();
+      leaf(-size * .13, size * .2, size * .16, size * .07, -.45, "#3f9d50");
+      leaf(size * .13, size * .16, size * .16, size * .07, .5, "#55b95f");
+    }
 
+    ctx.shadowColor = meta.color;
+    ctx.shadowBlur = 7;
+    const headY = -size * .13;
     if (meta.income) {
-      ctx.globalAlpha = .18;
-      ctx.fillStyle = "#d8b6ff";
-      circle(0, 0, size * .38);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = "#f4dfba";
-      roundedRect(-size * .1, -size * .06, size * .2, size * .35, size * .08);
-      ctx.fill();
-      ctx.shadowColor = meta.color;
-      ctx.shadowBlur = 12;
-      ctx.fillStyle = "#a969e1";
-      ctx.beginPath();
-      ctx.ellipse(0, -size * .12, size * .31, size * .18, 0, Math.PI, TAU);
-      ctx.quadraticCurveTo(0, -size * .38, size * .31, -size * .12);
-      ctx.fill();
+      ctx.fillStyle = "#f3dfbd";
+      roundedRect(-size * .1, -size * .07, size * .2, size * .38, size * .08); ctx.fill();
+      ctx.fillStyle = "#9d63d4";
+      ctx.beginPath(); ctx.ellipse(0, headY, size * .31, size * .19, 0, Math.PI, TAU); ctx.quadraticCurveTo(0, -size * .42, size * .31, headY); ctx.fill();
+      ctx.fillStyle = "#edc8ff"; circle(-size * .13, -size * .21, size * .045); ctx.fill(); circle(size * .1, -size * .25, size * .035); ctx.fill();
+      drawPlantFace(0, size * .08, size * .085, "#f4dfba");
+    } else if (["frost", "stormbud", "thunderstar", "rainstorm", "thunderbriar"].includes(defender.kind)) {
+      const points = defender.kind === "thunderstar" ? 8 : defender.kind === "stormbud" ? 7 : 6;
+      ctx.save(); ctx.translate(0, headY); ctx.fillStyle = meta.color; starPath(points, size * .31, size * (defender.kind === "frost" ? .1 : .14)); ctx.fill(); ctx.strokeStyle = "#3d6058"; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      if (defender.kind === "rainstorm") {
+        ctx.fillStyle = "#e0faff";
+        for (let i = -1; i <= 1; i++) { circle(i * size * .1, -size * .31 + Math.abs(i) * size * .025, size * .1); ctx.fill(); }
+      }
+      if (defender.kind === "thunderbriar") {
+        ctx.strokeStyle = "#426e42"; ctx.lineWidth = size * .07; ctx.beginPath(); ctx.moveTo(-size * .12, -size * .2); ctx.lineTo(-size * .3, -size * .42); ctx.moveTo(size * .12, -size * .2); ctx.lineTo(size * .3, -size * .43); ctx.stroke();
+      }
+      drawPlantFace(0, headY, size * .12, defender.kind === "frost" ? "#eaffff" : "#f4edce");
+    } else if (["ember", "wildfire", "thornvine"].includes(defender.kind)) {
+      const points = defender.kind === "wildfire" ? 9 : defender.kind === "thornvine" ? 5 : 7;
+      ctx.save(); ctx.translate(0, headY); ctx.fillStyle = meta.color; starPath(points, size * .31, size * .16, defender.kind === "wildfire" ? -.25 : -Math.PI / 2); ctx.fill(); ctx.restore();
+      if (defender.kind === "thornvine") {
+        ctx.strokeStyle = "#39783e"; ctx.lineWidth = size * .08; ctx.beginPath(); ctx.arc(-size * .05, -size * .07, size * .27, -.7, Math.PI * 1.4); ctx.stroke();
+      }
+      drawPlantFace(0, headY, size * .12, defender.kind === "ember" ? "#ffd55c" : "#e8d27e");
+    } else if (defender.kind === "dewbell") {
+      for (let i = -1; i <= 1; i++) {
+        ctx.fillStyle = i ? "#72d8e8" : "#a8f3fa";
+        ctx.beginPath(); ctx.moveTo(i * size * .17, -size * .36 + Math.abs(i) * size * .05); ctx.quadraticCurveTo(i * size * .31, -size * .08, i * size * .17, size * .01); ctx.quadraticCurveTo(i * size * .03, -size * .08, i * size * .17, -size * .36 + Math.abs(i) * size * .05); ctx.fill();
+      }
+      drawPlantFace(0, headY, size * .105, "#d9ffff");
+    } else if (defender.kind === "sunbeam") {
+      ctx.fillStyle = meta.color;
+      ctx.beginPath(); ctx.moveTo(-size * .2, -size * .29); ctx.quadraticCurveTo(size * .12, -size * .34, size * .34, -size * .17); ctx.lineTo(size * .34, 0); ctx.quadraticCurveTo(size * .08, size * .01, -size * .2, -size * .02); ctx.closePath(); ctx.fill();
+      drawPlantFace(-size * .1, headY, size * .12, "#f4b94f");
+    } else if (defender.kind === "bogroot") {
+      ctx.fillStyle = "#708d55"; roundedRect(-size * .26, -size * .25, size * .52, size * .57, size * .14); ctx.fill();
+      ctx.strokeStyle = "#35583c"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-size * .14, size * .18); ctx.lineTo(-size * .29, size * .34); ctx.moveTo(size * .14, size * .18); ctx.lineTo(size * .29, size * .34); ctx.stroke();
+      leaf(-size * .15, -size * .31, size * .16, size * .08, -.5, "#7dd483"); leaf(size * .14, -size * .32, size * .16, size * .08, .55, "#68bea0");
+      drawPlantFace(0, -size * .05, size * .145, "#b9c979");
     } else {
       const petalColors = meta.requires.length ? meta.requires.map((path) => PATHS[path].color) : [meta.color];
-      ctx.shadowColor = meta.color;
-      ctx.shadowBlur = 9;
-      for (let i = 0; i < (meta.requires.length > 1 ? 8 : 6); i++) {
-        const angle = i * TAU / (meta.requires.length > 1 ? 8 : 6);
-        leaf(Math.cos(angle) * size * .19, -size * .12 + Math.sin(angle) * size * .19, size * .14, size * .085, angle, petalColors[i % petalColors.length]);
+      const petals = defender.kind === "prism" ? 8 : 7;
+      for (let i = 0; i < petals; i++) {
+        const angle = i * TAU / petals;
+        leaf(Math.cos(angle) * size * .2, headY + Math.sin(angle) * size * .2, size * .14, size * (defender.kind === "prism" ? .065 : .085), angle, petalColors[i % petalColors.length]);
       }
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = meta.requires.length ? "#f7f2cf" : defender.kind === "ember" ? "#ffdc55" : defender.kind === "frost" ? "#d9ffff" : "#704b2d";
-      circle(0, -size * .12, size * .17);
-      ctx.fill();
-      ctx.fillStyle = "#173c32";
-      ctx.font = `bold ${size * (meta.requires.length > 1 ? .22 : .2)}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(meta.glyph, 0, -size * .12);
+      drawPlantFace(0, headY, size * .155, defender.kind === "basic" ? "#8c6035" : "#f5edce");
     }
     ctx.shadowBlur = 0;
-    if (defender.level > 1) {
-      ctx.fillStyle = "#fff082";
-      ctx.font = `bold ${size * .18}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText("★".repeat(defender.level - 1), 0, -size * .43);
+    drawLineageAccents(defender, size);
+    if (defender.level >= MAX_TOWER_LEVEL) {
+      leaf(-size * .2, size * .07, size * .1, size * .04, -.55, "#dfff93");
+      leaf(size * .2, size * .04, size * .1, size * .04, .55, "#dfff93");
     }
     if (defender.hp < defender.maxHp) {
       ctx.fillStyle = "#26443b";
@@ -947,6 +1276,18 @@
     const bob = Math.sin(enemy.wobble) * base * .035;
     ctx.save();
     ctx.translate(enemy.x, y + bob);
+    ctx.fillStyle = "#183d3455";
+    ctx.beginPath();
+    ctx.ellipse(0, size * .34, size * .31, size * .09, 0, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "#3c2e4c";
+    ctx.lineWidth = Math.max(2, size * .045);
+    ctx.lineCap = "round";
+    const stride = Math.sin(enemy.wobble * 1.7) * size * .07;
+    ctx.beginPath();
+    ctx.moveTo(-size * .13, size * .24); ctx.lineTo(-size * .17 + stride, size * .38);
+    ctx.moveTo(size * .13, size * .24); ctx.lineTo(size * .17 - stride, size * .38);
+    ctx.stroke();
     if (enemy.slow > 0) { ctx.shadowColor = "#81efff"; ctx.shadowBlur = 12; }
     if (enemy.type === "boss") {
       ctx.shadowColor = "#d6a2ff";
@@ -955,10 +1296,9 @@
       roundedRect(-size * .34, -size * .3, size * .68, size * .66, size * .2);
       ctx.fill();
       ctx.fillStyle = "#d5a8e8";
-      ctx.font = `bold ${size * .28}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("◈", 0, -size * .12);
+      ctx.save(); ctx.translate(0, -size * .36); starPath(4, size * .24, size * .12, Math.PI / 4); ctx.fill(); ctx.restore();
+      ctx.fillStyle = "#f5d676";
+      ctx.beginPath(); ctx.moveTo(-size * .25, -size * .34); ctx.lineTo(-size * .19, -size * .57); ctx.lineTo(-size * .04, -size * .4); ctx.lineTo(size * .08, -size * .59); ctx.lineTo(size * .23, -size * .35); ctx.closePath(); ctx.fill();
     } else if (enemy.type === "shell" || enemy.type === "brute") {
       ctx.fillStyle = enemy.type === "brute" ? "#604d72" : "#6d5c83";
       roundedRect(-size * .3, -size * .28, size * .6, size * .62, size * .2);
@@ -968,11 +1308,28 @@
         roundedRect(i * size * .16 - size * .07, -size * .3, size * .14, size * .16, 4);
         ctx.fill();
       }
+      if (enemy.type === "shell") {
+        ctx.strokeStyle = "#dbc9d8";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(size * .03, size * .06, size * .18, 0, TAU * .88);
+        ctx.arc(size * .03, size * .06, size * .09, 0, TAU * .8);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "#d0b58b";
+        ctx.beginPath(); ctx.moveTo(-size * .25, -size * .27); ctx.lineTo(-size * .36, -size * .49); ctx.lineTo(-size * .08, -size * .31); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(size * .25, -size * .27); ctx.lineTo(size * .36, -size * .49); ctx.lineTo(size * .08, -size * .31); ctx.fill();
+      }
     } else {
       ctx.fillStyle = enemy.type === "swarm" ? "#a56aad" : enemy.type === "swift" ? "#9a55a3" : "#795a91";
       ctx.beginPath();
       ctx.ellipse(0, size * .04, size * (enemy.type === "swift" ? .25 : .3), size * (enemy.type === "swift" ? .34 : .3), 0, 0, TAU);
       ctx.fill();
+      if (enemy.type === "swarm") {
+        ctx.fillStyle = "#d9d6ff88";
+        ctx.beginPath(); ctx.ellipse(-size * .29, -.02 * size, size * .17, size * .09, -.5, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(size * .29, -.02 * size, size * .17, size * .09, .5, 0, TAU); ctx.fill();
+      }
     }
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#fff3bd";
@@ -985,6 +1342,11 @@
     ctx.fill();
     circle(size * .105, -size * .04, size * .023);
     ctx.fill();
+    ctx.strokeStyle = "#2d2037";
+    ctx.lineWidth = Math.max(1.3, size * .025);
+    ctx.beginPath();
+    ctx.arc(0, size * .1, size * .085, .18, Math.PI - .18);
+    ctx.stroke();
     if (enemy.type === "swift") {
       ctx.strokeStyle = "#e3b7f1";
       ctx.lineWidth = 3;
@@ -1002,13 +1364,51 @@
       circle(size * .25, size * .18, size * .03);
       ctx.fill();
     }
-    const barWidth = Math.min(base * .75, size * .62);
-    ctx.fillStyle = "#26352f";
-    roundedRect(-barWidth / 2, -size * .43, barWidth, 5, 3);
-    ctx.fill();
-    ctx.fillStyle = enemy.slow > 0 ? "#83efff" : enemy.type === "boss" ? "#efb0ff" : "#ff7780";
-    roundedRect(-barWidth / 2, -size * .43, barWidth * Math.max(0, enemy.hp / enemy.maxHp), 5, 3);
-    ctx.fill();
+    if (enemy.hp < enemy.maxHp || ["shell", "brute", "boss"].includes(enemy.type)) {
+      const barWidth = Math.min(base * .75, size * .62);
+      ctx.fillStyle = "#26352f";
+      roundedRect(-barWidth / 2, -size * .47, barWidth, 5, 3);
+      ctx.fill();
+      ctx.fillStyle = enemy.slow > 0 ? "#83efff" : enemy.type === "boss" ? "#efb0ff" : "#ff7780";
+      roundedRect(-barWidth / 2, -size * .47, barWidth * Math.max(0, enemy.hp / enemy.maxHp), 5, 3);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawShot(shot) {
+    const radius = shot.splash ? 7 : shot.chain ? 5.5 : 4.7;
+    ctx.save();
+    ctx.translate(shot.x, shot.y);
+    ctx.globalAlpha = .35;
+    ctx.strokeStyle = shot.color;
+    ctx.lineWidth = radius * .85;
+    ctx.beginPath(); ctx.moveTo(-radius * 3.2, 0); ctx.lineTo(-radius * .65, 0); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = shot.color;
+    ctx.strokeStyle = "#faffdf";
+    ctx.lineWidth = 1.4;
+    if (shot.chain) {
+      ctx.beginPath();
+      ctx.moveTo(-radius, -radius * .7); ctx.lineTo(0, -radius * .05); ctx.lineTo(-radius * .2, radius * .28); ctx.lineTo(radius, radius * .8); ctx.lineTo(radius * .34, 0); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else if (shot.slow) {
+      ctx.rotate(Math.PI / 4);
+      roundedRect(-radius * .72, -radius * .72, radius * 1.44, radius * 1.44, 2);
+      ctx.fill(); ctx.stroke();
+    } else if (shot.poison) {
+      ctx.beginPath(); ctx.moveTo(radius * 1.35, 0); ctx.lineTo(-radius, -radius * .52); ctx.lineTo(-radius * .55, 0); ctx.lineTo(-radius, radius * .52); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else {
+      circle(0, 0, radius); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffffffaa"; circle(-radius * .18, -radius * .22, radius * .27); ctx.fill();
+    }
+    if (shot.splash) {
+      ctx.globalAlpha = .5;
+      ctx.strokeStyle = shot.color;
+      ctx.lineWidth = 2;
+      circle(0, 0, radius * 1.65); ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -1020,14 +1420,7 @@
     drawBackground();
     runes.forEach((_, row) => drawRune(row));
     defenders.forEach(drawDefender);
-    shots.forEach((shot) => {
-      ctx.fillStyle = shot.color;
-      ctx.shadowColor = shot.color;
-      ctx.shadowBlur = 10;
-      circle(shot.x, shot.y, shot.splash ? 8 : shot.chain ? 6 : 5);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    });
+    shots.forEach(drawShot);
     enemies.forEach(drawEnemy);
     drops.forEach((drop) => {
       ctx.save();
@@ -1088,7 +1481,7 @@
   }
 
   function openHelp() {
-    if (!running || ended || paused || choosingPath) return;
+    if (!running || ended || paused || choosingPath || choosingUpgrade) return;
     tutorialMode = "help";
     tutorialStep = 0;
     helpOpen = true;
@@ -1097,7 +1490,7 @@
   }
 
   function togglePause() {
-    if (ended || !running || helpOpen || choosingPath) return;
+    if (ended || !running || helpOpen || choosingPath || choosingUpgrade) return;
     paused = !paused;
     if (paused) {
       shake = 0;
@@ -1111,7 +1504,10 @@
   }
 
   canvas.addEventListener("pointerdown", pointer);
-  $("#upgradeButton").addEventListener("click", upgradeSelected);
+  $("#upgradeButton").addEventListener("click", openUpgradeChoice);
+  $("#sellButton").addEventListener("click", sellSelected);
+  $("#closeUpgradeButton").addEventListener("click", () => closeUpgradeChoice());
+  document.querySelectorAll(".graft-choice").forEach((button) => button.addEventListener("click", () => chooseGraft(button.dataset.graftPath)));
   $("#speedButton").addEventListener("click", () => {
     speedIndex = (speedIndex + 1) % SPEEDS.length;
     simulationAccumulator = 0;
@@ -1202,6 +1598,11 @@
       $("#tutorialNext").click();
       return;
     }
+    if (overlay?.id === "upgradeOverlay" && event.code === "Escape") {
+      event.preventDefault();
+      closeUpgradeChoice();
+      return;
+    }
     if (overlay) return;
     if (event.target instanceof HTMLElement && event.target.closest("button, a")) return;
     if (document.activeElement === canvas && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(event.code)) {
@@ -1211,6 +1612,8 @@
       if (event.code === "ArrowLeft") keyboardCell.col = Math.max(0, keyboardCell.col - 1);
       if (event.code === "ArrowRight") keyboardCell.col = Math.min(COLS - 1, keyboardCell.col + 1);
       if (event.code === "Enter" && running && !paused && !ended) activateCell(keyboardCell.row, keyboardCell.col);
+      announceKeyboardCell();
+      updateUI();
       return;
     }
     if ((event.code === "Escape" || event.code === "Space") && running && !ended) {
@@ -1218,6 +1621,92 @@
       togglePause();
     }
   });
+
+  if (location.protocol === 'file:') {
+    const testDefender = (id) => defenders.find((defender) => defender.id === id) || null;
+    const testDefenderState = (defender) => defender ? {
+      id: defender.id,
+      row: defender.row,
+      col: defender.col,
+      kind: defender.kind,
+      hp: defender.hp,
+      maxHp: defender.maxHp,
+      level: defender.level,
+      infusions: [...(defender.infusions || [])],
+      lineage: towerLineage(defender),
+      invested: defender.invested,
+      sellValue: sellValue(defender),
+      stats: { ...towerCombatStats(defender) }
+    } : null;
+
+    window.__runeGardenTest = {
+      constants: {
+        maxTowerLevel: MAX_TOWER_LEVEL,
+        maxLineagePaths: MAX_LINEAGE_PATHS,
+        sellRate: SELL_RATE
+      },
+      start: () => {
+        $("#tutorial").classList.add("hidden");
+        reset();
+      },
+      reset,
+      snapshot: () => ({
+        nectar,
+        wave,
+        pathSeeds,
+        pathRanks: { ...pathRanks },
+        selectedKind,
+        selectedDefenderId: selectedDefender?.id || null,
+        upgradeTargetId: upgradeTarget?.id || null,
+        choosingPath,
+        choosingUpgrade,
+        defenders: defenders.map(testDefenderState)
+      }),
+      setNectar: (amount) => {
+        nectar = Math.max(0, Number.isFinite(amount) ? amount : 0);
+        updateUI();
+      },
+      setPathRanks: (ranks = {}) => {
+        Object.keys(PATHS).forEach((path) => {
+          pathRanks[path] = Math.max(0, Math.floor(Number(ranks[path]) || 0));
+        });
+        renderTowerTray();
+        updateUI();
+      },
+      place: (row, col, kind = "basic") => {
+        selectedKind = kind;
+        addDefender(row, col, kind);
+        return testDefenderState(defenders.find((defender) => defender.row === row && defender.col === col));
+      },
+      defender: (id) => testDefenderState(testDefender(id)),
+      canGraft: (id, path) => canGraftPath(testDefender(id), path),
+      graftCost: (id) => upgradeCost(testDefender(id)),
+      openGraft: (id) => {
+        selectedDefender = testDefender(id);
+        openUpgradeChoice();
+        return choosingUpgrade;
+      },
+      graft: (id, path) => {
+        const defender = testDefender(id);
+        if (!defender) return false;
+        selectedDefender = defender;
+        const previousLevel = defender.level;
+        openUpgradeChoice();
+        if (choosingUpgrade) chooseGraft(path);
+        const changed = defender.level !== previousLevel;
+        if (choosingUpgrade) closeUpgradeChoice();
+        return changed;
+      },
+      sellValue: (id) => sellValue(testDefender(id)),
+      sell: (id) => {
+        const defender = testDefender(id);
+        if (!defender) return false;
+        selectedDefender = defender;
+        sellSelected();
+        return !defenders.includes(defender);
+      }
+    };
+  }
 
   window.addEventListener("resize", resize);
   resize();
