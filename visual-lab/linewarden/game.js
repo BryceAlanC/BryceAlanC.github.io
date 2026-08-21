@@ -13,6 +13,9 @@
   const AUTO_PURCHASE_SECONDS = .4;
   const MAX_PROJECTILES = 240;
   const MAX_SPAWNS_PER_UPDATE = 96;
+  const HEX_RADIUS = 215;
+  const HEX_RADIUS_SQUARED = HEX_RADIUS * HEX_RADIUS;
+  const HEX_DAMAGE_MULTIPLIER = .85;
   const RESERVES = [0, 100, 250, 500];
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const compactDrawerMedia = matchMedia('(max-width: 900px), (pointer: coarse)');
@@ -36,7 +39,7 @@
     ['bulwark', 'Bulwark', 2, 75, 12, 1, 'guard', '', 20, 24, '#d66088', 'Armored • durable'],
     ['swarm', 'Skitter Pack', 1, 85, 14, 4, 'pack', '', 20, 26, '#ff8d78', '4 bodies • scatters'],
     ['rift_hound', 'Rift Hound', 2, 105, 17, 1, 'surge', '', 20, 28, '#d953a6', 'Bursts of speed'],
-    ['hexer', 'Hexer', 3, 120, 20, 1, 'hexer', '', 18, 30, '#9e68d5', 'Slows the warden'],
+    ['hexer', 'Hexer', 3, 120, 20, 1, 'hexer', '', 18, 30, '#9e68d5', 'Weakens Warden damage'],
     ['ironjaw', 'Ironjaw', 3, 150, 24, 1, 'guard', 'berserk', 18, 32, '#b24c6f', 'Armor • enrages'],
     ['brute', 'Brute', 4, 180, 30, 1, 'brute', '', 18, 34, '#bf72df', 'Crushing bruiser'],
     ['plague_pod', 'Plague Pod', 4, 215, 34, 1, 'splitter', '', 16, 38, '#76bd82', 'Splits on death'],
@@ -50,7 +53,7 @@
     ['rift_stalker', 'Rift Stalker', 8, 750, 115, 1, 'surge', 'phase', 14, 68, '#5d83ec', 'Surges • phases'],
     ['bone_convoy', 'Bone Convoy', 9, 900, 135, 3, 'pack', 'siege', 14, 72, '#b88b63', '3 crystal hunters'],
     ['mire_colossus', 'Mire Colossus', 9, 1080, 165, 1, 'regen', '', 13, 78, '#668453', 'Massive regeneration'],
-    ['shock_witch', 'Shock Witch', 10, 1300, 195, 1, 'hexer', 'surge', 13, 82, '#7f63e6', 'Hexes • surges'],
+    ['shock_witch', 'Shock Witch', 10, 1300, 195, 1, 'hexer', 'surge', 13, 82, '#7f63e6', 'Weakens • surges'],
     ['dread_ram', 'Dread Ram', 10, 1560, 235, 1, 'siege', 'berserk', 13, 86, '#c77840', 'Siege • enrages'],
     ['mirror_fiend', 'Mirror Fiend', 11, 1875, 280, 1, 'phase', '', 13, 90, '#72d1db', 'Periodic damage ward'],
     ['war_brood', 'War Brood', 11, 2250, 330, 6, 'pack', 'berserk', 12, 94, '#ee5d89', '6 enraging bodies'],
@@ -58,27 +61,27 @@
     ['carrion_oracle', 'Carrion Oracle', 12, 3250, 475, 1, 'commander', '', 12, 106, '#98b04d', 'Buffs nearby hostiles'],
     ['maw_engine', 'Maw Engine', 13, 3900, 565, 1, 'siege', 'regen', 12, 112, '#b75a37', 'Siege • regenerates'],
     ['starved_legion', 'Starved Legion', 13, 4680, 675, 8, 'pack', 'berserk', 12, 118, '#f06c52', '8 enraging bodies'],
-    ['chrono_shade', 'Chrono Shade', 14, 5620, 805, 1, 'phase', 'hexer', 11, 124, '#7463cf', 'Phases • hexes'],
+    ['chrono_shade', 'Chrono Shade', 14, 5620, 805, 1, 'phase', 'hexer', 11, 124, '#7463cf', 'Phases • weakens'],
     ['blood_titan', 'Blood Titan', 14, 6750, 960, 1, 'leech', 'berserk', 11, 130, '#9c2848', 'Leeches • enrages'],
     ['storm_reaver', 'Storm Reaver', 15, 8100, 1150, 1, 'surge', 'berserk', 11, 136, '#3aa6c9', 'Surges • enrages'],
     ['bastion_walker', 'Bastion Walker', 15, 9720, 1350, 1, 'siege', 'phase', 11, 142, '#68707f', 'Siege • phases'],
-    ['rift_choir', 'Rift Choir', 16, 11650, 1625, 5, 'pack', 'hexer', 10, 148, '#bc69df', '5-body slowing aura'],
+    ['rift_choir', 'Rift Choir', 16, 11650, 1625, 5, 'pack', 'hexer', 10, 148, '#bc69df', '5-body weakening aura'],
     ['grave_leviathan', 'Grave Leviathan', 16, 14000, 1925, 1, 'regen', 'leech', 10, 154, '#4e8266', 'Regenerates • leeches'],
     ['glass_reaper', 'Glass Reaper', 17, 16800, 2300, 1, 'berserk', 'surge', 10, 160, '#f1d174', 'Extreme damage • fragile'],
     ['iron_eclipse', 'Iron Eclipse', 17, 20200, 2750, 1, 'guard', 'commander', 10, 168, '#3b435a', 'Armored commander'],
     ['crown_eater', 'Crown Eater', 18, 24250, 3300, 1, 'leech', 'phase', 10, 176, '#7b243d', 'Leeches • phases'],
     ['cataclysm_pack', 'Cataclysm Pack', 18, 29100, 3925, 10, 'pack', 'berserk', 10, 184, '#ff4f35', '10 enraging bodies'],
-    ['abyss_regent', 'Abyss Regent', 19, 34900, 4675, 1, 'commander', 'hexer', 9, 192, '#64398f', 'Commander • hexes'],
+    ['abyss_regent', 'Abyss Regent', 19, 34900, 4675, 1, 'commander', 'hexer', 9, 192, '#64398f', 'Commander • weakens'],
     ['worldbreaker', 'Worldbreaker', 20, 41900, 5575, 1, 'titan', '', 9, 200, '#a7372e', 'Titanic crystal hunter'],
     ['paradox_hound', 'Paradox Hound', 21, 50300, 6650, 1, 'phase', 'surge', 9, 208, '#30c2bd', 'Phases • surges'],
-    ['blight_cathedral', 'Blight Cathedral', 22, 60400, 7925, 1, 'commander', 'regen|hexer', 9, 216, '#5c8d38', 'Regenerating hex aura'],
+    ['blight_cathedral', 'Blight Cathedral', 22, 60400, 7925, 1, 'commander', 'regen|hexer', 9, 216, '#5c8d38', 'Regenerating weakness aura'],
     ['meteor_herald', 'Meteor Herald', 23, 72500, 9450, 1, 'berserk', 'siege', 9, 224, '#ed8c2c', 'Enraged siege monster'],
     ['null_armada', 'Null Armada', 24, 87000, 11200, 6, 'pack', 'siege|phase', 8, 232, '#4c54a8', '6 phasing siege bodies'],
     ['oblivion_hydra', 'Oblivion Hydra', 25, 104500, 13400, 1, 'regen', 'berserk', 8, 240, '#57308c', 'Regenerates • enrages'],
     ['doomsday_engine', 'Doomsday Engine', 26, 125500, 16000, 1, 'titan', 'regen', 8, 252, '#852b20', 'Titanic siege engine'],
-    ['time_devourer', 'Time Devourer', 27, 150500, 19100, 1, 'phase', 'hexer|surge', 8, 264, '#77d6f1', 'Phases • hexes • surges'],
+    ['time_devourer', 'Time Devourer', 27, 150500, 19100, 1, 'phase', 'hexer|surge', 8, 264, '#77d6f1', 'Phases • weakens • surges'],
     ['godslayer_host', 'Godslayer Host', 28, 180500, 22700, 8, 'pack', 'berserk|surge', 8, 276, '#d21e58', '8 apocalyptic bodies'],
-    ['black_sun', 'Black Sun', 29, 216500, 27000, 1, 'titan', 'commander|hexer', 8, 288, '#332347', 'Titanic hostile commander'],
+    ['black_sun', 'Black Sun', 29, 216500, 27000, 1, 'titan', 'commander|hexer', 8, 288, '#332347', 'Titanic weakening commander'],
     ['endbringer', 'Endbringer', 30, 260000, 32200, 1, 'titan', 'commander|phase', 8, 300, '#ff2f69', 'The final bad decision']
   ];
   const BODY = {
@@ -409,6 +412,19 @@
 
   function hasTrait(entity, trait) { return entity.traits?.includes(trait) || entity.trait === trait; }
 
+  function hasNearbyHexer(hero) {
+    for (const enemy of game.enemies) {
+      if (!hasTrait(enemy, 'hexer')) continue;
+      const dx = enemy.x - hero.x, dy = enemy.y - hero.y;
+      if (dx * dx + dy * dy < HEX_RADIUS_SQUARED) return true;
+    }
+    return false;
+  }
+
+  function wardenDamage(multiplier = 1) {
+    return game.hero.damage * multiplier * (game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1);
+  }
+
   function spawnEnemy(def, options = {}) {
     const playerMade = Boolean(options.playerMade), boss = Boolean(options.boss);
     const waveIndex = Math.max(0, options.wave - 1);
@@ -662,7 +678,7 @@
       hero.y = clamp(hero.y + dy * 235, 75, 810);
       hero.invuln = .3;
       [...game.enemies].forEach(enemy => {
-        if (pointLineDistance(enemy.x, enemy.y, sx, sy, hero.x, hero.y) < enemy.r + 25) damageEnemy(enemy, hero.damage * 1.85);
+        if (pointLineDistance(enemy.x, enemy.y, sx, sy, hero.x, hero.y) < enemy.r + 25) damageEnemy(enemy, wardenDamage(1.85));
       });
       game.slashes.push({ x1: sx, y1: sy, x2: hero.x, y2: hero.y, life: .28, max: .28, color: '#70e7df' });
       game.shake = 4; tone(210, .12, 'sawtooth', .045);
@@ -670,7 +686,7 @@
       [...game.enemies].forEach(enemy => {
         const distance = dist(hero, enemy);
         if (distance < 225 + enemy.r) {
-          damageEnemy(enemy, hero.damage * 2.1);
+          damageEnemy(enemy, wardenDamage(2.1));
           if (enemy.hp > 0) { enemy.slow = .45; enemy.slowTimer = 3; }
         }
       });
@@ -705,7 +721,7 @@
     const side = (index - game.items.multishot / 2) * 7;
     addProjectile({
       x: hero.x + aimX * 26 - aimY * side, y: hero.y + aimY * 26 + aimX * side, target, speed: 760,
-      damage: hero.damage * (index ? .55 : 1) * (critical ? 2 : 1), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5,
+      damage: wardenDamage((index ? .55 : 1) * (critical ? 2 : 1)), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5,
       critical, wardenShot: true, chainLeft: game.items.chain, chainRange: 150 + game.items.chain * 12,
       splashRank: game.items.splash, splashReady: true, hitIds: [], canRetarget: true
     });
@@ -939,8 +955,8 @@
     }
     processSpawnQueue();
 
-    hero.hexed = game.enemies.some(enemy => hasTrait(enemy, 'hexer') && dist(enemy, hero) < 215);
-    const moveSpeed = hero.speed * (hero.hexed ? .72 : 1);
+    hero.hexed = hasNearbyHexer(hero);
+    const moveSpeed = hero.speed;
     let mx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + (pointer.stickX || 0);
     let my = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0) + (pointer.stickY || 0);
     if (mx || my) {
@@ -1254,7 +1270,7 @@
       view.card.classList.toggle('out-of-stock', !inStock);
       view.card.classList.toggle('auto-enabled', game.autos[type]);
       view.buy.disabled = locked || !affordable || !inStock;
-      view.buy.setAttribute('aria-label', `Buy one ${def.name} contract for ${def.cost} gold and gain ${def.income} recurring income every five seconds. ${game.contracts[type]} contracts owned create ${game.roster[type]} returning ${game.roster[type] === 1 ? 'body' : 'bodies'} every wave. Stock ${game.stock[type]} of ${def.stockCap}.${locked ? ` Unlocks at level ${def.unlock}.` : ''}`);
+      view.buy.setAttribute('aria-label', `Buy one ${def.name} contract for ${def.cost} gold and gain ${def.income} recurring income every five seconds. Trait: ${def.tag}. ${game.contracts[type]} contracts owned create ${game.roster[type]} returning ${game.roster[type] === 1 ? 'body' : 'bodies'} every wave. Stock ${game.stock[type]} of ${def.stockCap}.${locked ? ` Unlocks at level ${def.unlock}.` : ''}`);
       view.owned.textContent = `×${game.contracts[type]}`;
       view.contracts.textContent = formatCompactNumber(game.contracts[type]);
       view.bodies.textContent = formatCompactNumber(game.roster[type]);
@@ -1481,7 +1497,7 @@
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '0.0.0.0', 'terminal.local'].includes(location.hostname)) {
     window.__linewardenTest = {
-      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
+      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit, hexed: game.hero.hexed, damageMultiplier: game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1 }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
       start: begin,
       purchase: type => buySummon(type),
       buyItem: type => buyItem(type),
