@@ -18,6 +18,15 @@
   const HEX_DAMAGE_MULTIPLIER = .85;
   const RESERVES = [0, 100, 250, 500];
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TAU = Math.PI * 2;
+  const ROUTE_ARROWS = [
+    { x: 430, y: 195, a: 0 }, { x: 880, y: 195, a: 0 }, { x: 1320, y: 195, a: 0 },
+    { x: 1450, y: 330, a: Math.PI / 2 }, { x: 1120, y: 450, a: Math.PI }, { x: 690, y: 450, a: Math.PI }, { x: 280, y: 450, a: Math.PI },
+    { x: 150, y: 540, a: Math.PI / 2 }, { x: 430, y: 625, a: 0 }, { x: 850, y: 625, a: 0 }, { x: 1240, y: 625, a: 0 }
+  ];
+  let renderDetail = 2;
+  let arenaBackdrop = null;
+  let activeHexAuraDrawn = false;
   const compactDrawerMedia = matchMedia('(max-width: 900px), (pointer: coarse)');
   const $ = (id) => document.getElementById(id);
   const ui = {
@@ -131,11 +140,11 @@
   }));
   const summonOrder = Object.keys(summonDefs).sort((a, b) => summonDefs[a].cost - summonDefs[b].cost);
   const ambientDefs = [
-    { key: 'drone', unlockWave: 1, hp: 66, speed: 132, damage: 14, reward: 6, xp: 10, r: 16, color: '#de5267' },
-    { key: 'raider', unlockWave: 3, hp: 155, speed: 105, damage: 23, reward: 10, xp: 16, r: 22, armor: .06, color: '#a95572' },
-    { key: 'dart', unlockWave: 5, hp: 52, speed: 195, damage: 12, reward: 7, xp: 10, r: 12, color: '#ee7c69' },
-    { key: 'warden', unlockWave: 8, hp: 390, speed: 82, damage: 42, reward: 18, xp: 28, r: 29, armor: .18, color: '#b94f68' },
-    { key: 'shade', unlockWave: 12, hp: 245, speed: 144, damage: 35, reward: 15, xp: 24, r: 23, trait: 'surge', color: '#8d589c' }
+    { key: 'drone', body: 'runner', unlockWave: 1, hp: 66, speed: 132, damage: 14, reward: 6, xp: 10, r: 16, color: '#de5267' },
+    { key: 'raider', body: 'guard', unlockWave: 3, hp: 155, speed: 105, damage: 23, reward: 10, xp: 16, r: 22, armor: .06, color: '#a95572' },
+    { key: 'dart', body: 'pack', unlockWave: 5, hp: 52, speed: 195, damage: 12, reward: 7, xp: 10, r: 12, color: '#ee7c69' },
+    { key: 'warden', body: 'brute', unlockWave: 8, hp: 390, speed: 82, damage: 42, reward: 18, xp: 28, r: 29, armor: .18, color: '#b94f68' },
+    { key: 'shade', body: 'phase', unlockWave: 12, hp: 245, speed: 144, damage: 35, reward: 15, xp: 24, r: 23, trait: 'surge', color: '#8d589c' }
   ];
   const itemBase = { edge: 85, plate: 100, boots: 125, lens: 150, focus: 175, seal: 220, multishot: 325, chain: 375, splash: 300, revive: 450, repair: 75 };
   const itemGrowth = { multishot: 2.05, chain: 2.05, splash: 2.05, revive: 2.05 };
@@ -180,9 +189,12 @@
       const card = fragment.querySelector('.summon-card');
       card.dataset.summon = type;
       card.dataset.tier = String(def.tier);
+      card.dataset.body = def.body;
+      card.dataset.traits = def.traits.join(' ');
       const creature = card.querySelector('.creature');
       const shape = { runner: 'runner', pack: 'diamond', guard: 'bulwark', hexer: 'hexer', brute: 'brute', surge: 'phantom', siege: 'siege', regen: 'hydra', splitter: 'orb', leech: 'orb', phase: 'diamond', commander: 'crown', berserk: 'brute', titan: 'crown' }[def.body] || 'diamond';
       creature.dataset.shape = shape;
+      creature.dataset.body = def.body;
       creature.style.setProperty('--creature-color', def.color);
       card.querySelector('.summon-name').textContent = def.name.toUpperCase();
       card.querySelector('.trait-line').textContent = `LV ${def.unlock} • ${def.tag}`;
@@ -436,7 +448,7 @@
       id: ++game.spawnId, x: PATH[0].x, y: PATH[0].y, pathIndex: 1, type: options.type || def.key || 'ambient',
       r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, speed: def.speed,
       damage: def.damage * damageScale, reward: def.reward, xp: def.xp, armor: def.armor || 0,
-      traits, regen: def.regen || 0, crystalDamage: def.crystalDamage || 1, points: def.points || 6,
+      traits, body: def.body || (boss ? 'titan' : 'runner'), regen: def.regen || 0, crystalDamage: def.crystalDamage || 1, points: def.points || 6,
       color: def.color, playerMade, boss, attackCd: 0, leechCd: 0, slow: 0, slowTimer: 0,
       hit: 0, phase: Math.random() * 6.28, source: options.source || 'ambient', originWave: options.wave || game.wave,
       spawnSequence: options.sequence || 0
@@ -680,7 +692,7 @@
       [...game.enemies].forEach(enemy => {
         if (pointLineDistance(enemy.x, enemy.y, sx, sy, hero.x, hero.y) < enemy.r + 25) damageEnemy(enemy, wardenDamage(1.85));
       });
-      game.slashes.push({ x1: sx, y1: sy, x2: hero.x, y2: hero.y, life: .28, max: .28, color: '#70e7df' });
+      addSlash({ x1: sx, y1: sy, x2: hero.x, y2: hero.y, life: .28, max: .28, color: '#70e7df', kind: 'dash' });
       game.shake = 4; tone(210, .12, 'sawtooth', .045);
     } else if (name === 'nova') {
       [...game.enemies].forEach(enemy => {
@@ -690,7 +702,7 @@
           if (enemy.hp > 0) { enemy.slow = .45; enemy.slowTimer = 3; }
         }
       });
-      game.slashes.push({ x: hero.x, y: hero.y, radius: 20, maxRadius: 240, life: .55, max: .55, ring: true, color: '#b48cff' });
+      addSlash({ x: hero.x, y: hero.y, radius: 20, maxRadius: 240, life: .55, max: .55, ring: true, color: '#b48cff', kind: 'nova' });
       game.shake = 5; burst(hero.x, hero.y, '#b48cff', 20); tone(310, .3, 'sine', .055);
     } else {
       game.sentinels.push({ x: game.crystal.x - 95, y: game.crystal.y - 88, life: 11, attackCd: 0, phase: 0 });
@@ -702,6 +714,7 @@
   function moveToward(entity, target, speed, dt) {
     const dx = target.x - entity.x, dy = target.y - entity.y, distance = Math.hypot(dx, dy) || 1;
     const amount = Math.min(distance, speed * dt);
+    entity.facing = Math.atan2(dy, dx);
     entity.x += dx / distance * amount;
     entity.y += dy / distance * amount;
     return distance;
@@ -711,6 +724,11 @@
     if (game.projectiles.length >= MAX_PROJECTILES) return false;
     game.projectiles.push(projectile);
     return true;
+  }
+
+  function addSlash(effect) {
+    game.slashes.push(effect);
+    if (game.slashes.length > 140) game.slashes.splice(0, game.slashes.length - 140);
   }
 
   function fireWardenProjectile(target, index) {
@@ -768,13 +786,14 @@
         .sort((a, b) => dist({ x: impactX, y: impactY }, a) - dist({ x: impactX, y: impactY }, b))
         .slice(0, 2 + projectile.splashRank)
         .forEach(enemy => damageEnemy(enemy, splashDamage));
-      game.slashes.push({ x: impactX, y: impactY, radius: 8, maxRadius: radius, life: .24, max: .24, ring: true, color: '#ff8fcb' });
+      addSlash({ x: impactX, y: impactY, radius: 8, maxRadius: radius, life: .24, max: .24, ring: true, color: '#ff8fcb', kind: 'splash' });
     }
 
     if (projectile.wardenShot && projectile.chainLeft > 0) {
       projectile.x = impactX; projectile.y = impactY;
       const nextTarget = projectileTarget(projectile, projectile.chainRange, true);
       if (nextTarget) {
+        addSlash({ x1: impactX, y1: impactY, x2: nextTarget.x, y2: nextTarget.y, life: .16, max: .16, color: '#ffd269', kind: 'chain' });
         projectile.target = nextTarget;
         projectile.damage *= .62;
         projectile.chainLeft--;
@@ -792,12 +811,13 @@
     const rankScale = 1 + (rank - 1) * .14;
     const maxHp = Math.min(game.hero.maxHp * .72, clamp(enemy.maxHp * .22, 75, 440) * rankScale);
     game.allies.push({
-      id: ++game.allyId, x: enemy.x, y: enemy.y, r: clamp(enemy.r * .82, 11, 31), type: enemy.type,
+      id: ++game.allyId, x: enemy.x, y: enemy.y, r: clamp(enemy.r * .82, 11, 31), type: enemy.type, body: enemy.body,
       hp: maxHp, maxHp, speed: clamp(enemy.speed * 1.05, 105, 195),
       damage: Math.min(game.hero.damage * .52, (clamp(enemy.damage * .28, 12, 70) + game.hero.damage * .06) * (1 + (rank - 1) * .1)),
       attackCd: .2, attackRate: Math.max(.58, .86 - rank * .035), hit: 0, phase: Math.random() * Math.PI * 2,
       color: enemy.color
     });
+    addSlash({ x: enemy.x, y: enemy.y, radius: 8, maxRadius: 42, life: .32, max: .32, ring: true, color: '#79efae', kind: 'raise' });
     burst(enemy.x, enemy.y, '#79efae', 12);
   }
 
@@ -833,7 +853,7 @@
     if (ally.attackCd <= 0) {
       ally.attackCd = ally.attackRate;
       damageEnemy(target, ally.damage);
-      game.slashes.push({ x1: ally.x, y1: ally.y, x2: target.x, y2: target.y, life: .16, max: .16, color: '#79efae' });
+      addSlash({ x1: ally.x, y1: ally.y, x2: target.x, y2: target.y, life: .16, max: .16, color: '#79efae', kind: 'revenant' });
     }
   }
 
@@ -1051,7 +1071,7 @@
     for (let i = 0; i < 2; i++) {
       const fragment = {
         id: ++game.spawnId, x: enemy.x + (i ? 9 : -9), y: enemy.y + (i ? -7 : 7), pathIndex: enemy.pathIndex,
-        type: `${enemy.type}_fragment`, r: Math.max(8, enemy.r * .65), hp: enemy.maxHp * .22, maxHp: enemy.maxHp * .22,
+        type: `${enemy.type}_fragment`, body: enemy.body || 'splitter', r: Math.max(8, enemy.r * .65), hp: enemy.maxHp * .22, maxHp: enemy.maxHp * .22,
         speed: enemy.speed * 1.15, damage: enemy.damage * .22, reward: 0, xp: 0, armor: 0,
         traits: enemy.traits.filter(trait => trait !== 'split'), regen: 0, crystalDamage: enemy.crystalDamage,
         points: 5, color: enemy.color, playerMade: enemy.playerMade, boss: false, attackCd: .4, leechCd: 0,
@@ -1111,18 +1131,22 @@
   function draw() {
     const width = canvas.width, height = canvas.height;
     const scale = Math.min(width / WORLD.w, height / WORLD.h), ox = (width - WORLD.w * scale) / 2, oy = (height - WORLD.h * scale) / 2;
+    const entityCount = game.enemies.length + game.allies.length;
+    renderDetail = entityCount > 650 ? -1 : entityCount > 220 ? 0 : entityCount > 90 ? 1 : 2;
+    activeHexAuraDrawn = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, width, height); ctx.fillStyle = '#050b11'; ctx.fillRect(0, 0, width, height);
     const shakeX = reducedMotion ? 0 : (Math.random() - .5) * game.shake * scale;
     const shakeY = reducedMotion ? 0 : (Math.random() - .5) * game.shake * scale;
     ctx.save(); ctx.translate(ox + shakeX, oy + shakeY); ctx.scale(scale, scale);
-    drawArena();
-    game.slashes.forEach(drawSlash);
-    game.sentinels.forEach(drawSentinel);
-    game.allies.forEach(drawAlly);
-    game.enemies.forEach(drawEnemy);
-    drawCrystal(); drawHero();
-    game.projectiles.forEach(drawProjectile);
-    game.particles.forEach(drawParticle);
+    drawIllustratedArena();
+    game.slashes.forEach(drawIllustratedSlash);
+    game.sentinels.forEach(drawIllustratedSentinel);
+    game.allies.forEach(drawIllustratedAlly);
+    game.enemies.forEach(drawIllustratedEnemy);
+    drawIllustratedCrystal(); drawIllustratedHero();
+    game.projectiles.forEach(drawIllustratedProjectile);
+    game.particles.forEach(drawIllustratedParticle);
+    drawBattlefieldTint();
     ctx.restore();
   }
 
@@ -1245,6 +1269,401 @@
     if (slash.ring) { ctx.beginPath(); ctx.arc(slash.x, slash.y, slash.radius, 0, Math.PI * 2); ctx.stroke(); }
     else { ctx.beginPath(); ctx.moveTo(slash.x1, slash.y1); ctx.lineTo(slash.x2, slash.y2); ctx.stroke(); }
     ctx.restore();
+  }
+
+  // The illustrated renderer keeps its static world in one offscreen layer. Late-game
+  // roster floods can therefore spend their frame budget on readable silhouettes.
+  function seededUnit(index, salt = 0) {
+    const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
+    return value - Math.floor(value);
+  }
+
+  function tracePathOn(target) {
+    target.beginPath();
+    PATH.forEach((point, index) => { if (index) target.lineTo(point.x, point.y); else target.moveTo(point.x, point.y); });
+  }
+
+  function drawFloorGlyph(target, x, y, radius, rotation, color) {
+    target.save(); target.translate(x, y); target.rotate(rotation); target.strokeStyle = color; target.lineWidth = 2;
+    target.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = i / 6 * TAU, px = Math.cos(angle) * radius, py = Math.sin(angle) * radius;
+      if (i) target.lineTo(px, py); else target.moveTo(px, py);
+    }
+    target.closePath(); target.stroke();
+    target.beginPath(); target.moveTo(-radius * .55, 0); target.lineTo(radius * .55, 0);
+    target.moveTo(0, -radius * .55); target.lineTo(0, radius * .55); target.stroke(); target.restore();
+  }
+
+  function drawPropCrystal(target, x, y, scale, color) {
+    target.save(); target.translate(x, y); target.scale(scale, scale);
+    target.fillStyle = 'rgba(0,0,0,.34)'; target.beginPath(); target.ellipse(0, 14, 22, 8, 0, 0, TAU); target.fill();
+    target.fillStyle = '#102632'; target.beginPath(); target.moveTo(-20, 12); target.lineTo(-9, -7); target.lineTo(6, 10); target.lineTo(17, -4); target.lineTo(24, 14); target.closePath(); target.fill();
+    target.fillStyle = color; target.beginPath(); target.moveTo(-10, 7); target.lineTo(-5, -28); target.lineTo(3, -7); target.lineTo(8, 10); target.closePath(); target.fill();
+    target.globalAlpha = .62; target.beginPath(); target.moveTo(6, 9); target.lineTo(13, -18); target.lineTo(20, 11); target.closePath(); target.fill();
+    target.globalAlpha = .38; target.fillStyle = '#fff'; target.beginPath(); target.moveTo(-4, -23); target.lineTo(-2, -5); target.lineTo(2, -8); target.closePath(); target.fill(); target.restore();
+  }
+
+  function buildArenaBackdrop() {
+    const layer = document.createElement('canvas'); layer.width = WORLD.w; layer.height = WORLD.h;
+    const target = layer.getContext('2d');
+    if (!target) return null;
+    const base = target.createLinearGradient(0, 0, WORLD.w, WORLD.h);
+    base.addColorStop(0, '#08131c'); base.addColorStop(.48, '#102433'); base.addColorStop(1, '#07121b');
+    target.fillStyle = base; target.fillRect(0, 0, WORLD.w, WORLD.h);
+
+    const bloomA = target.createRadialGradient(1230, 165, 20, 1230, 165, 520);
+    bloomA.addColorStop(0, 'rgba(62,122,139,.18)'); bloomA.addColorStop(1, 'rgba(2,9,14,0)');
+    target.fillStyle = bloomA; target.fillRect(650, 0, 950, 650);
+    const bloomB = target.createRadialGradient(320, 760, 20, 320, 760, 470);
+    bloomB.addColorStop(0, 'rgba(84,52,112,.14)'); bloomB.addColorStop(1, 'rgba(2,9,14,0)');
+    target.fillStyle = bloomB; target.fillRect(0, 300, 850, 600);
+
+    for (let y = -12, row = 0; y < WORLD.h; y += 74, row++) {
+      for (let x = -18, column = 0; x < WORLD.w; x += 78, column++) {
+        const index = row * 24 + column, inset = 3 + seededUnit(index, 1) * 3;
+        target.fillStyle = seededUnit(index, 2) > .5 ? 'rgba(29,58,69,.22)' : 'rgba(4,15,23,.2)';
+        target.fillRect(x + inset, y + inset, 74 - inset * 2, 70 - inset * 2);
+        target.strokeStyle = 'rgba(117,197,200,.045)'; target.strokeRect(x + inset, y + inset, 74 - inset * 2, 70 - inset * 2);
+        if (seededUnit(index, 4) > .79) {
+          const cx = x + 18 + seededUnit(index, 5) * 35, cy = y + 18 + seededUnit(index, 6) * 30;
+          target.strokeStyle = 'rgba(111,194,200,.08)'; target.beginPath(); target.moveTo(cx - 9, cy - 6); target.lineTo(cx, cy); target.lineTo(cx - 5, cy + 12); target.stroke();
+        }
+      }
+    }
+
+    target.lineCap = 'round'; target.lineJoin = 'round';
+    target.strokeStyle = 'rgba(1,5,9,.94)'; target.lineWidth = 86; tracePathOn(target); target.stroke();
+    target.strokeStyle = '#183743'; target.lineWidth = 72; tracePathOn(target); target.stroke();
+    target.strokeStyle = '#07131c'; target.lineWidth = 60; tracePathOn(target); target.stroke();
+    target.strokeStyle = 'rgba(108,227,218,.16)'; target.lineWidth = 54; tracePathOn(target); target.stroke();
+    target.strokeStyle = '#091821'; target.lineWidth = 47; tracePathOn(target); target.stroke();
+    target.strokeStyle = 'rgba(139,246,236,.11)'; target.lineWidth = 2; target.setLineDash([15, 21]); tracePathOn(target); target.stroke(); target.setLineDash([]);
+
+    for (let i = 0; i < ROUTE_ARROWS.length; i += 2) drawFloorGlyph(target, ROUTE_ARROWS[i].x, ROUTE_ARROWS[i].y, 18, ROUTE_ARROWS[i].a, 'rgba(112,231,223,.085)');
+    drawFloorGlyph(target, 1470, 625, 112, Math.PI / 6, 'rgba(112,231,223,.18)');
+    drawFloorGlyph(target, 1470, 625, 82, 0, 'rgba(112,231,223,.13)');
+    drawFloorGlyph(target, 45, 195, 70, Math.PI / 6, 'rgba(255,101,119,.18)');
+
+    const props = [
+      [360, 326, .85, '#5cb8c5'], [575, 755, 1.05, '#8b68c2'], [1010, 328, .7, '#5eb2bd'],
+      [1195, 755, .88, '#4b8fa7'], [1525, 92, 1.15, '#875fa5'], [72, 765, .75, '#4c91a3'],
+      [1280, 350, .55, '#b26ca5'], [765, 78, .8, '#4c91a3']
+    ];
+    props.forEach(prop => drawPropCrystal(target, ...prop));
+
+    target.fillStyle = 'rgba(112,231,223,.035)'; target.fillRect(1322, 535, 264, 182);
+    target.strokeStyle = 'rgba(112,231,223,.22)'; target.lineWidth = 2; target.strokeRect(1322, 535, 264, 182);
+    target.fillStyle = 'rgba(255,101,119,.05)'; target.fillRect(0, 118, 112, 154);
+    target.strokeStyle = 'rgba(255,101,119,.25)'; target.strokeRect(0, 118, 112, 154);
+    target.fillStyle = 'rgba(255,147,158,.72)'; target.font = '800 12px ui-sans-serif,system-ui,sans-serif'; target.fillText('BREACH', 22, 145);
+    target.fillStyle = 'rgba(147,244,237,.58)'; target.fillText('SANCTUM', 1410, 704);
+    return layer;
+  }
+
+  function drawRouteFlow() {
+    const phase = reducedMotion ? 0 : game.time * 1.8;
+    ROUTE_ARROWS.forEach((arrow, index) => {
+      const pulse = .26 + Math.max(0, Math.sin(phase - index * .62)) * .34;
+      ctx.save(); ctx.translate(arrow.x, arrow.y); ctx.rotate(arrow.a); ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#7ff8ef'; ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-8, -9); ctx.lineTo(-2, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha *= .45; ctx.translate(-18, 0); ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-5, -6); ctx.lineTo(-1, 0); ctx.lineTo(-5, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+    });
+  }
+
+  function drawPortal() {
+    const pulse = reducedMotion ? 0 : Math.sin(game.time * 3.4) * 4;
+    ctx.save(); ctx.translate(PATH[0].x, PATH[0].y); ctx.rotate(reducedMotion ? 0 : -game.time * .22);
+    ctx.strokeStyle = 'rgba(255,76,106,.28)'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(0, 0, 48 + pulse, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,158,121,.7)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 8; i++) { ctx.rotate(TAU / 8); ctx.beginPath(); ctx.moveTo(42, 0); ctx.lineTo(66, -7); ctx.lineTo(59, 8); ctx.closePath(); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawIllustratedArena() {
+    if (!arenaBackdrop) arenaBackdrop = buildArenaBackdrop();
+    if (arenaBackdrop) ctx.drawImage(arenaBackdrop, 0, 0);
+    else { ctx.fillStyle = '#08131c'; ctx.fillRect(0, 0, WORLD.w, WORLD.h); }
+    drawRouteFlow(); drawPortal();
+  }
+
+  function drawPolygon(points) {
+    ctx.beginPath();
+    points.forEach((point, index) => { if (index) ctx.lineTo(point[0], point[1]); else ctx.moveTo(point[0], point[1]); });
+    ctx.closePath();
+  }
+
+  function creatureBody(entity) {
+    return entity.body || summonDefs[entity.type]?.body || (entity.boss ? 'titan' : 'runner');
+  }
+
+  function entityFacing(entity, ally = false) {
+    if (Number.isFinite(entity.facing)) return entity.facing;
+    const target = ally ? game.hero : PATH[entity.pathIndex] || game.crystal;
+    return Math.atan2(target.y - entity.y, target.x - entity.x);
+  }
+
+  function drawCreatureSilhouette(entity, body, color, detail, spectral = false) {
+    const r = entity.r, flash = entity.hit > 0;
+    ctx.fillStyle = flash ? '#fff8f8' : color;
+    ctx.strokeStyle = spectral ? '#a8ffd0' : 'rgba(255,235,238,.28)';
+    ctx.lineWidth = Math.max(1.5, r * .055);
+
+    if (detail < 0) {
+      drawPolygon([[r, 0], [-r * .62, r * .65], [-r * .35, 0], [-r * .62, -r * .65]]); ctx.fill();
+      return;
+    }
+
+    if (body === 'runner') {
+      drawPolygon([[r * 1.05, 0], [-r * .34, r * .72], [-r * .08, r * .2], [-r * .92, r * .5], [-r * .62, 0], [-r * .92, -r * .5], [-r * .08, -r * .2], [-r * .34, -r * .72]]); ctx.fill();
+    } else if (body === 'pack') {
+      ctx.beginPath(); ctx.ellipse(0, 0, r * .9, r * .58, 0, 0, TAU); ctx.fill();
+      if (detail > 0) { ctx.beginPath(); for (let side = -1; side <= 1; side += 2) for (let i = -1; i <= 1; i++) { ctx.moveTo(-r * .25 + i * r * .35, side * r * .35); ctx.lineTo(-r * .42 + i * r * .38, side * r * .8); } ctx.stroke(); }
+      drawPolygon([[r, 0], [r * .42, r * .35], [r * .42, -r * .35]]); ctx.fill();
+    } else if (body === 'guard') {
+      drawPolygon([[r * .88, 0], [r * .48, r * .82], [-r * .45, r], [-r, r * .42], [-r, -r * .42], [-r * .45, -r], [r * .48, -r * .82]]); ctx.fill();
+      ctx.fillStyle = '#10151d'; drawPolygon([[r * .48, 0], [r * .08, r * .6], [-r * .52, r * .46], [-r * .7, 0], [-r * .52, -r * .46], [r * .08, -r * .6]]); ctx.fill();
+    } else if (body === 'hexer') {
+      drawPolygon([[r * .82, 0], [0, r], [-r * .72, r * .48], [-r * .44, 0], [-r * .72, -r * .48], [0, -r]]); ctx.fill();
+      ctx.fillStyle = '#17101f'; drawPolygon([[r * .43, 0], [0, r * .42], [-r * .3, 0], [0, -r * .42]]); ctx.fill();
+    } else if (body === 'brute' || body === 'berserk') {
+      drawPolygon([[r * .92, 0], [r * .48, r * .45], [r * .22, r * .95], [-r * .38, r * .72], [-r, r * .42], [-r * .68, 0], [-r, -r * .42], [-r * .38, -r * .72], [r * .22, -r * .95], [r * .48, -r * .45]]); ctx.fill();
+      ctx.fillStyle = '#17121a'; ctx.fillRect(-r * .45, -r * .34, r * .85, r * .68);
+    } else if (body === 'surge') {
+      drawPolygon([[r, 0], [r * .15, r * .3], [-r * .72, r], [-r * .48, r * .2], [-r * .82, 0], [-r * .48, -r * .2], [-r * .72, -r], [r * .15, -r * .3]]); ctx.fill();
+      ctx.fillStyle = '#11141e'; drawPolygon([[r * .55, 0], [-r * .28, r * .23], [-r * .5, 0], [-r * .28, -r * .23]]); ctx.fill();
+    } else if (body === 'siege') {
+      drawPolygon([[r, 0], [r * .48, r * .72], [-r * .75, r * .75], [-r, r * .35], [-r, -r * .35], [-r * .75, -r * .75], [r * .48, -r * .72]]); ctx.fill();
+      ctx.fillStyle = '#15151b'; ctx.fillRect(-r * .56, -r * .42, r * 1.02, r * .84);
+      if (detail > 0) { ctx.fillStyle = '#080d12'; ctx.beginPath(); ctx.arc(-r * .48, r * .7, r * .22, 0, TAU); ctx.arc(-r * .48, -r * .7, r * .22, 0, TAU); ctx.fill(); }
+    } else if (body === 'regen') {
+      ctx.beginPath(); ctx.arc(-r * .22, 0, r * .72, 0, TAU); ctx.arc(r * .28, r * .35, r * .5, 0, TAU); ctx.arc(r * .28, -r * .35, r * .5, 0, TAU); ctx.fill();
+      drawPolygon([[r, 0], [r * .3, r * .32], [r * .3, -r * .32]]); ctx.fill();
+    } else if (body === 'splitter') {
+      ctx.beginPath(); ctx.arc(-r * .22, 0, r * .72, 0, TAU); ctx.arc(r * .36, 0, r * .65, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#1d1421'; ctx.beginPath(); ctx.moveTo(r * .05, -r * .65); ctx.lineTo(r * .05, r * .65); ctx.stroke();
+    } else if (body === 'leech') {
+      ctx.beginPath(); ctx.ellipse(-r * .08, 0, r, r * .62, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#180d14'; ctx.beginPath(); ctx.arc(r * .62, 0, r * .42, 0, TAU); ctx.fill();
+    } else if (body === 'phase') {
+      drawPolygon([[r, 0], [r * .15, r * .58], [-r * .42, r], [-r * .3, r * .3], [-r * .86, 0], [-r * .3, -r * .3], [-r * .42, -r], [r * .15, -r * .58]]); ctx.fill();
+      ctx.fillStyle = '#10151e'; drawPolygon([[r * .45, 0], [-r * .05, r * .26], [-r * .28, 0], [-r * .05, -r * .26]]); ctx.fill();
+    } else if (body === 'commander') {
+      drawPolygon([[r * .9, 0], [r * .32, r * .48], [r * .08, r], [-r * .55, r * .64], [-r * .84, 0], [-r * .55, -r * .64], [r * .08, -r], [r * .32, -r * .48]]); ctx.fill();
+      ctx.fillStyle = '#14111a'; drawPolygon([[r * .48, 0], [0, r * .5], [-r * .4, 0], [0, -r * .5]]); ctx.fill();
+    } else {
+      drawPolygon([[r, 0], [r * .58, r * .7], [0, r], [-r * .72, r * .72], [-r, 0], [-r * .72, -r * .72], [0, -r], [r * .58, -r * .7]]); ctx.fill();
+      ctx.fillStyle = '#171119'; drawPolygon([[r * .55, 0], [0, r * .52], [-r * .48, 0], [0, -r * .52]]); ctx.fill();
+    }
+
+    if (detail > 0) {
+      ctx.fillStyle = spectral ? '#d8ffe8' : '#0a1118'; ctx.beginPath(); ctx.arc(r * .34, -r * .13, Math.max(2.2, r * .11), 0, TAU); ctx.fill();
+      ctx.globalAlpha = .42; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(r * .18, -r * .45); ctx.lineTo(r * .55, -r * .22); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawTraitAccents(enemy, detail) {
+    const r = enemy.r;
+    if (enemy.playerMade) {
+      ctx.fillStyle = '#c795ff'; drawPolygon([[-r * .7, 0], [-r * .98, r * .28], [-r * .98, -r * .28]]); ctx.fill();
+      ctx.fillStyle = '#f1ddff'; ctx.beginPath(); ctx.arc(-r * .64, 0, Math.max(2, r * .09), 0, TAU); ctx.fill();
+    }
+    if (hasTrait(enemy, 'hexer')) {
+      ctx.strokeStyle = '#d5a4ff'; ctx.lineWidth = Math.max(1.5, r * .07);
+      drawPolygon([[r * .52, 0], [0, r * .46], [-r * .36, 0], [0, -r * .46]]); ctx.stroke();
+      ctx.fillStyle = '#f0c8ff'; ctx.beginPath(); ctx.arc(r * .08, 0, Math.max(2, r * .09), 0, TAU); ctx.fill();
+    }
+    if (detail < 1) return;
+    if (hasTrait(enemy, 'phase') && (game.time + enemy.id * .17) % 4 < 1.25) {
+      ctx.globalAlpha = .48; ctx.strokeStyle = '#79fff5'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-r * .18, 0, r * .92, -1.15, 1.15); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (hasTrait(enemy, 'regen')) {
+      ctx.fillStyle = '#8bf58a'; ctx.beginPath(); ctx.arc(-r * .12, 0, Math.max(3, r * .15), 0, TAU); ctx.fill();
+      if (detail > 1) { ctx.strokeStyle = 'rgba(139,245,138,.6)'; ctx.beginPath(); ctx.arc(-r * .12, 0, r * (.32 + Math.sin(game.time * 3 + enemy.id) * .04), 0, TAU); ctx.stroke(); }
+    }
+    if (hasTrait(enemy, 'berserk') && enemy.hp <= enemy.maxHp * .5) {
+      ctx.fillStyle = '#ffb069'; drawPolygon([[r * .18, -r * .52], [-r * .15, -r * 1.05], [r * .42, -r * .66]]); ctx.fill();
+      drawPolygon([[r * .18, r * .52], [-r * .15, r * 1.05], [r * .42, r * .66]]); ctx.fill();
+    }
+    if (hasTrait(enemy, 'surge') && Math.sin(enemy.phase * .48) > .55) {
+      ctx.strokeStyle = '#7bdcff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-r * .75, -r * .55); ctx.lineTo(-r * 1.15, 0); ctx.lineTo(-r * .75, r * .55); ctx.stroke();
+    }
+    if (hasTrait(enemy, 'siege')) {
+      ctx.fillStyle = '#ffb36b'; drawPolygon([[r * 1.12, 0], [r * .72, r * .24], [r * .72, -r * .24]]); ctx.fill();
+    }
+    if (hasTrait(enemy, 'leech')) {
+      ctx.fillStyle = '#ffe5e7'; for (let side = -1; side <= 1; side += 2) { drawPolygon([[r * .65, side * r * .06], [r * .38, side * r * .29], [r * .72, side * r * .24]]); ctx.fill(); }
+    }
+    if (hasTrait(enemy, 'split')) {
+      ctx.strokeStyle = '#b9ffb2'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r * .55); ctx.lineTo(0, r * .55); ctx.stroke();
+    }
+    if (hasTrait(enemy, 'commander')) {
+      ctx.fillStyle = '#ffd269'; drawPolygon([[-r * .34, -r * .82], [-r * .12, -r * 1.22], [r * .02, -r * .82], [r * .25, -r * 1.12], [r * .42, -r * .72]]); ctx.fill();
+    }
+    if (enemy.boss) {
+      ctx.strokeStyle = 'rgba(255,210,105,.78)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r * 1.18, -.9, .9); ctx.stroke();
+    }
+  }
+
+  function drawIllustratedEnemy(enemy) {
+    const special = enemy.boss || hasTrait(enemy, 'hexer') || hasTrait(enemy, 'commander');
+    const detail = enemy.boss ? 2 : renderDetail < 0 ? (special ? 0 : -1) : renderDetail;
+    const bob = reducedMotion || detail < 1 ? 0 : Math.sin(enemy.phase + enemy.id * .31) * 2;
+    ctx.save(); ctx.translate(enemy.x, enemy.y);
+    if (detail >= 0) { ctx.fillStyle = 'rgba(0,0,0,.34)'; ctx.beginPath(); ctx.ellipse(0, enemy.r * .55, enemy.r * .82, enemy.r * .32, 0, 0, TAU); ctx.fill(); }
+    if (!activeHexAuraDrawn && hasTrait(enemy, 'hexer') && game.hero.hexed && detail > 0) {
+      const dx = enemy.x - game.hero.x, dy = enemy.y - game.hero.y;
+      if (dx * dx + dy * dy < HEX_RADIUS_SQUARED) { activeHexAuraDrawn = true; ctx.strokeStyle = 'rgba(180,140,255,.11)'; ctx.lineWidth = 9; ctx.beginPath(); ctx.arc(0, 0, HEX_RADIUS, 0, TAU); ctx.stroke(); }
+    }
+    ctx.translate(0, bob); ctx.rotate(entityFacing(enemy));
+    const phaseActive = hasTrait(enemy, 'phase') && (game.time + enemy.id * .17) % 4 < 1.25;
+    if (phaseActive) ctx.globalAlpha = .68;
+    drawCreatureSilhouette(enemy, creatureBody(enemy), enemy.color, detail);
+    ctx.globalAlpha = 1; drawTraitAccents(enemy, detail); ctx.restore();
+
+    const showHealth = enemy.boss || (enemy.hp < enemy.maxHp && (detail > 1 || (detail > 0 && enemy.r >= 31)));
+    if (showHealth) {
+      const width = enemy.r * 2.05, y = enemy.y - enemy.r - 15;
+      ctx.fillStyle = 'rgba(1,5,8,.82)'; ctx.fillRect(enemy.x - width / 2 - 1, y - 1, width + 2, 7);
+      ctx.fillStyle = enemy.boss ? '#ff6577' : enemy.playerMade ? '#bd8bff' : '#e05b6d'; ctx.fillRect(enemy.x - width / 2, y, width * Math.max(0, enemy.hp / enemy.maxHp), 5);
+      ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(enemy.x - width / 2, y, width * Math.max(0, enemy.hp / enemy.maxHp), 1);
+    }
+  }
+
+  function drawIllustratedAlly(ally) {
+    const detail = renderDetail < 0 ? -1 : Math.max(0, renderDetail);
+    const bob = reducedMotion || detail < 1 ? 0 : Math.sin(ally.phase) * 2;
+    ctx.save(); ctx.translate(ally.x, ally.y);
+    if (detail >= 0) { ctx.fillStyle = 'rgba(0,8,5,.32)'; ctx.beginPath(); ctx.ellipse(0, ally.r * .55, ally.r * .85, ally.r * .32, 0, 0, TAU); ctx.fill(); }
+    ctx.rotate(entityFacing(ally, true)); ctx.translate(0, bob);
+    if (detail > 0) { ctx.globalAlpha = .24; ctx.fillStyle = '#79efae'; drawPolygon([[-ally.r * .25, 0], [-ally.r * 1.28, ally.r * .56], [-ally.r * .9, 0], [-ally.r * 1.28, -ally.r * .56]]); ctx.fill(); }
+    ctx.globalAlpha = .9; drawCreatureSilhouette(ally, creatureBody(ally), '#43d99a', detail, true); ctx.globalAlpha = 1;
+    ctx.strokeStyle = ally.color || '#d8ffe8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, ally.r * .45, -.9, .9); ctx.stroke();
+    if (detail > 0) { ctx.strokeStyle = '#a7ffd0'; ctx.beginPath(); ctx.ellipse(-ally.r * .05, -ally.r * .83, ally.r * .34, ally.r * .13, 0, 0, TAU); ctx.stroke(); }
+    ctx.restore();
+    if (ally.hp < ally.maxHp && detail > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(ally.x - ally.r, ally.y - ally.r - 11, ally.r * 2, 5);
+      ctx.fillStyle = '#79efae'; ctx.fillRect(ally.x - ally.r, ally.y - ally.r - 11, ally.r * 2 * Math.max(0, ally.hp / ally.maxHp), 4);
+    }
+  }
+
+  function drawIllustratedCrystal() {
+    const crystal = game.crystal, health = Math.max(0, crystal.hp / crystal.maxHp);
+    const pulse = 1 + (reducedMotion ? 0 : Math.sin(game.time * 3) * .024) + crystal.pulse * .075;
+    ctx.save(); ctx.translate(crystal.x, crystal.y);
+    const glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 125);
+    glow.addColorStop(0, crystal.pulse > 0 ? 'rgba(255,155,174,.48)' : 'rgba(112,231,223,.42)'); glow.addColorStop(1, 'rgba(112,231,223,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, 125, 0, TAU); ctx.fill();
+    ctx.strokeStyle = health < .35 ? 'rgba(255,101,119,.7)' : 'rgba(112,231,223,.35)'; ctx.lineWidth = 3;
+    ctx.save(); ctx.rotate(reducedMotion ? 0 : game.time * .12);
+    for (let i = 0; i < 6; i++) { ctx.rotate(TAU / 6); ctx.beginPath(); ctx.moveTo(66, 0); ctx.lineTo(91, -10); ctx.lineTo(102, 0); ctx.lineTo(91, 10); ctx.closePath(); ctx.stroke(); }
+    ctx.restore();
+    ctx.fillStyle = '#0b2630'; for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(i / 6 * TAU); drawPolygon([[28, 0], [57, -18], [74, 0], [57, 18]]); ctx.fill(); ctx.restore(); }
+    ctx.save(); ctx.scale(pulse, pulse); ctx.shadowBlur = 24; ctx.shadowColor = health < .35 ? '#ff6577' : '#39d8dd';
+    ctx.fillStyle = crystal.pulse > 0 ? '#fff' : health < .35 ? '#ff8c9a' : '#83fff4';
+    drawPolygon([[0, -67], [37, -16], [22, 49], [0, 72], [-22, 49], [-37, -16]]); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = health < .35 ? '#6d2435' : '#176070'; drawPolygon([[0, -48], [18, -8], [0, 48], [-18, -8]]); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; drawPolygon([[-3, -52], [8, -18], [2, 12], [-8, -16]]); ctx.fill();
+    if (health < .68) { ctx.strokeStyle = '#280e18'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(3, -34); ctx.lineTo(-8, -8); ctx.lineTo(7, 11); ctx.lineTo(-3, 35); ctx.stroke(); }
+    ctx.restore(); ctx.restore();
+  }
+
+  function drawHeroRelics(hero) {
+    const relics = [
+      ['multishot', '#8ffff4'], ['chain', '#ffd269'], ['splash', '#ff8fcb'], ['revive', '#79efae']
+    ];
+    relics.forEach(([type, color], index) => {
+      const rank = game.items[type]; if (!rank) return;
+      ctx.strokeStyle = color; ctx.globalAlpha = .4 + rank * .12; ctx.lineWidth = 2 + rank * .55;
+      ctx.beginPath(); ctx.arc(0, 0, hero.r + 13 + rank, index * Math.PI / 2 + .12, index * Math.PI / 2 + 1.22); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawIllustratedHero() {
+    const hero = game.hero, angle = Math.atan2(hero.aimY, hero.aimX), bob = reducedMotion ? 0 : Math.sin(game.time * 7) * 1.2;
+    ctx.save(); ctx.translate(hero.x, hero.y);
+    ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(0, 16, 28, 12, 0, 0, TAU); ctx.fill();
+    drawHeroRelics(hero);
+    if (hero.invuln > 0) { ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, hero.r + 9, 0, TAU); ctx.stroke(); }
+    if (hero.hexed) {
+      ctx.strokeStyle = '#c79aff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, hero.r + 17, .2, 2.5); ctx.arc(0, 0, hero.r + 17, 3.35, 5.75); ctx.stroke();
+      ctx.fillStyle = '#ff718d'; for (let i = 0; i < 3; i++) { ctx.save(); ctx.rotate(i / 3 * TAU + game.time * .18); drawPolygon([[0, -hero.r - 23], [-5, -hero.r - 12], [5, -hero.r - 12]]); ctx.fill(); ctx.restore(); }
+    }
+    ctx.rotate(angle); ctx.translate(0, bob);
+    ctx.fillStyle = '#09141d'; drawPolygon([[-8, 0], [-30, 23], [-23, 0], [-30, -23]]); ctx.fill();
+    ctx.fillStyle = '#203f4d'; ctx.beginPath(); ctx.arc(-7, 0, 17, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#70e7df'; ctx.beginPath(); ctx.arc(-4, -15, 8, 0, TAU); ctx.arc(-4, 15, 8, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#9bfff7'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(34, 0); ctx.stroke();
+    ctx.strokeStyle = '#234c5b'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(22, 0); ctx.stroke();
+    ctx.fillStyle = '#89fff5'; drawPolygon([[39, 0], [23, 7], [23, -7]]); ctx.shadowBlur = 14; ctx.shadowColor = '#70e7df'; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#0a1821'; drawPolygon([[8, 0], [-8, 12], [-17, 0], [-8, -12]]); ctx.fill();
+    ctx.fillStyle = '#d8fffb'; ctx.beginPath(); ctx.arc(4, 0, 4, 0, TAU); ctx.fill(); ctx.restore();
+  }
+
+  function drawIllustratedSentinel(sentinel) {
+    const lifeRatio = Math.max(0, sentinel.life / 11);
+    ctx.save(); ctx.translate(sentinel.x, sentinel.y);
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0, 18, 25, 9, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,210,105,.32)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(game.crystal.x - sentinel.x, game.crystal.y - sentinel.y); ctx.stroke();
+    ctx.fillStyle = '#1e2930'; drawPolygon([[26, 0], [13, 22], [-13, 22], [-26, 0], [-13, -22], [13, -22]]); ctx.fill();
+    ctx.save(); ctx.rotate(sentinel.phase); ctx.fillStyle = '#ffd269';
+    for (let i = 0; i < 3; i++) { ctx.rotate(TAU / 3); drawPolygon([[7, -4], [28, 0], [7, 4]]); ctx.fill(); }
+    ctx.restore();
+    ctx.fillStyle = '#fff2ad'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#ffd269'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 31, -Math.PI / 2, -Math.PI / 2 + TAU * lifeRatio); ctx.stroke(); ctx.restore();
+  }
+
+  function drawIllustratedProjectile(projectile) {
+    let dx = 1, dy = 0;
+    if (projectile.target) { dx = projectile.target.x - projectile.x; dy = projectile.target.y - projectile.y; }
+    const magnitude = Math.hypot(dx, dy) || 1, angle = Math.atan2(dy, dx);
+    const trail = renderDetail < 0 && !projectile.wardenShot ? 5 : projectile.critical ? 28 : projectile.wardenShot ? 20 : 12;
+    ctx.save(); ctx.translate(projectile.x, projectile.y); ctx.rotate(angle);
+    ctx.globalAlpha = .24; ctx.strokeStyle = projectile.color; ctx.lineWidth = projectile.r * 2.4; ctx.beginPath(); ctx.moveTo(-trail, 0); ctx.lineTo(2, 0); ctx.stroke();
+    ctx.globalAlpha = .86; ctx.lineWidth = Math.max(1.5, projectile.r * .68); ctx.beginPath(); ctx.moveTo(-trail * .82, 0); ctx.lineTo(4, 0); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.fillStyle = projectile.color;
+    if (projectile.wardenShot) { drawPolygon([[projectile.r * 1.5, 0], [0, projectile.r], [-projectile.r, 0], [0, -projectile.r]]); ctx.fill(); }
+    else { ctx.beginPath(); ctx.arc(0, 0, projectile.r, 0, TAU); ctx.fill(); }
+    if (projectile.critical && renderDetail >= 0) { ctx.strokeStyle = '#fff6c9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -projectile.r * 1.8); ctx.lineTo(0, projectile.r * 1.8); ctx.moveTo(-projectile.r * 1.8, 0); ctx.lineTo(projectile.r * 1.8, 0); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawIllustratedParticle(particle) {
+    const alpha = Math.max(0, particle.life / particle.max);
+    ctx.save(); ctx.translate(particle.x, particle.y); ctx.rotate(Math.atan2(particle.vy, particle.vx)); ctx.globalAlpha = alpha; ctx.fillStyle = particle.color;
+    if (renderDetail > 0) { drawPolygon([[particle.size, 0], [0, particle.size * .65], [-particle.size * 1.8, 0], [0, -particle.size * .65]]); ctx.fill(); }
+    else ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+    ctx.restore();
+  }
+
+  function drawIllustratedSlash(slash) {
+    const alpha = Math.max(0, slash.life / slash.max);
+    ctx.save(); ctx.globalAlpha = alpha;
+    if (slash.ring) {
+      if (slash.kind === 'splash' || slash.kind === 'nova' || slash.kind === 'raise') {
+        ctx.globalAlpha = alpha * .11; ctx.fillStyle = slash.color; ctx.beginPath(); ctx.arc(slash.x, slash.y, slash.radius, 0, TAU); ctx.fill(); ctx.globalAlpha = alpha;
+      }
+      ctx.strokeStyle = slash.color; ctx.lineWidth = slash.kind === 'nova' ? 7 : 4; ctx.beginPath(); ctx.arc(slash.x, slash.y, slash.radius, 0, TAU); ctx.stroke();
+      if (slash.kind === 'raise') { ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(slash.x, slash.y, slash.radius * .65, 0, TAU); ctx.stroke(); }
+    } else if (slash.kind === 'chain') {
+      const dx = slash.x2 - slash.x1, dy = slash.y2 - slash.y1, length = Math.hypot(dx, dy) || 1;
+      const nx = -dy / length, ny = dx / length, bend = Math.min(12, length * .1);
+      ctx.strokeStyle = 'rgba(255,210,105,.3)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(slash.x1, slash.y1); ctx.lineTo(slash.x1 + dx * .34 + nx * bend, slash.y1 + dy * .34 + ny * bend); ctx.lineTo(slash.x1 + dx * .68 - nx * bend * .7, slash.y1 + dy * .68 - ny * bend * .7); ctx.lineTo(slash.x2, slash.y2); ctx.stroke();
+      ctx.strokeStyle = '#fff3a8'; ctx.lineWidth = 2; ctx.stroke();
+    } else {
+      ctx.strokeStyle = slash.color; ctx.lineCap = 'round'; ctx.lineWidth = slash.kind === 'dash' ? 13 * alpha : 6 * alpha;
+      ctx.beginPath(); ctx.moveTo(slash.x1, slash.y1); ctx.lineTo(slash.x2, slash.y2); ctx.stroke();
+      if (slash.kind === 'dash') { ctx.globalAlpha = alpha * .7; ctx.strokeStyle = '#d7fffb'; ctx.lineWidth = 3; ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+
+  function drawBattlefieldTint() {
+    const danger = Math.max(0, .38 - game.crystal.hp / game.crystal.maxHp) / .38;
+    if (danger <= 0 && game.flash <= 0) return;
+    const alpha = Math.min(.12, danger * .09 + game.flash * .04);
+    ctx.fillStyle = `rgba(255,42,78,${alpha})`; ctx.fillRect(0, 0, WORLD.w, 18); ctx.fillRect(0, WORLD.h - 18, WORLD.w, 18); ctx.fillRect(0, 0, 18, WORLD.h); ctx.fillRect(WORLD.w - 18, 0, 18, WORLD.h);
   }
 
   function updateSummonUI(force = false) {
