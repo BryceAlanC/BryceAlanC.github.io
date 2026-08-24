@@ -92,13 +92,14 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 #gameCanvas { display: block; width: 100%; height: 100%; min-height: 300px; touch-action: none; }
 
 .tray {
-  display: flex; align-items: stretch; gap: 7px; min-width: 0;
+  display: grid; gap: 6px; min-width: 0;
   background:
     linear-gradient(180deg, #224c3fe8, #112e2ce8),
     repeating-linear-gradient(90deg, transparent 0 44px, #ffffff08 44px 46px);
   border: 3px solid #729c5f; border-radius: 20px;
   padding: 8px; box-shadow: inset 0 2px #dbffc333, 0 8px 24px #03141488;
 }
+.tray-main { display: flex; align-items: stretch; gap: 7px; min-width: 0; }
 .tower-cards {
   min-width: 0; flex: 1; display: flex; gap: 7px; overflow-x: auto; overflow-y: hidden;
   padding: 5px 3px 8px; scroll-snap-type: x proximity; scrollbar-color: #7ab995 #102c2b;
@@ -114,6 +115,7 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 .seed-card.selected { transform: translateY(-5px); border-color: #fff59b; box-shadow: 0 0 0 3px #fff59b3d, inset 0 2px #fff8, 0 6px 0 #081e1c; }
 .seed-card.unaffordable { filter: grayscale(.65) brightness(.6); }
 .seed-card.combo::after { content: "◆"; position: absolute; right: 5px; top: 3px; font-size: 11px; color: #fff3a0; filter: drop-shadow(0 0 4px #fff); }
+.seed-card.deep::before { content: "II"; position: absolute; right: 5px; top: 3px; font-size: 9px; font-weight: 950; color: #fff3a0; text-shadow: 0 1px #17352e; }
 .seed-symbol { display: grid; place-items: center; height: 53px; font-size: 38px; line-height: 1; color: var(--tower-color, #ffe36d); text-shadow: 0 2px #14352c, 0 0 10px color-mix(in srgb, var(--tower-color, #ffe36d) 65%, transparent); }
 .seed-symbol::after { content: ""; position: absolute; width: 7px; height: 21px; top: 35px; left: calc(50% - 3px); background: #4ec46a; border-radius: 8px; }
 .cost { position: absolute; left: 4px; right: 4px; bottom: 3px; font-size: 14px; font-weight: 900; color: white; }
@@ -140,21 +142,18 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 .sell-card.ready { border-color: #ffcb7c; box-shadow: inset 0 2px #ffffff2e, 0 4px 0 #321b12; }
 
 .tower-inspector {
-  position: absolute;
-  z-index: 3;
-  left: 13px;
-  bottom: 12px;
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 9px;
-  max-width: min(330px, calc(100% - 26px));
-  min-height: 58px;
-  padding: 6px 13px 7px 7px;
-  pointer-events: none;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 75px;
+  padding: 7px 11px 8px 7px;
   color: white;
   background: linear-gradient(135deg, #183b32f2, #0d2827ed);
   border: 3px solid #e9e18b;
-  border-radius: 18px;
+  border-radius: 15px;
   box-shadow: inset 0 2px #ffffff24, 0 7px 18px #07181780;
 }
 .tower-inspector.hidden { display: none; }
@@ -171,7 +170,8 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
   font-size: 26px;
   text-shadow: 0 2px #14372e;
 }
-.tower-inspector-copy { display: grid; min-width: 0; text-align: left; }
+.tower-inspector-copy { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; min-width: 0; flex: 1; text-align: left; }
+.tower-inspector-heading { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .tower-inspector-copy b {
   overflow: hidden;
   font-size: 13px;
@@ -180,7 +180,40 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tower-inspector-copy small { color: #e8f5ba; font-size: 11px; font-weight: 850; line-height: 1.25; }
+.tower-inspector-heading > span {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: #18352e;
+  background: #e8f5ba;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .05em;
+}
+.tower-inspector-copy small { grid-column: 1; color: #e8f5ba; font-size: 10px; font-weight: 850; line-height: 1.2; }
+.tower-inspector-stats {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  min-width: 0;
+  align-content: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.tower-inspector-stats span {
+  padding: 2px 6px;
+  border: 1px solid #ffffff26;
+  border-radius: 9px;
+  color: #fff5bd;
+  background: #ffffff0c;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.tower-inspector-copy p { grid-column: 1 / -1; margin: 0; font-size: 10px; font-weight: 800; line-height: 1.2; }
+.tower-inspector-effects { color: #fff; }
+.tower-inspector-copy .tower-inspector-path { color: #bceccd; }
 
 .overlay {
   position: absolute;
@@ -229,7 +262,7 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 .specialization-hint { margin: 0 0 13px; font-size: 20px; font-weight: 950; color: #72428b; }
 .path-choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .path-choice { position: relative; min-width: 0; min-height: 112px; border: 4px solid #ffffffcc; border-radius: 20px; padding: 8px 3px 5px; color: #17352e; box-shadow: inset 0 2px #fff9, 0 6px #284b3f; }
-.path-choice:hover, .path-choice:focus-visible { transform: translateY(-3px); filter: brightness(1.06); }
+.path-choice:hover:not(:disabled), .path-choice:focus-visible { transform: translateY(-3px); filter: brightness(1.06); }
 .path-choice:focus-visible, .graft-choice:focus-visible, .modal-close:focus-visible {
   outline-color: #142e29;
   outline-offset: 3px;
@@ -241,6 +274,9 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 .path-icon { display: grid; place-items: center; min-height: 55px; font-size: 44px; line-height: 1; text-shadow: 0 2px #fff9; }
 .path-choice small { display: block; margin-top: 3px; font-size: 11px; font-weight: 950; letter-spacing: .08em; }
 .path-pips { min-height: 9px; display: block; font-size: 10px; line-height: 1; color: #fff; text-shadow: 0 1px #17352e; }
+.path-reward { display: block; min-height: 22px; margin-top: 4px; font-size: 8px; font-style: normal; font-weight: 950; line-height: 1.15; }
+.path-choice:disabled { cursor: default; filter: grayscale(.65); opacity: .52; box-shadow: inset 0 2px #fff7, 0 3px #41554b; }
+.path-choice.mastered::after { content: "MAX"; position: absolute; inset: 5px 5px auto auto; padding: 2px 4px; border-radius: 7px; color: white; background: #17352ecc; font-size: 8px; font-weight: 950; }
 .combo-hint { margin: 16px 0 0; font-size: 28px; color: #526659; }
 
 .upgrade-path-card {
@@ -375,7 +411,8 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
   .speed-button { min-width: 44px; padding: 0 6px; }
   #fullscreenButton { display: none; }
   .seed-counter { display: flex; }
-  .tray { gap: 4px; padding: 5px 4px; border-radius: 14px; }
+  .tray { gap: 4px; padding: 4px; border-radius: 14px; }
+  .tray-main { gap: 4px; }
   .tower-cards { gap: 4px; padding-top: 4px; }
   .seed-card { min-width: 74px; width: 74px; height: 70px; border-radius: 12px; }
   .seed-symbol { height: 45px; font-size: 31px; }
@@ -387,10 +424,16 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
   .cost { font-size: 12px; }
   .tray-divider { display: none; }
   .game-shell { border-width: 3px; border-radius: 15px; }
-  .tower-inspector { left: 8px; bottom: 8px; min-height: 51px; padding: 4px 10px 5px 5px; border-width: 2px; border-radius: 14px; }
+  .tower-inspector { min-height: 70px; padding: 5px 7px 6px 4px; border-width: 2px; border-radius: 11px; gap: 6px; }
   .tower-inspector-glyph { width: 37px; height: 37px; flex-basis: 37px; font-size: 23px; }
+  .tower-inspector-copy { grid-template-columns: minmax(0, 1fr) auto; gap: 1px 5px; }
   .tower-inspector-copy b { font-size: 11px; }
+  .tower-inspector-heading { gap: 4px; }
+  .tower-inspector-heading > span { padding: 1px 4px; font-size: 9px; }
   .tower-inspector-copy small { font-size: 9px; }
+  .tower-inspector-stats { gap: 2px; }
+  .tower-inspector-stats span { padding: 1px 4px; font-size: 9px; }
+  .tower-inspector-copy p { font-size: 9px; }
   .tutorial-card, .end-card, .specialization-card, .upgrade-path-card { padding: 18px 12px; }
   .path-choices, .graft-choices { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .path-choice { min-height: 88px; border-width: 3px; border-radius: 15px; }
@@ -421,7 +464,8 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
 }
 
 @media (max-height: 580px) and (orientation: landscape) {
-  #app { grid-template-rows: 44px minmax(226px, 1fr) 62px; }
+  #app { height: 100dvh; min-height: 0; grid-template-rows: 44px minmax(150px, 1fr) auto; }
+  #gameCanvas { min-height: 0; }
   .topbar { min-height: 44px; }
   .home, .round-button, .speed-button { height: 44px; }
   .counter { height: 34px; }
@@ -432,8 +476,12 @@ canvas:focus-visible { outline: 4px solid white; outline-offset: -5px; }
   .upgrade-card, .sell-card { width: 62px; min-width: 62px; padding-top: 2px; font-size: 20px; }
   .upgrade-card b, .sell-card b { font-size: 8px; }
   .upgrade-card small, .sell-card small { min-height: 10px; font-size: 8px; }
-  .tower-inspector { bottom: 7px; min-height: 46px; padding-block: 3px; }
+  .tray { grid-template-columns: minmax(245px, .9fr) minmax(0, 2fr); gap: 4px; }
+  .tower-inspector { min-height: 56px; padding-block: 3px; }
+  .tray-main { min-width: 0; }
   .tower-inspector-glyph { width: 34px; height: 34px; flex-basis: 34px; font-size: 21px; }
+  .tower-inspector-copy p { font-size: 9px; }
+  .tower-inspector-copy .tower-inspector-path { display: none; }
   .specialization-card { width: min(520px, 94%); padding: 10px 16px; }
   .seed-award { display: none; }
   .specialization-card h1 { font-size: 20px; }

@@ -11,7 +11,7 @@
   <meta property="og:description" content="Choose garden friends, protect five paths, defeat bosses, and combine magical garden paths for as long as you can.">
   <title>Rune Garden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <main id="app">
@@ -37,11 +37,6 @@
 
       <div id="toast" class="toast" aria-live="polite"></div>
       <div id="gardenAnnouncement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-      <div id="towerInspector" class="tower-inspector hidden">
-        <span id="towerInspectorGlyph" class="tower-inspector-glyph" aria-hidden="true">✿</span>
-        <span class="tower-inspector-copy"><b id="towerInspectorName">SUN SPROUT</b><small id="towerInspectorLine">LEVEL 1</small></span>
-      </div>
-
       <div id="tutorial" class="overlay tutorial" role="dialog" aria-modal="true" aria-label="How to play">
         <div class="tutorial-card">
           <div class="tutorial-scene" aria-hidden="true">
@@ -60,16 +55,16 @@
           <p class="specialization-hint"><span aria-hidden="true">&#x25C8;</span> <span id="specializationSeedCount">1</span></p>
           <div class="path-choices" id="pathChoices">
             <button class="path-choice sun" data-path="sun" aria-label="Choose Sun path">
-              <span class="path-icon" aria-hidden="true">&#x2600;</span><span class="path-pips" aria-hidden="true"></span><small>SUN</small>
+              <span class="path-icon" aria-hidden="true">&#x2600;</span><span class="path-pips" aria-hidden="true"></span><small>SUN</small><em class="path-reward"></em>
             </button>
             <button class="path-choice dew" data-path="dew" aria-label="Choose Dew path">
-              <span class="path-icon" aria-hidden="true">&#x224B;</span><span class="path-pips" aria-hidden="true"></span><small>DEW</small>
+              <span class="path-icon" aria-hidden="true">&#x224B;</span><span class="path-pips" aria-hidden="true"></span><small>DEW</small><em class="path-reward"></em>
             </button>
             <button class="path-choice thorn" data-path="thorn" aria-label="Choose Thorn path">
-              <span class="path-icon" aria-hidden="true">&#x2767;</span><span class="path-pips" aria-hidden="true"></span><small>THORN</small>
+              <span class="path-icon" aria-hidden="true">&#x2767;</span><span class="path-pips" aria-hidden="true"></span><small>THORN</small><em class="path-reward"></em>
             </button>
             <button class="path-choice storm" data-path="storm" aria-label="Choose Storm path">
-              <span class="path-icon" aria-hidden="true">&#x03DF;</span><span class="path-pips" aria-hidden="true"></span><small>STORM</small>
+              <span class="path-icon" aria-hidden="true">&#x03DF;</span><span class="path-pips" aria-hidden="true"></span><small>STORM</small><em class="path-reward"></em>
             </button>
           </div>
           <p class="combo-hint" aria-label="Combine two paths to unlock more garden friends"><span aria-hidden="true">&#x2600; + &#x224B; = &#x2727;</span></p>
@@ -115,20 +110,32 @@
       </div>
     </section>
 
-    <div class="tray" role="group" aria-label="Garden friends and selected friend actions">
-      <div id="towerCards" class="tower-cards" role="group" aria-label="Unlocked garden friends"></div>
-      <div class="tray-divider"></div>
-      <div class="tray-actions" role="group" aria-label="Selected garden friend actions">
-        <button id="upgradeButton" class="upgrade-card" disabled aria-controls="upgradeOverlay" aria-expanded="false" aria-label="Select a garden friend to graft a seed">
-          <span aria-hidden="true">🌱</span><b>GRAFT</b><small>NEED SEED</small>
-        </button>
-        <button id="sellButton" class="sell-card" disabled aria-label="Select a garden friend to sell">
-          <span aria-hidden="true">♻</span><b>SELL</b><small>✦0</small>
-        </button>
+    <div class="tray" role="group" aria-label="Tower information, garden friends, and selected friend actions">
+      <section id="towerInspector" class="tower-inspector" aria-label="Selected tower information">
+        <span id="towerInspectorGlyph" class="tower-inspector-glyph" aria-hidden="true">✿</span>
+        <div class="tower-inspector-copy">
+          <div class="tower-inspector-heading"><b id="towerInspectorName">RUNE SPROUT</b><span id="towerInspectorRole">ATTACKER</span></div>
+          <small id="towerInspectorLine">TAP AN EMPTY TILE TO PLANT</small>
+          <div id="towerInspectorStats" class="tower-inspector-stats" aria-label="Tower statistics"></div>
+          <p id="towerInspectorEffects">Fast magic bolts; an open seed lineage.</p>
+          <p id="towerInspectorPath" class="tower-inspector-path">Open lineage · Graft any owned boss seed after planting.</p>
+        </div>
+      </section>
+      <div class="tray-main">
+        <div id="towerCards" class="tower-cards" role="group" aria-label="Unlocked garden friends"></div>
+        <div class="tray-divider"></div>
+        <div class="tray-actions" role="group" aria-label="Selected garden friend actions">
+          <button id="upgradeButton" class="upgrade-card" disabled aria-controls="upgradeOverlay" aria-expanded="false" aria-label="Select a garden friend to graft a seed">
+            <span aria-hidden="true">🌱</span><b>GRAFT</b><small>NEED SEED</small>
+          </button>
+          <button id="sellButton" class="sell-card" disabled aria-label="Select a garden friend to sell">
+            <span aria-hidden="true">♻</span><b>SELL</b><small>✦0</small>
+          </button>
+        </div>
       </div>
     </div>
   </main>
   <noscript>Rune Garden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
-  <script src="game.js?v=3"></script>
+  <script src="game.js?v=5"></script>
 </body>
 </html>

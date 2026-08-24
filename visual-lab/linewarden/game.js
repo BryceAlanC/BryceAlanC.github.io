@@ -38,7 +38,8 @@
     rosterTotal: $('rosterTotal'), rosterWaveProgress: $('rosterWaveProgress'), drawerRosterTotal: $('drawerRosterTotal'),
     reserveBtn: $('reserveBtn'), allAutoOff: $('allAutoOff'), autoCount: $('autoCount'), summonFilters: $('summonFilters'),
     summonList: $('summonList'), summonTemplate: $('summonCardTemplate'), summonDock: $('summonDock'),
-    drawerToggle: $('summonDrawerToggle'), drawerLabel: $('drawerLabel'), drawerClose: $('summonDrawerClose')
+    drawerToggle: $('summonDrawerToggle'), drawerLabel: $('drawerLabel'), drawerClose: $('summonDrawerClose'),
+    purchaseHub: $('purchaseHub'), forgePanel: $('forgePanel'), forgeClose: $('forgeToggle')
   };
 
   const SUMMON_ROWS = [
@@ -147,8 +148,8 @@
     { key: 'shade', body: 'phase', unlockWave: 12, hp: 245, speed: 144, damage: 35, reward: 15, xp: 24, r: 23, trait: 'surge', color: '#8d589c' }
   ];
   const itemBase = { edge: 85, plate: 100, boots: 125, lens: 150, focus: 175, seal: 220, multishot: 325, chain: 375, splash: 300, revive: 450, repair: 75 };
-  const itemGrowth = { multishot: 2.05, chain: 2.05, splash: 2.05, revive: 2.05 };
-  const itemLimits = { multishot: 4, chain: 4, splash: 4, revive: 4 };
+  const itemGrowth = { multishot: 1.95, chain: 1.92, splash: 1.92, revive: 1.9 };
+  const itemLimits = { multishot: 10, chain: 10, splash: 10, revive: 12 };
   const itemNames = { edge: 'RUNE EDGE', plate: 'BASTION PLATE', boots: 'WINDSTEP', lens: 'SEEKER LENS', focus: 'CHRONO CORE', seal: 'CRYSTAL SEAL', multishot: 'SPLIT PRISM', chain: 'STORM COIL', splash: 'BLAST SIGIL', revive: 'GRAVE PACT', repair: 'MEND' };
   const itemKeys = ['edge', 'plate', 'boots', 'lens', 'focus', 'seal', 'multishot', 'chain', 'splash', 'revive'];
   const keys = {};
@@ -260,7 +261,7 @@
       maxCooldowns: { dash: 5, nova: 9, sentinel: 18 },
       items: Object.fromEntries(itemKeys.map(type => [type, 0])),
       roster: emptyRoster(), contracts: emptyRoster(), stock: fullStock(), stockClocks: emptyStockClocks(),
-      autos: emptyAutos(), autoClock: 0, reserveIndex: 1, drawerOpen: false,
+      autos: emptyAutos(), autoClock: 0, reserveIndex: 1, drawerOpen: false, marketPage: null,
       returnWaves: {}, returnQueued: 0, queueSequence: 0,
       boss: null, spawnId: 0, allyId: 0
     };
@@ -285,8 +286,7 @@
     ui.bossFill.style.width = '100%';
     ui.bossProgress.setAttribute('aria-valuenow', '100');
     $('gameOverOverlay').classList.remove('open');
-    setForgePage('gear', false);
-    setSummonDrawer(false, false);
+    setPurchasePage(null, false);
     setSummonFilter('1', false);
     updateUI(true);
     syncOverlayAccess();
@@ -320,7 +320,7 @@
 
   function pause(force) {
     if (!game.started || game.over) return;
-    if (game.drawerOpen) setSummonDrawer(false, false);
+    if (game.marketPage) setPurchasePage(null, false);
     game.paused = force === undefined ? !game.paused : force;
     if (game.paused) showOverlay('pauseOverlay', 'resumeBtn'); else hideOverlay('pauseOverlay', false);
     $('pauseBtn').textContent = game.paused ? '▶' : 'Ⅱ';
@@ -333,43 +333,76 @@
     }
   }
 
+  function setPurchasePage(page, moveFocus = true) {
+    const valid = ['gear', 'relics', 'summons'].includes(page) ? page : null;
+    const canOpen = game?.started && !game.paused && !game.over;
+    const next = valid && canOpen ? valid : null;
+    const previous = game?.marketPage || null;
+    const wasHeld = Boolean(game?.drawerOpen);
+    const focusWasInHub = ui.purchaseHub.contains(document.activeElement);
+    const forgeOpen = next === 'gear' || next === 'relics';
+    const summonOpen = next === 'summons';
+    if (game) {
+      game.marketPage = next;
+      // Compact trays intentionally hold the siege so touch players can shop safely.
+      game.drawerOpen = Boolean(next && compactDrawerMedia.matches);
+    }
+    ui.forgePanel.hidden = !forgeOpen;
+    ui.summonDock.hidden = !summonOpen;
+    ui.forgePanel.inert = !forgeOpen;
+    ui.summonDock.inert = !summonOpen;
+    ui.forgePanel.toggleAttribute('aria-hidden', !forgeOpen);
+    ui.summonDock.toggleAttribute('aria-hidden', !summonOpen);
+    ui.summonDock.classList.toggle('drawer-open', summonOpen);
+    ui.summonDock.classList.toggle('drawer-closed', !summonOpen);
+    $('gearItems').hidden = next !== 'gear';
+    $('relicItems').hidden = next !== 'relics';
+    $('forgePanel').classList.toggle('showing-relics', next === 'relics');
+    if (forgeOpen) $('forgePageTitle').textContent = `WARDEN'S FORGE • ${next.toUpperCase()}${game.drawerOpen ? ' • BATTLE HELD' : ''}`;
+    $('summonTitle').textContent = summonOpen && game.drawerOpen ? 'SUMMON HOSTILES • BATTLE HELD' : 'SUMMON HOSTILES';
+    if (game.drawerOpen) ui.live.textContent = `${next} purchase tray open. Battle and timers held until it closes.`;
+    else if (wasHeld && game.started && !game.paused && !game.over) ui.live.textContent = 'Purchase tray closed. Battle and timers resumed.';
+
+    const tabs = [
+      [$('forgeGearTab'), 'gear'], [$('forgeRelicTab'), 'relics'], [ui.drawerToggle, 'summons']
+    ];
+    tabs.forEach(([tab, tabPage], index) => {
+      const active = next === tabPage;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.setAttribute('aria-expanded', String(active));
+      tab.tabIndex = active || (!next && index === 0) ? 0 : -1;
+    });
+    ui.drawerLabel.textContent = 'SUMMONS';
+    ui.drawerToggle.setAttribute('aria-label', summonOpen ? 'Close summon contracts' : 'Open summon contracts');
+    if (next) updateUI(true);
+    if (moveFocus && next === 'summons') requestAnimationFrame(() => ui.drawerClose.focus());
+    else if (moveFocus && forgeOpen) requestAnimationFrame(() => ui.forgeClose.focus());
+    else if (moveFocus && !next && (previous || focusWasInHub)) {
+      const returnTab = previous === 'relics' ? $('forgeRelicTab') : previous === 'summons' ? ui.drawerToggle : $('forgeGearTab');
+      requestAnimationFrame(() => returnTab.focus());
+    }
+  }
+
   function setSummonDrawer(open, moveFocus = true) {
-    const compact = compactDrawerMedia.matches;
-    const wasOpen = Boolean(game?.drawerOpen);
-    const focusWasInDock = ui.summonDock.contains(document.activeElement);
-    const canOpen = compact && game?.started && !game.paused && !game.over;
-    const shouldOpen = Boolean(open && canOpen);
-    if (game) game.drawerOpen = shouldOpen;
-    ui.summonDock.classList.toggle('drawer-open', shouldOpen);
-    ui.summonDock.classList.toggle('drawer-closed', compact && !shouldOpen);
-    ui.summonDock.inert = compact && !shouldOpen;
-    if (compact && !shouldOpen) ui.summonDock.setAttribute('aria-hidden', 'true');
-    else ui.summonDock.removeAttribute('aria-hidden');
-    ui.drawerToggle.setAttribute('aria-expanded', String(shouldOpen));
-    ui.drawerLabel.textContent = shouldOpen ? 'CLOSE' : 'SUMMONS';
-    ui.drawerToggle.setAttribute('aria-label', shouldOpen ? 'Close summon roster' : 'Open summon roster');
-    if (shouldOpen) updateUI(true);
-    if (moveFocus && shouldOpen) requestAnimationFrame(() => ui.drawerClose.focus());
-    else if (moveFocus && compact && (wasOpen || focusWasInDock)) requestAnimationFrame(() => ui.drawerToggle.focus());
+    setPurchasePage(open ? 'summons' : null, moveFocus);
   }
 
   function setForgePage(page, moveFocus = true) {
-    const relics = page === 'relics';
-    $('forgePanel').classList.toggle('showing-relics', relics);
-    $('gearItems').hidden = relics;
-    $('relicItems').hidden = !relics;
-    $('forgeGearTab').classList.toggle('active', !relics);
-    $('forgeRelicTab').classList.toggle('active', relics);
-    $('forgeGearTab').setAttribute('aria-selected', String(!relics));
-    $('forgeRelicTab').setAttribute('aria-selected', String(relics));
-    $('forgeGearTab').tabIndex = relics ? -1 : 0;
-    $('forgeRelicTab').tabIndex = relics ? 0 : -1;
-    if (moveFocus) (relics ? $('forgeRelicTab') : $('forgeGearTab')).focus();
+    setPurchasePage(page === 'relics' ? 'relics' : 'gear', moveFocus);
+  }
+
+  function togglePurchasePage(page) {
+    setPurchasePage(game.marketPage === page ? null : page);
   }
 
   function closeDrawerForInterruption() {
-    if (game.drawerOpen) setSummonDrawer(false, false);
-    if (game.started && !game.paused && !game.over) pause(true);
+    if (game.marketPage) setPurchasePage(null, false);
+    Object.keys(keys).forEach(key => { keys[key] = false; });
+    pointer.stickX = pointer.stickY = 0;
+    const knob = $('stickKnob');
+    if (knob) knob.style.transform = '';
+    last = performance.now();
   }
 
   function spawnEntryBefore(a, b) {
@@ -441,13 +474,22 @@
     const playerMade = Boolean(options.playerMade), boss = Boolean(options.boss);
     const waveIndex = Math.max(0, options.wave - 1);
     const late = Math.max(0, (options.wave || 1) - 8);
-    const hpScale = boss ? 1 : playerMade ? 1 + waveIndex * .024 + late * late * .0032 : 1 + waveIndex * .035 + late * late * .0055;
-    const damageScale = boss ? 1 : playerMade ? 1 + waveIndex * .016 + late * late * .0022 : 1 + waveIndex * .02 + late * late * .0025;
+    const ambientLate = Math.max(0, (options.wave || 1) - 6);
+    const deepSiege = Math.max(0, (options.wave || 1) - 16);
+    const hpScale = boss ? 1 : playerMade
+      ? 1 + waveIndex * .024 + late * late * .0032
+      : 1 + waveIndex * .04 + ambientLate * ambientLate * .008 + deepSiege * deepSiege * .0025;
+    const damageScale = boss ? 1 : playerMade
+      ? 1 + waveIndex * .016 + late * late * .0022
+      : 1 + waveIndex * .024 + ambientLate * ambientLate * .004 + deepSiege * deepSiege * .001;
+    const ambientBountyScale = 1 / (1 + waveIndex * .035 + deepSiege * .035);
     const traits = [...new Set([...(def.traits || []), ...(def.trait ? [def.trait] : [])])];
     const enemy = {
       id: ++game.spawnId, x: PATH[0].x, y: PATH[0].y, pathIndex: 1, type: options.type || def.key || 'ambient',
       r: def.r, hp: def.hp * hpScale, maxHp: def.hp * hpScale, speed: def.speed,
-      damage: def.damage * damageScale, reward: def.reward, xp: def.xp, armor: def.armor || 0,
+      damage: def.damage * damageScale,
+      reward: boss || playerMade ? def.reward : Math.max(1, Math.round(def.reward * ambientBountyScale)),
+      xp: def.xp, armor: def.armor || 0,
       traits, body: def.body || (boss ? 'titan' : 'runner'), regen: def.regen || 0, crystalDamage: def.crystalDamage || 1, points: def.points || 6,
       color: def.color, playerMade, boss, attackCd: 0, leechCd: 0, slow: 0, slowTimer: 0,
       hit: 0, phase: Math.random() * 6.28, source: options.source || 'ambient', originWave: options.wave || game.wave,
@@ -500,11 +542,20 @@
     tone(60, .45, 'sawtooth', .08);
   }
 
+  function ambientWaveCount(wave) {
+    const late = Math.max(0, wave - 6);
+    const deepSiege = Math.max(0, wave - 14);
+    return Math.min(420,
+      3 + Math.floor(wave * .82)
+      + Math.floor(Math.pow(late, 1.45) * .42)
+      + Math.floor(Math.pow(deepSiege, 1.68) * .28)
+    );
+  }
+
   function startWave() {
     game.wave++;
     const wave = game.wave;
-    const late = Math.max(0, wave - 8);
-    const ambientCount = Math.min(180, 3 + Math.floor(wave * .62) + Math.floor(Math.pow(late, 1.55) * .20));
+    const ambientCount = ambientWaveCount(wave);
     const ambientSpread = Math.min(16, 5 + ambientCount * .16);
     for (let i = 0; i < ambientCount; i++) {
       queueSpawn(chooseAmbient(wave), { due: game.time + .15 + i * ambientSpread / Math.max(1, ambientCount - 1), wave, source: 'ambient' });
@@ -638,9 +689,22 @@
   }
 
   function relicEffectAtRank(type, rank) {
-    if (type === 'multishot') return `up to ${1 + rank} distinct shots`;
-    if (type === 'chain') return `${rank} bounce${rank === 1 ? '' : 's'} • 62% carry`;
-    if (type === 'splash') return `first hit: ${44 + rank * 9}r • ${Math.round((.16 + rank * .055) * 100)}% to ${2 + rank} foes`;
+    if (type === 'multishot') {
+      const shots = 1 + Math.min(rank, 6);
+      const forkDamage = Math.round((.55 + Math.max(0, rank - 6) * .04) * 100);
+      return `up to ${shots} distinct shots${rank > 6 ? ` • forks deal ${forkDamage}%` : ''}`;
+    }
+    if (type === 'chain') {
+      const bounces = Math.min(rank, 6);
+      const carry = Math.round((.62 + Math.max(0, rank - 6) * .03) * 100);
+      return `${bounces} bounce${bounces === 1 ? '' : 's'} • ${carry}% carry`;
+    }
+    if (type === 'splash') {
+      const advanced = Math.max(0, rank - 4);
+      const radius = 44 + Math.min(rank, 4) * 9 + advanced * 6;
+      const damage = .16 + Math.min(rank, 4) * .055 + advanced * .035;
+      return `first hit: ${radius}r • ${Math.round(damage * 100)}% to ${2 + Math.min(rank, 6)} foes`;
+    }
     if (type === 'revive') return `${rank + 1} revenant cap`;
     return '';
   }
@@ -731,16 +795,18 @@
     if (game.slashes.length > 140) game.slashes.splice(0, game.slashes.length - 140);
   }
 
-  function fireWardenProjectile(target, index) {
+  function fireWardenProjectile(target, index, shotCount) {
     const hero = game.hero;
     const dx = target.x - hero.x, dy = target.y - hero.y, magnitude = Math.hypot(dx, dy) || 1;
     const aimX = dx / magnitude, aimY = dy / magnitude;
     const critical = Math.random() < hero.crit;
-    const side = (index - game.items.multishot / 2) * 7;
+    const side = (index - (shotCount - 1) / 2) * 7;
+    const forkDamage = .55 + Math.max(0, game.items.multishot - 6) * .04;
+    const chainCarry = .62 + Math.max(0, game.items.chain - 6) * .03;
     addProjectile({
       x: hero.x + aimX * 26 - aimY * side, y: hero.y + aimY * 26 + aimX * side, target, speed: 760,
-      damage: wardenDamage((index ? .55 : 1) * (critical ? 2 : 1)), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5,
-      critical, wardenShot: true, chainLeft: game.items.chain, chainRange: 150 + game.items.chain * 12,
+      damage: wardenDamage((index ? forkDamage : 1) * (critical ? 2 : 1)), color: critical ? '#ffd269' : '#8ffff4', r: critical ? 7 : 5,
+      critical, wardenShot: true, chainLeft: Math.min(game.items.chain, 6), chainCarry, chainRange: 150 + game.items.chain * 12,
       splashRank: game.items.splash, splashReady: true, hitIds: [], canRetarget: true
     });
   }
@@ -770,6 +836,22 @@
     return targets;
   }
 
+  function nearestSplashTargets(x, y, radius, limit, excluded) {
+    const targets = [], distances = [];
+    game.enemies.forEach(enemy => {
+      if (enemy === excluded) return;
+      const distance = Math.hypot(enemy.x - x, enemy.y - y);
+      if (distance > radius + enemy.r) return;
+      let index = distances.length;
+      while (index > 0 && distance < distances[index - 1]) index--;
+      if (index >= limit) return;
+      targets.splice(index, 0, enemy);
+      distances.splice(index, 0, distance);
+      if (targets.length > limit) { targets.pop(); distances.pop(); }
+    });
+    return targets;
+  }
+
   function impactProjectile(projectile) {
     const target = projectile.target;
     const impactX = target.x, impactY = target.y;
@@ -779,12 +861,10 @@
 
     if (projectile.wardenShot && projectile.splashRank > 0 && projectile.splashReady) {
       projectile.splashReady = false;
-      const radius = 44 + projectile.splashRank * 9;
-      const splashDamage = projectile.damage * (.16 + projectile.splashRank * .055);
-      [...game.enemies]
-        .filter(enemy => enemy !== target && dist({ x: impactX, y: impactY }, enemy) <= radius + enemy.r)
-        .sort((a, b) => dist({ x: impactX, y: impactY }, a) - dist({ x: impactX, y: impactY }, b))
-        .slice(0, 2 + projectile.splashRank)
+      const advanced = Math.max(0, projectile.splashRank - 4);
+      const radius = 44 + Math.min(projectile.splashRank, 4) * 9 + advanced * 6;
+      const splashDamage = projectile.damage * (.16 + Math.min(projectile.splashRank, 4) * .055 + advanced * .035);
+      nearestSplashTargets(impactX, impactY, radius, 2 + Math.min(projectile.splashRank, 6), target)
         .forEach(enemy => damageEnemy(enemy, splashDamage));
       addSlash({ x: impactX, y: impactY, radius: 8, maxRadius: radius, life: .24, max: .24, ring: true, color: '#ff8fcb', kind: 'splash' });
     }
@@ -795,7 +875,7 @@
       if (nextTarget) {
         addSlash({ x1: impactX, y1: impactY, x2: nextTarget.x, y2: nextTarget.y, life: .16, max: .16, color: '#ffd269', kind: 'chain' });
         projectile.target = nextTarget;
-        projectile.damage *= .62;
+        projectile.damage *= projectile.chainCarry || .62;
         projectile.chainLeft--;
         projectile.color = '#ffd269';
         projectile.r = Math.max(3, projectile.r - .35);
@@ -994,14 +1074,14 @@
     hero.x = clamp(hero.x, 55, 1545); hero.y = clamp(hero.y, 75, 810);
 
     if (hero.attackCd <= 0 && hero.targetScanCd <= 0) {
-      const targets = nearestWardenTargets(1 + game.items.multishot);
+      const targets = nearestWardenTargets(1 + Math.min(game.items.multishot, 6));
       const target = targets[0] || null;
       if (target) {
         hero.attackCd = hero.attackRate;
         const dx = target.x - hero.x, dy = target.y - hero.y, magnitude = Math.hypot(dx, dy) || 1;
         hero.aimX = dx / magnitude; hero.aimY = dy / magnitude;
-        const shotCount = Math.min(1 + game.items.multishot, targets.length);
-        for (let i = 0; i < shotCount; i++) fireWardenProjectile(targets[i], i);
+        const shotCount = Math.min(1 + Math.min(game.items.multishot, 6), targets.length);
+        for (let i = 0; i < shotCount; i++) fireWardenProjectile(targets[i], i, shotCount);
         tone(330 + Math.random() * 50, .04, 'square', .018);
       } else hero.targetScanCd = .08;
     }
@@ -1574,8 +1654,8 @@
     ];
     relics.forEach(([type, color], index) => {
       const rank = game.items[type]; if (!rank) return;
-      ctx.strokeStyle = color; ctx.globalAlpha = .4 + rank * .12; ctx.lineWidth = 2 + rank * .55;
-      ctx.beginPath(); ctx.arc(0, 0, hero.r + 13 + rank, index * Math.PI / 2 + .12, index * Math.PI / 2 + 1.22); ctx.stroke();
+      ctx.strokeStyle = color; ctx.globalAlpha = Math.min(.88, .4 + rank * .055); ctx.lineWidth = Math.min(6, 2 + Math.sqrt(rank) * .9);
+      ctx.beginPath(); ctx.arc(0, 0, hero.r + 13 + Math.min(rank, 8), index * Math.PI / 2 + .12, index * Math.PI / 2 + 1.22); ctx.stroke();
     });
     ctx.globalAlpha = 1;
   }
@@ -1583,7 +1663,7 @@
   function drawIllustratedHero() {
     const hero = game.hero, angle = Math.atan2(hero.aimY, hero.aimX), bob = reducedMotion ? 0 : Math.sin(game.time * 7) * 1.2;
     ctx.save(); ctx.translate(hero.x, hero.y);
-    ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(0, 16, 28, 12, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.beginPath(); ctx.ellipse(-3, 18, 31, 12, 0, 0, TAU); ctx.fill();
     drawHeroRelics(hero);
     if (hero.invuln > 0) { ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, hero.r + 9, 0, TAU); ctx.stroke(); }
     if (hero.hexed) {
@@ -1591,14 +1671,29 @@
       ctx.fillStyle = '#ff718d'; for (let i = 0; i < 3; i++) { ctx.save(); ctx.rotate(i / 3 * TAU + game.time * .18); drawPolygon([[0, -hero.r - 23], [-5, -hero.r - 12], [5, -hero.r - 12]]); ctx.fill(); ctx.restore(); }
     }
     ctx.rotate(angle); ctx.translate(0, bob);
-    ctx.fillStyle = '#09141d'; drawPolygon([[-8, 0], [-30, 23], [-23, 0], [-30, -23]]); ctx.fill();
-    ctx.fillStyle = '#203f4d'; ctx.beginPath(); ctx.arc(-7, 0, 17, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#70e7df'; ctx.beginPath(); ctx.arc(-4, -15, 8, 0, TAU); ctx.arc(-4, 15, 8, 0, TAU); ctx.fill();
-    ctx.strokeStyle = '#9bfff7'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(34, 0); ctx.stroke();
-    ctx.strokeStyle = '#234c5b'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(22, 0); ctx.stroke();
-    ctx.fillStyle = '#89fff5'; drawPolygon([[39, 0], [23, 7], [23, -7]]); ctx.shadowBlur = 14; ctx.shadowColor = '#70e7df'; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = '#0a1821'; drawPolygon([[8, 0], [-8, 12], [-17, 0], [-8, -12]]); ctx.fill();
-    ctx.fillStyle = '#d8fffb'; ctx.beginPath(); ctx.arc(4, 0, 4, 0, TAU); ctx.fill(); ctx.restore();
+    // Boots and a broad cloak make the Warden read as a character rather than a cursor.
+    ctx.fillStyle = '#071218';
+    drawPolygon([[-13, -8], [-29, -18], [-34, -10], [-18, -2]]); ctx.fill();
+    drawPolygon([[-13, 8], [-29, 18], [-34, 10], [-18, 2]]); ctx.fill();
+    ctx.fillStyle = '#123746';
+    drawPolygon([[-7, -17], [-28, -25], [-39, 0], [-28, 25], [-7, 17], [-15, 0]]); ctx.fill();
+    ctx.strokeStyle = '#2f7784'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-8, -16); ctx.quadraticCurveTo(-26, 0, -8, 16); ctx.stroke();
+
+    // Armored torso, shoulder plates, helmet, and luminous chest rune.
+    ctx.fillStyle = '#203f4d'; drawPolygon([[-14, -14], [8, -17], [20, 0], [8, 17], [-14, 14], [-21, 0]]); ctx.fill();
+    ctx.fillStyle = '#5ebbc0'; ctx.beginPath(); ctx.arc(-2, -17, 7, 0, TAU); ctx.arc(-2, 17, 7, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#0a1821'; ctx.beginPath(); ctx.arc(10, 0, 11, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#8ffff4'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(10, 0, 10, -1.25, 1.25); ctx.stroke();
+    ctx.fillStyle = '#d8fffb'; ctx.fillRect(10, -5, 9, 10);
+    ctx.fillStyle = '#9bfff7'; drawPolygon([[1, 0], [-5, 7], [-12, 0], [-5, -7]]); ctx.shadowBlur = 11; ctx.shadowColor = '#70e7df'; ctx.fill(); ctx.shadowBlur = 0;
+
+    // A side-held prism lance shows aim without turning the whole body into an arrow.
+    ctx.strokeStyle = '#173743'; ctx.lineCap = 'round'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(4, -14); ctx.lineTo(30, -14); ctx.stroke();
+    ctx.strokeStyle = '#85f7ee'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(15, -14); ctx.lineTo(38, -14); ctx.stroke();
+    ctx.fillStyle = '#bffff9'; ctx.shadowBlur = 12; ctx.shadowColor = '#70e7df'; drawPolygon([[45, -14], [34, -8], [34, -20]]); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1b4855'; ctx.beginPath(); ctx.arc(5, 14, 8, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#79e8df'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(5, 14, 6, .2, 5.8); ctx.stroke();
+    ctx.restore();
   }
 
   function drawIllustratedSentinel(sentinel) {
@@ -1742,7 +1837,7 @@
       const type = button.dataset.upgrade, cost = itemCost(type);
       const maxed = isItemMaxed(type);
       button.disabled = game.gold < cost || (type === 'repair' && crystal.hp >= crystal.maxHp) || maxed;
-      $(`cost-${type}`).textContent = maxed ? 'MAX' : cost;
+      $(`cost-${type}`).textContent = maxed ? 'MAX' : formatCompactNumber(cost);
       if (type !== 'repair') $(`level-${type}`).textContent = game.items[type];
       const effect = $(`effect-${type}`);
       if (effect) {
@@ -1791,14 +1886,19 @@
       else if (event.code === 'Escape' && overlay.id === 'pauseOverlay') { event.preventDefault(); pause(false); }
       return;
     }
+    if (game.marketPage && event.code === 'Escape') {
+      event.preventDefault();
+      setPurchasePage(null);
+      return;
+    }
     if (game.drawerOpen) {
       if (event.code === 'Escape') {
         event.preventDefault();
-        setSummonDrawer(false);
+        setPurchasePage(null);
         return;
       }
       if (event.code === 'Tab') {
-        const focusable = [...ui.summonDock.querySelectorAll('button:not([disabled]),select:not([disabled])')]
+        const focusable = [...ui.purchaseHub.querySelectorAll('button:not([disabled]),select:not([disabled])')]
           .filter(element => !element.closest('[hidden]'));
         const current = focusable.indexOf(document.activeElement);
         if (focusable.length) {
@@ -1839,12 +1939,17 @@
     if (filter) setSummonFilter(filter.dataset.tier, false);
   });
   document.querySelectorAll('.shop-item').forEach(button => button.addEventListener('click', () => buyItem(button.dataset.upgrade)));
-  $('forgeGearTab').addEventListener('click', () => setForgePage('gear'));
-  $('forgeRelicTab').addEventListener('click', () => setForgePage('relics'));
-  [$('forgeGearTab'), $('forgeRelicTab')].forEach(tab => tab.addEventListener('keydown', event => {
+  $('forgeGearTab').addEventListener('click', () => togglePurchasePage('gear'));
+  $('forgeRelicTab').addEventListener('click', () => togglePurchasePage('relics'));
+  const purchaseTabs = [$('forgeGearTab'), $('forgeRelicTab'), ui.drawerToggle];
+  purchaseTabs.forEach((tab, tabIndex) => tab.addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.code)) return;
     event.preventDefault();
-    setForgePage(event.code === 'ArrowLeft' || event.code === 'Home' ? 'gear' : 'relics');
+    const nextIndex = event.code === 'Home' ? 0 : event.code === 'End' ? purchaseTabs.length - 1
+      : event.code === 'ArrowLeft' ? (tabIndex + purchaseTabs.length - 1) % purchaseTabs.length
+      : (tabIndex + 1) % purchaseTabs.length;
+    setPurchasePage(['gear', 'relics', 'summons'][nextIndex], false);
+    purchaseTabs[nextIndex].focus();
   }));
   document.querySelectorAll('.ability').forEach(button => button.addEventListener('click', () => ability(button.dataset.ability)));
   $('startBtn').addEventListener('click', begin);
@@ -1859,14 +1964,9 @@
     updateUI(true);
   });
   ui.allAutoOff.addEventListener('click', disableAllAutos);
-  ui.drawerToggle.addEventListener('click', () => setSummonDrawer(!game.drawerOpen));
-  ui.drawerClose.addEventListener('click', () => setSummonDrawer(false));
-  $('forgeToggle').addEventListener('click', () => {
-    const collapsed = $('forgePanel').classList.toggle('collapsed');
-    $('forgeToggle').textContent = collapsed ? '+' : '−';
-    $('forgeToggle').setAttribute('aria-expanded', String(!collapsed));
-    $('forgeToggle').setAttribute('aria-label', collapsed ? 'Expand item shop' : 'Collapse item shop');
-  });
+  ui.drawerToggle.addEventListener('click', () => togglePurchasePage('summons'));
+  ui.drawerClose.addEventListener('click', () => setPurchasePage(null));
+  $('forgeToggle').addEventListener('click', () => setPurchasePage(null));
   $('soundBtn').addEventListener('click', () => {
     initAudio(); soundOn = !soundOn; $('soundBtn').textContent = soundOn ? '♪' : '×';
     $('soundBtn').setAttribute('aria-label', soundOn ? 'Mute sound' : 'Enable sound'); $('soundBtn').setAttribute('aria-pressed', String(!soundOn));
@@ -1874,9 +1974,9 @@
   });
   const fullBtn = $('fullBtn'), fullscreenSupported = Boolean(document.fullscreenEnabled && $('gameShell').requestFullscreen);
   fullBtn.hidden = !fullscreenSupported;
-  fullBtn.addEventListener('click', () => { if (game.drawerOpen) setSummonDrawer(false, false); const action = !document.fullscreenElement ? $('gameShell').requestFullscreen?.() : document.exitFullscreen?.(); action?.catch?.(() => {}); });
+  fullBtn.addEventListener('click', () => { if (game.marketPage) setPurchasePage(null, false); const action = !document.fullscreenElement ? $('gameShell').requestFullscreen?.() : document.exitFullscreen?.(); action?.catch?.(() => {}); });
   const openHelp = () => {
-    if (game.drawerOpen) setSummonDrawer(false, false);
+    if (game.marketPage) setPurchasePage(null, false);
     const shouldResume = game.started && !game.paused;
     if (shouldResume) pause(true);
     $('pauseOverlay').classList.remove('open');
@@ -1895,13 +1995,13 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) closeDrawerForInterruption(); });
   addEventListener('blur', closeDrawerForInterruption);
   document.addEventListener('fullscreenchange', () => {
-    if (game.drawerOpen) setSummonDrawer(false, false);
+    if (game.marketPage) setPurchasePage(null, false);
     const active = document.fullscreenElement === $('gameShell');
     fullBtn.textContent = active ? '×' : '⛶'; fullBtn.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen'); fullBtn.setAttribute('aria-pressed', String(active));
-    if (!active && game.started && !game.paused && !game.over) pause(true);
+    closeDrawerForInterruption();
     fitCanvas();
   });
-  const handleDrawerBreakpoint = () => setSummonDrawer(false);
+  const handleDrawerBreakpoint = () => setPurchasePage(null);
   if (compactDrawerMedia.addEventListener) compactDrawerMedia.addEventListener('change', handleDrawerBreakpoint);
   else compactDrawerMedia.addListener?.(handleDrawerBreakpoint);
   const stick = $('touchStick'), knob = $('stickKnob');
@@ -1916,7 +2016,7 @@
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '0.0.0.0', 'terminal.local'].includes(location.hostname)) {
     window.__linewardenTest = {
-      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit, hexed: game.hero.hexed, damageMultiplier: game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1 }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen }),
+      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit, hexed: game.hero.hexed, damageMultiplier: game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1 }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen, marketPage: game.marketPage }),
       start: begin,
       purchase: type => buySummon(type),
       buyItem: type => buyItem(type),
@@ -1948,6 +2048,8 @@
       },
       damageEnemy: (id, amount) => { const enemy = game.enemies.find(entry => entry.id === id); if (enemy) damageEnemy(enemy, amount); updateUI(); },
       setWave: wave => { game.wave = Math.max(0, Math.floor(wave)); updateUI(); },
+      ambientWaveCount,
+      itemLimits: { ...itemLimits },
       summonDefs: Object.fromEntries(Object.entries(summonDefs).map(([type, def]) => [type, { ...def }])),
       path: PATH.map(point => ({ ...point }))
     };

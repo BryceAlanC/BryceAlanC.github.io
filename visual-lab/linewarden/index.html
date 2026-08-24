@@ -11,7 +11,7 @@
   <meta property="og:description" content="Defend a winding siege lane, grow a hero, forge stackable relics, and build a hostile roster that returns every wave.">
   <title>Linewarden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <main class="game-shell" id="gameShell">
@@ -48,16 +48,19 @@
         <div class="bar" id="bossProgress" role="progressbar" aria-label="Boss health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="bossFill"></span></div>
       </div>
 
-      <aside class="shop panel" id="forgePanel" aria-label="Item shop">
-        <div class="panel-title">
-          <span>WARDEN'S FORGE</span><small>GEAR • RELICS</small>
-          <button id="forgeToggle" class="panel-toggle" aria-expanded="true" aria-controls="forgeItems" aria-label="Collapse item shop">−</button>
-        </div>
-        <div id="forgeItems" class="forge-items">
-          <div class="forge-tabs" role="tablist" aria-label="Forge inventory">
-            <button id="forgeGearTab" class="forge-tab active" type="button" role="tab" aria-selected="true" aria-controls="gearItems">GEAR</button>
-            <button id="forgeRelicTab" class="forge-tab" type="button" role="tab" aria-selected="false" aria-controls="relicItems">RELICS</button>
+      <section class="purchase-hub" id="purchaseHub" aria-label="Warden purchases">
+        <nav class="purchase-tabs" role="tablist" aria-label="Purchase categories">
+          <button id="forgeGearTab" class="purchase-tab gear-tab" type="button" role="tab" aria-selected="false" aria-expanded="false" aria-controls="gearItems"><span aria-hidden="true">◇</span><b>GEAR</b></button>
+          <button id="forgeRelicTab" class="purchase-tab relic-tab" type="button" role="tab" aria-selected="false" aria-expanded="false" aria-controls="relicItems"><span aria-hidden="true">✦</span><b>RELICS</b></button>
+          <button id="summonDrawerToggle" class="purchase-tab summon-drawer-toggle" type="button" role="tab" aria-selected="false" aria-expanded="false" aria-controls="summonDock" aria-label="Open summon contracts"><span id="drawerLabel">SUMMONS</span><b id="drawerRosterTotal">0</b></button>
+        </nav>
+
+        <aside class="shop panel purchase-panel" id="forgePanel" aria-label="Warden's Forge" hidden>
+          <div class="panel-title purchase-title">
+            <span id="forgePageTitle">WARDEN'S FORGE • GEAR</span><small>SPEND GOLD TO SURVIVE THE SIEGE</small>
+            <button id="forgeToggle" class="panel-toggle purchase-close" type="button" aria-label="Close Warden's Forge">×</button>
           </div>
+          <div id="forgeItems" class="forge-items">
           <div id="gearItems" class="forge-page" role="tabpanel" aria-labelledby="forgeGearTab">
             <button class="shop-item" data-upgrade="edge" aria-label="Buy Rune Edge, increasing attack damage">
               <span class="shop-icon might">◇</span><span><b>RUNE EDGE <i id="level-edge">0</i></b><small>+16% attack damage</small></span><em id="cost-edge">85</em>
@@ -96,11 +99,9 @@
             </button>
           </div>
         </div>
-      </aside>
+        </aside>
 
-      <button id="summonDrawerToggle" class="summon-drawer-toggle" type="button" aria-expanded="false" aria-controls="summonDock" aria-label="Open summon roster"><span id="drawerLabel">SUMMONS</span> <b id="drawerRosterTotal">0</b></button>
-
-      <section class="summon-dock panel drawer-closed" id="summonDock" aria-labelledby="summonTitle">
+        <section class="summon-dock panel purchase-panel" id="summonDock" role="tabpanel" aria-labelledby="summonDrawerToggle summonTitle" hidden>
         <header class="summon-head">
           <div class="summon-heading">
             <span class="eyebrow">TEMPT FATE</span>
@@ -116,7 +117,7 @@
             <button type="button" data-tier="5" aria-pressed="false" aria-label="Show tier five contracts">V</button>
             <button type="button" data-tier="auto" aria-pressed="false" aria-label="Show contracts with continuous Auto enabled">AUTO <span id="autoCount">0</span></button>
           </nav>
-          <button id="summonDrawerClose" class="drawer-close" type="button">RETURN TO BATTLE</button>
+          <button id="summonDrawerClose" class="drawer-close purchase-close" type="button">RETURN TO BATTLE</button>
         </header>
 
         <div class="summon-viewport" role="region" aria-label="Summon contracts, sorted by increasing cost">
@@ -128,6 +129,7 @@
           <button id="reserveBtn" title="Shared gold reserve protected from all automatic purchases">RESERVE 100</button>
           <button id="allAutoOff" title="Turn every unit Auto off">ALL AUTOS OFF</button>
         </div>
+        </section>
       </section>
 
       <template id="summonCardTemplate">
@@ -228,6 +230,6 @@
     <div class="sr-only" id="liveRegion" aria-live="polite"></div>
   </main>
   <noscript>Linewarden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
-  <script src="game.js?v=8"></script>
+  <script src="game.js?v=11"></script>
 </body>
 </html>
