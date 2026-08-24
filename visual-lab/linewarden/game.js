@@ -11,6 +11,7 @@
   const PAYDAY_SECONDS = 5;
   const WAVE_SECONDS = 20;
   const AUTO_PURCHASE_SECONDS = .4;
+  const SUMMON_PAGE_SIZE = 4;
   const MAX_PROJECTILES = 240;
   const MAX_SPAWNS_PER_UPDATE = 96;
   const HEX_RADIUS = 215;
@@ -37,6 +38,7 @@
     healthProgress: $('healthProgress'), xpProgress: $('xpProgress'), crystalProgress: $('crystalProgress'),
     rosterTotal: $('rosterTotal'), rosterWaveProgress: $('rosterWaveProgress'), drawerRosterTotal: $('drawerRosterTotal'),
     reserveBtn: $('reserveBtn'), allAutoOff: $('allAutoOff'), autoCount: $('autoCount'), summonFilters: $('summonFilters'),
+    summonPageStatus: $('summonPageStatus'), summonPagePrev: $('summonPagePrev'), summonPageNext: $('summonPageNext'),
     summonList: $('summonList'), summonTemplate: $('summonCardTemplate'), summonDock: $('summonDock'),
     drawerToggle: $('summonDrawerToggle'), drawerLabel: $('drawerLabel'), drawerClose: $('summonDrawerClose'),
     purchaseHub: $('purchaseHub'), forgePanel: $('forgePanel'), forgeClose: $('forgeToggle')
@@ -160,6 +162,7 @@
   let raf = 0;
   let game;
   let activeSummonFilter = '1';
+  let activeSummonSubpage = 0;
   let summonUiDirty = true;
   let lastSummonUi = -Infinity;
   const summonViews = new Map();
@@ -210,23 +213,66 @@
       summonViews.set(type, view);
       ui.summonList.appendChild(fragment);
     });
+    ui.summonFilters?.querySelectorAll('[data-tier]').forEach(button => {
+      button.setAttribute('aria-controls', 'summonList');
+    });
     setSummonFilter('1', false);
   }
 
   function markSummonUiDirty() { summonUiDirty = true; }
 
+  function summonTypesForActiveFilter() {
+    if (activeSummonFilter === 'auto') return summonOrder.filter(type => game?.autos?.[type]);
+    return summonOrder.filter(type => String(summonDefs[type].tier) === activeSummonFilter);
+  }
+
+  function refreshSummonPage(resetScroll = true) {
+    const candidates = summonTypesForActiveFilter();
+    const pageCount = Math.max(1, Math.ceil(candidates.length / SUMMON_PAGE_SIZE));
+    activeSummonSubpage = clamp(activeSummonSubpage, 0, pageCount - 1);
+    const start = activeSummonSubpage * SUMMON_PAGE_SIZE;
+    const visibleTypes = candidates.slice(start, start + SUMMON_PAGE_SIZE);
+    const visible = new Set(visibleTypes);
+    summonViews.forEach((view, type) => { view.card.hidden = !visible.has(type); });
+
+    const pageNumber = activeSummonSubpage + 1;
+    if (!visibleTypes.length) {
+      ui.summonPageStatus.textContent = 'AUTO • NO ENABLED CONTRACTS';
+    } else {
+      const first = summonDefs[visibleTypes[0]], last = summonDefs[visibleTypes[visibleTypes.length - 1]];
+      const section = activeSummonFilter === 'auto' ? `AUTO • ${candidates.length} ENABLED` : `TIER ${['I', 'II', 'III', 'IV', 'V'][Number(activeSummonFilter) - 1]}`;
+      const range = activeSummonFilter === 'auto'
+        ? (first === last ? first.name.toUpperCase() : `${first.name.toUpperCase()} → ${last.name.toUpperCase()}`)
+        : `CONTRACTS ${first.rank}–${last.rank}`;
+      ui.summonPageStatus.textContent = `${section} • PAGE ${pageNumber} OF ${pageCount} • ${range} • ${formatCompactNumber(first.cost)}–${formatCompactNumber(last.cost)} GOLD`;
+    }
+    ui.summonPagePrev.disabled = activeSummonSubpage === 0;
+    ui.summonPageNext.disabled = activeSummonSubpage >= pageCount - 1;
+    ui.summonPagePrev.setAttribute('aria-label', `Previous summon page. Page ${pageNumber} of ${pageCount}.`);
+    ui.summonPageNext.setAttribute('aria-label', `Next summon page. Page ${pageNumber} of ${pageCount}.`);
+    if (resetScroll && ui.summonList?.parentElement) ui.summonList.parentElement.scrollTop = 0;
+    markSummonUiDirty();
+  }
+
   function setSummonFilter(filter, moveFocus = true) {
-    const valid = filter === 'auto' || ['1', '2', '3', '4', '5'].includes(String(filter));
-    activeSummonFilter = valid ? String(filter) : '1';
+    const requested = String(filter);
+    activeSummonFilter = requested === 'auto' || ['1', '2', '3', '4', '5'].includes(requested) ? requested : '1';
+    activeSummonSubpage = 0;
     ui.summonFilters?.querySelectorAll('[data-tier]').forEach(button => {
       const active = button.dataset.tier === activeSummonFilter;
       button.setAttribute('aria-pressed', String(active));
-      if (active && moveFocus) button.focus();
+      button.toggleAttribute('aria-current', active && activeSummonFilter !== 'auto');
+      if (active && moveFocus) {
+        button.focus();
+        button.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+      }
     });
-    summonViews.forEach((view, type) => {
-      view.card.hidden = activeSummonFilter === 'auto' ? !game?.autos?.[type] : view.card.dataset.tier !== activeSummonFilter;
-    });
-    markSummonUiDirty();
+    refreshSummonPage();
+  }
+
+  function turnSummonPage(offset) {
+    activeSummonSubpage += offset;
+    refreshSummonPage();
   }
 
   function openOverlays() { return [...document.querySelectorAll('.overlay.open')]; }
@@ -656,11 +702,16 @@
   function setUnitAuto(type, enabled, announceChange = true) {
     const def = summonDefs[type];
     if (!def || game.hero.level < def.unlock) return false;
-    game.autos[type] = Boolean(enabled);
     const button = document.querySelector(`.summon-card[data-summon="${type}"] .unit-auto`);
+    const restoreAutoFocus = activeSummonFilter === 'auto' && !enabled && document.activeElement === button;
+    game.autos[type] = Boolean(enabled);
     button?.setAttribute('aria-pressed', String(game.autos[type]));
     if (announceChange) ui.live.textContent = `${def.name} continuous Auto ${game.autos[type] ? 'enabled' : 'disabled'}.`;
-    if (activeSummonFilter === 'auto') setSummonFilter('auto', false);
+    if (activeSummonFilter === 'auto') refreshSummonPage();
+    if (restoreAutoFocus) requestAnimationFrame(() => {
+      const nextAuto = ui.summonList.querySelector('.summon-card:not([hidden]) .unit-auto:not(:disabled)');
+      (nextAuto || ui.summonFilters.querySelector('[data-tier="auto"]'))?.focus();
+    });
     markSummonUiDirty();
     updateUI(true);
     return true;
@@ -669,7 +720,7 @@
   function disableAllAutos() {
     Object.keys(game.autos).forEach(type => { game.autos[type] = false; });
     ui.live.textContent = 'All continuous unit Autos disabled.';
-    if (activeSummonFilter === 'auto') setSummonFilter('auto', false);
+    if (activeSummonFilter === 'auto') refreshSummonPage();
     markSummonUiDirty();
     updateUI(true);
   }
@@ -1938,6 +1989,19 @@
     const filter = event.target.closest('[data-tier]');
     if (filter) setSummonFilter(filter.dataset.tier, false);
   });
+  ui.summonFilters.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.code)) return;
+    const filters = [...ui.summonFilters.querySelectorAll('[data-tier]:not([hidden])')];
+    const current = filters.indexOf(event.target.closest('[data-tier]'));
+    if (current < 0 || !filters.length) return;
+    event.preventDefault();
+    const next = event.code === 'Home' ? 0 : event.code === 'End' ? filters.length - 1
+      : event.code === 'ArrowLeft' ? (current + filters.length - 1) % filters.length
+      : (current + 1) % filters.length;
+    setSummonFilter(filters[next].dataset.tier);
+  });
+  ui.summonPagePrev.addEventListener('click', () => turnSummonPage(-1));
+  ui.summonPageNext.addEventListener('click', () => turnSummonPage(1));
   document.querySelectorAll('.shop-item').forEach(button => button.addEventListener('click', () => buyItem(button.dataset.upgrade)));
   $('forgeGearTab').addEventListener('click', () => togglePurchasePage('gear'));
   $('forgeRelicTab').addEventListener('click', () => togglePurchasePage('relics'));
@@ -2016,12 +2080,14 @@
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1', '0.0.0.0', 'terminal.local'].includes(location.hostname)) {
     window.__linewardenTest = {
-      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit, hexed: game.hero.hexed, damageMultiplier: game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1 }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen, marketPage: game.marketPage }),
+      snapshot: () => ({ time: game.time, wave: game.wave, nextWave: game.nextWave, gold: game.gold, income: game.income, incomeClock: game.incomeClock, paused: game.paused, roster: { ...game.roster }, contracts: { ...game.contracts }, stock: { ...game.stock }, stockClocks: { ...game.stockClocks }, queue: game.spawnQueue.length, queueSelf: game.spawnQueue.filter(entry => entry.playerMade).length, returnQueued: game.returnQueued, returnWaves: Object.fromEntries(Object.entries(game.returnWaves).map(([wave, progress]) => [wave, { ...progress }])), queueState: [...game.spawnQueue].sort((a, b) => spawnEntryBefore(a, b) ? -1 : spawnEntryBefore(b, a) ? 1 : 0).map(entry => ({ type: entry.type, source: entry.source, wave: entry.wave, due: entry.due, priority: entry.priority, sequence: entry.sequence })), enemies: game.enemies.length, enemyState: game.enemies.map(enemy => ({ id: enemy.id, type: enemy.type, hp: enemy.hp, maxHp: enemy.maxHp, x: enemy.x, y: enemy.y, boss: enemy.boss, playerMade: enemy.playerMade, source: enemy.source, originWave: enemy.originWave, spawnSequence: enemy.spawnSequence, traits: [...(enemy.traits || [])] })), selfActive: game.enemies.filter(enemy => enemy.playerMade).length, allies: game.allies.length, allyCap: revenantCap(), allyState: game.allies.map(ally => ({ id: ally.id, type: ally.type, hp: ally.hp, maxHp: ally.maxHp, x: ally.x, y: ally.y })), projectiles: game.projectiles.length, projectileState: game.projectiles.map(projectile => ({ targetId: projectile.target?.id || null, damage: projectile.damage, chainLeft: projectile.chainLeft || 0, hitIds: [...(projectile.hitIds || [])], wardenShot: Boolean(projectile.wardenShot) })), hero: { x: game.hero.x, y: game.hero.y, hp: game.hero.hp, maxHp: game.hero.maxHp, damage: game.hero.damage, attackRate: game.hero.attackRate, range: game.hero.range, crit: game.hero.crit, hexed: game.hero.hexed, damageMultiplier: game.hero.hexed ? HEX_DAMAGE_MULTIPLIER : 1 }, level: game.hero.level, xp: game.hero.xp, items: { ...game.items }, autos: { ...game.autos }, autoClock: game.autoClock, reserve: RESERVES[game.reserveIndex], drawerOpen: game.drawerOpen, marketPage: game.marketPage, summonFilter: activeSummonFilter, summonSubpage: activeSummonSubpage, summonPageSize: SUMMON_PAGE_SIZE, summonPageCount: Math.max(1, Math.ceil(summonTypesForActiveFilter().length / SUMMON_PAGE_SIZE)), visibleSummons: summonTypesForActiveFilter().slice(activeSummonSubpage * SUMMON_PAGE_SIZE, (activeSummonSubpage + 1) * SUMMON_PAGE_SIZE) }),
       start: begin,
       purchase: type => buySummon(type),
       buyItem: type => buyItem(type),
       addXp,
       setAuto: (enabled, type = 'runner') => setUnitAuto(type, enabled, false),
+      setSummonFilter: filter => setSummonFilter(filter, false),
+      setSummonSubpage: page => { activeSummonSubpage = Math.max(0, Math.floor(page)); refreshSummonPage(); },
       allAutoOff: disableAllAutos,
       setDrawer: open => setSummonDrawer(open, false),
       startWave,

@@ -11,7 +11,7 @@
   <meta property="og:description" content="Defend a winding siege lane, grow a hero, forge stackable relics, and build a hostile roster that returns every wave.">
   <title>Linewarden | Bryce Christopherson</title>
   <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <main class="game-shell" id="gameShell">
@@ -109,14 +109,21 @@
             <small id="rosterTotal" class="roster-total">PERMANENT ROSTER: 0 BODIES / WAVE</small>
             <small id="rosterWaveProgress" class="roster-wave-progress">THIS WAVE: 0 / 0 DEPLOYED</small>
           </div>
-          <nav id="summonFilters" class="summon-filters" aria-label="Contract cost tiers">
-            <button type="button" data-tier="1" aria-pressed="true" aria-label="Show tier one contracts">I</button>
-            <button type="button" data-tier="2" aria-pressed="false" aria-label="Show tier two contracts">II</button>
-            <button type="button" data-tier="3" aria-pressed="false" aria-label="Show tier three contracts">III</button>
-            <button type="button" data-tier="4" aria-pressed="false" aria-label="Show tier four contracts">IV</button>
-            <button type="button" data-tier="5" aria-pressed="false" aria-label="Show tier five contracts">V</button>
-            <button type="button" data-tier="auto" aria-pressed="false" aria-label="Show contracts with continuous Auto enabled">AUTO <span id="autoCount">0</span></button>
-          </nav>
+          <div class="summon-pagination">
+            <nav id="summonFilters" class="summon-filters" aria-label="Contract cost tiers">
+              <button type="button" data-tier="1" aria-pressed="true" aria-label="Show tier one contracts">I</button>
+              <button type="button" data-tier="2" aria-pressed="false" aria-label="Show tier two contracts">II</button>
+              <button type="button" data-tier="3" aria-pressed="false" aria-label="Show tier three contracts">III</button>
+              <button type="button" data-tier="4" aria-pressed="false" aria-label="Show tier four contracts">IV</button>
+              <button type="button" data-tier="5" aria-pressed="false" aria-label="Show tier five contracts">V</button>
+              <button type="button" class="auto-page" data-tier="auto" aria-pressed="false" aria-label="Show contracts with continuous Auto enabled">AUTO <span id="autoCount">0</span></button>
+            </nav>
+            <div class="summon-page-controls" role="group" aria-label="Pages within the selected contract tier">
+              <button id="summonPagePrev" type="button" aria-label="Previous summon page">← <span>PREV</span></button>
+              <span id="summonPageStatus" class="summon-page-status" aria-live="polite">TIER I • PAGE 1 OF 3 • CONTRACTS 1–4</span>
+              <button id="summonPageNext" type="button" aria-label="Next summon page"><span>NEXT</span> →</button>
+            </div>
+          </div>
           <button id="summonDrawerClose" class="drawer-close purchase-close" type="button">RETURN TO BATTLE</button>
         </header>
 
@@ -230,6 +237,6 @@
     <div class="sr-only" id="liveRegion" aria-live="polite"></div>
   </main>
   <noscript>Linewarden needs JavaScript enabled to play. <a href="../">Return to the Visual Lab.</a></noscript>
-  <script src="game.js?v=11"></script>
+  <script src="game.js?v=12"></script>
 </body>
 </html>
