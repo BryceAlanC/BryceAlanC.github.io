@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Game of Life Through Time | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Draw a Conway's Game of Life seed and watch its generations accumulate upward as an interactive three-dimensional spacetime history."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Game of Life Through Time | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Edit a flat Game of Life grid, then orbit the full history with time as the vertical axis."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./simulation.js"></script>
+    <script type="module" src="./demo.js"></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to visualizer</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../">← Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Cellular automata · spacetime</p>
+            <h1>Life through time</h1>
+            <p class="app-hero-copy">
+              Draw a starting generation on a square grid, then let Conway’s
+              rule build upward. Each horizontal layer is one instant; together
+              the layers turn motion, repetition, and extinction into solid
+              geometry that you can rotate and inspect.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-app spacetime-app" aria-label="Spacetime Game of Life visualizer">
+        <div class="lab-stage-shell app-layout spacetime-app-layout">
+          <aside class="control-panel" aria-label="Game of Life controls">
+            <h2>Build the first slice</h2>
+            <p>
+              Choose a seed or draw your own. Editing the flat grid pauses the
+              simulation and starts a new history from generation zero.
+            </p>
+
+            <fieldset class="control-group">
+              <legend>Draw</legend>
+              <div class="control-row draw-mode-row" role="group" aria-label="Drawing mode">
+                <button
+                  class="lab-button lab-button-primary"
+                  id="draw-alive"
+                  type="button"
+                  aria-pressed="true"
+                >
+                  Draw alive
+                </button>
+                <button class="lab-button" id="draw-dead" type="button" aria-pressed="false">
+                  Erase
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Starting pattern</legend>
+              <label class="field-label" for="life-pattern">Seed</label>
+              <select id="life-pattern">
+                <option value="glider">Glider</option>
+                <option value="r-pentomino">R-pentomino</option>
+                <option value="acorn">Acorn</option>
+                <option value="pulsar">Pulsar</option>
+                <option value="gosper">Gosper glider gun</option>
+                <option value="random">Random soup</option>
+                <option value="blank">Blank grid</option>
+              </select>
+              <button class="lab-button full-width-button" id="load-pattern" type="button">
+                Load pattern
+              </button>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Board</legend>
+              <label class="field-label" for="board-size">Grid size</label>
+              <select id="board-size">
+                <option value="20">20 × 20</option>
+                <option value="28">28 × 28</option>
+                <option value="36" selected>36 × 36</option>
+                <option value="44">44 × 44</option>
+              </select>
+              <label class="check-row">
+                <input id="wrap-boundary" type="checkbox" />
+                <span>Wrap opposite edges</span>
+              </label>
+              <p class="control-help">
+                With wrapping off, cells beyond the square are dead. With it on,
+                the board is a torus.
+              </p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Time axis</legend>
+              <div class="field-label">
+                <label for="life-speed">Speed</label>
+                <output id="life-speed-value" for="life-speed">6 gen/s</output>
+              </div>
+              <input id="life-speed" type="range" min="1" max="20" value="6" step="1" />
+
+              <div class="field-label field-label-spaced">
+                <label for="generation-limit">Height</label>
+                <output id="generation-limit-value" for="generation-limit">60 generations</output>
+              </div>
+              <input id="generation-limit" type="range" min="12" max="96" value="60" step="4" />
+
+              <div class="field-label field-label-spaced">
+                <label for="layer-spacing">Layer spacing</label>
+                <output id="layer-spacing-value" for="layer-spacing">0.65×</output>
+              </div>
+              <input id="layer-spacing" type="range" min="0.3" max="1.1" value="0.65" step="0.05" />
+            </fieldset>
+
+            <div class="control-row">
+              <button class="lab-button lab-button-primary" id="life-play" type="button">Play</button>
+              <button class="lab-button" id="life-step" type="button">Step</button>
+            </div>
+            <div class="control-row">
+              <button class="lab-button" id="life-restart" type="button">Restart</button>
+              <button class="lab-button" id="life-clear" type="button">Clear seed</button>
+            </div>
+            <button class="lab-button full-width-button" id="fit-view" type="button">
+              Reset 3D view
+            </button>
+          </aside>
+
+          <div class="stage-stack">
+            <section class="stage-panel" aria-labelledby="visualizer-title">
+              <div class="stage-heading spacetime-stage-heading">
+                <div>
+                  <p class="section-kicker">Two views of one evolution</p>
+                  <h2 id="visualizer-title">Space × space × time</h2>
+                </div>
+                <p id="life-status">Generation 0 · ready</p>
+              </div>
+
+              <div class="spacetime-workbench">
+                <section class="slice-panel" aria-labelledby="seed-grid-title">
+                  <div class="pane-heading">
+                    <div>
+                      <span>01</span>
+                      <h3 id="seed-grid-title">Starting grid</h3>
+                    </div>
+                    <p>Click or drag to edit generation 0.</p>
+                  </div>
+                  <div class="seed-grid-frame" id="seed-grid-frame">
+                    <canvas
+                      id="seed-grid"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Editable 36 by 36 Game of Life starting grid. Use the arrow keys to move between cells and Space or Enter to apply the selected drawing mode."
+                      aria-describedby="seed-grid-help"
+                    ></canvas>
+                  </div>
+                  <p class="pane-help" id="seed-grid-help">
+                    Alive cells are light; dead cells are dark. Keyboard: arrows
+                    move, Space or Enter draws, A selects alive, E selects erase.
+                  </p>
+                </section>
+
+                <section class="history-panel" aria-labelledby="history-title">
+                  <div class="pane-heading pane-heading-dark">
+                    <div>
+                      <span>02</span>
+                      <h3 id="history-title">Accumulated history</h3>
+                    </div>
+                    <p id="history-help">Drag: orbit · scroll/pinch: zoom · keys: arrows, +/−, 0</p>
+                  </div>
+                  <div class="history-viewport" id="history-viewport">
+                    <canvas
+                      id="history-canvas"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Interactive three-dimensional history of the Game of Life evolution"
+                      aria-describedby="history-help history-legend-description history-state-description"
+                    ></canvas>
+                    <div class="history-message" id="history-message" role="status" hidden></div>
+                    <div class="history-axis" aria-hidden="true">
+                      <span>Present</span>
+                      <i></i>
+                      <span>Generation 0</span>
+                    </div>
+                    <div class="history-overlay" aria-hidden="true">
+                      <span><i class="legend-current"></i>Recent</span>
+                      <span><i class="legend-birth"></i>Birth</span>
+                      <span><i class="legend-past"></i>Earlier</span>
+                      <strong>Time ↑</strong>
+                    </div>
+                    <p class="sr-only" id="history-legend-description">
+                      Earlier generations are dark blue and green, recent generations are peach,
+                      and cells born in a generation are teal. Time increases upward.
+                    </p>
+                    <p class="sr-only" id="history-state-description">
+                      Generation 0, 5 living cells, 5 voxels drawn.
+                    </p>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section class="telemetry-panel" aria-label="Simulation measurements">
+              <div class="telemetry-item">
+                <span>Generation</span>
+                <strong id="life-generation">0</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Living now</span>
+                <strong id="life-alive">5</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Voxels drawn</span>
+                <strong id="life-voxels">5</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Boundary</span>
+                <strong id="life-boundary">Finite</strong>
+              </div>
+            </section>
+
+            <p class="app-note">
+              <strong>How to read the stack.</strong> The bottom layer is the grid you
+              drew. Conway’s B3/S23 rule produces the next layer: a dead cell is born
+              with exactly three living neighbors, while a living cell survives with
+              two or three. Repeating this process makes discrete time the vertical
+              coordinate. A still life forms straight pillars, an oscillator forms a
+              repeating braid, and a glider leaves a diagonal trail because it moves
+              through space as time rises.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="sr-only" id="life-announcer" aria-live="polite" aria-atomic="true"></div>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>
