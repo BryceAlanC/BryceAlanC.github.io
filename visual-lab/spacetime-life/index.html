@@ -25,9 +25,9 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style-20260902f.css" />
+    <link rel="stylesheet" href="./style-20260902g.css" />
     <script src="./simulation.js?v=20260902d"></script>
-    <script type="module" src="./demo-20260902f.js"></script>
+    <script type="module" src="./demo-20260902g.js"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to visualizer</a>
@@ -228,7 +228,7 @@
                       id="history-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Interactive rolling three-dimensional history of the Game of Life evolution"
+                      aria-label="Interactive rolling three-dimensional Game of Life history, with living cells shown as cool blue-gray voxels and time rising vertically"
                       aria-describedby="history-help history-legend-description history-state-description"
                     ></canvas>
                     <div class="history-message" id="history-message" role="status" hidden></div>
@@ -238,15 +238,12 @@
                       <span id="history-axis-oldest">Oldest · 0</span>
                     </div>
                     <div class="history-overlay" aria-hidden="true">
-                      <span><i class="legend-current"></i>Recent</span>
-                      <span><i class="legend-birth"></i>Birth</span>
-                      <span><i class="legend-past"></i>Earlier</span>
                       <strong id="history-range">Time ↑ · 0–0</strong>
                     </div>
                     <p class="sr-only" id="history-legend-description">
-                      Earlier visible generations are cool gray-white, recent generations are warm
-                      ivory, and cells born in a generation are mint. The newest layer is brightest.
-                      Time increases upward.
+                      Each cool blue-gray voxel marks a living cell in one generation. Older visible
+                      layers are darker, newer layers are brighter, and fixed face shading shows
+                      orientation and depth. Time increases upward.
                     </p>
                     <p class="sr-only" id="history-state-description">
                       Generation 0, 48 living cells, 48 visible voxels.
