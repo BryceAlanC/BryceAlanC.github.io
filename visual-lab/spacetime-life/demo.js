@@ -17,8 +17,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     speedValue: document.getElementById("life-speed-value"),
     limit: document.getElementById("generation-limit"),
     limitValue: document.getElementById("generation-limit-value"),
-    spacing: document.getElementById("layer-spacing"),
-    spacingValue: document.getElementById("layer-spacing-value"),
     play: document.getElementById("life-play"),
     step: document.getElementById("life-step"),
     restart: document.getElementById("life-restart"),
@@ -55,7 +53,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     wrap: elements.wrap.checked,
     generation: 0,
     historyLimit: Number(elements.limit.value),
-    layerSpacing: Number(elements.spacing.value),
+    layerSpacing: 1,
     speed: Number(elements.speed.value),
     playing: false,
     stopReason: "ready",
@@ -91,11 +89,11 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     failed: false,
     dummy: new THREE.Object3D(),
     color: new THREE.Color(),
-    oldColor: new THREE.Color("#26364f"),
-    middleColor: new THREE.Color("#0b6658"),
-    recentColor: new THREE.Color("#f0b18b"),
-    currentColor: new THREE.Color("#fff0d8"),
-    birthColor: new THREE.Color("#6ed9c5")
+    oldColor: new THREE.Color("#5f8fa8"),
+    middleColor: new THREE.Color("#32b49b"),
+    recentColor: new THREE.Color("#f5bd93"),
+    currentColor: new THREE.Color("#fff4dd"),
+    birthColor: new THREE.Color("#82ead5")
   };
 
   const orbit = {
@@ -201,7 +199,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     const oldestGeneration = firstVisibleGeneration();
     const oldestGenerationLabel = oldestGeneration.toLocaleString();
     elements.limitValue.textContent = model.historyLimit + " layers";
-    elements.spacingValue.textContent = model.layerSpacing.toFixed(2) + "×";
     elements.generation.textContent = generationLabel;
     elements.alive.textContent = living.toLocaleString();
     elements.voxels.textContent = model.totalVoxels.toLocaleString();
@@ -505,18 +502,18 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     });
 
     three.baseGrid = new THREE.GridHelper(model.size, model.size, 0x6ed9c5, 0xb7d4ca);
-    configureMaterialOpacity(three.baseGrid.material, 0.16);
-    three.baseGrid.position.y = -Math.max(0.18, model.layerSpacing * 0.42);
+    configureMaterialOpacity(three.baseGrid.material, 0.26);
+    three.baseGrid.position.y = -0.58;
     three.scene.add(three.baseGrid);
 
     three.currentGrid = new THREE.GridHelper(model.size, model.size, 0xf0b18b, 0xf9e5d2);
-    configureMaterialOpacity(three.currentGrid.material, 0.13);
-    three.currentGrid.position.y = finalLayer * model.layerSpacing + model.layerSpacing * 0.42;
+    configureMaterialOpacity(three.currentGrid.material, 0.22);
+    three.currentGrid.position.y = finalLayer * model.layerSpacing + 0.58;
     three.scene.add(three.currentGrid);
 
     const arrowOrigin = new THREE.Vector3(
       -model.size / 2 - 1.5,
-      -Math.max(0.18, model.layerSpacing * 0.42),
+      -0.52,
       model.size / 2 + 1.5
     );
     const arrowLength = Math.max(2.4, model.history.length * model.layerSpacing);
@@ -549,8 +546,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     let instance = 0;
     const finalLayer = model.history.length - 1;
     const center = (model.size - 1) / 2;
-    const cubeHeight = Math.max(0.16, model.layerSpacing * 0.62);
-
     for (let layer = 0; layer < model.history.length; layer += 1) {
       const entry = model.history[layer];
       for (let index = 0; index < entry.state.length; index += 1) {
@@ -558,7 +553,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
         const row = Math.floor(index / model.size);
         const column = index - row * model.size;
         three.dummy.position.set(column - center, layer * model.layerSpacing, row - center);
-        three.dummy.scale.set(0.82, cubeHeight, 0.82);
+        three.dummy.scale.set(1, 1, 1);
         three.dummy.rotation.set(0, 0, 0);
         three.dummy.updateMatrix();
         three.voxels.setMatrixAt(instance, three.dummy.matrix);
@@ -581,7 +576,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       three.voxels.instanceColor.needsUpdate = true;
     }
     if (three.currentGrid) {
-      three.currentGrid.position.y = finalLayer * model.layerSpacing + model.layerSpacing * 0.42;
+      three.currentGrid.position.y = finalLayer * model.layerSpacing + 0.58;
     }
     if (three.timeArrow) {
       const length = Math.max(2.4, model.history.length * model.layerSpacing);
@@ -609,7 +604,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       three.camera.updateProjectionMatrix();
     }
     if (three.scene.fog) {
-      three.scene.fog.density = Life.clamp(0.45 / orbit.radius, 0.00065, 0.0025);
+      three.scene.fog.density = Life.clamp(0.22 / orbit.radius, 0.0003, 0.0012);
     }
   }
 
@@ -680,26 +675,27 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
         powerPreference: "high-performance"
       });
       three.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      three.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      three.renderer.toneMappingExposure = 1.08;
+      three.renderer.toneMapping = THREE.NeutralToneMapping;
+      three.renderer.toneMappingExposure = 1.15;
 
       three.scene = new THREE.Scene();
-      three.scene.fog = new THREE.FogExp2(0x071c18, 0.0025);
+      three.scene.fog = new THREE.FogExp2(0x173b36, 0.0012);
       three.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1800);
 
-      three.scene.add(new THREE.HemisphereLight(0xd8fff4, 0x10131e, 1.8));
-      const keyLight = new THREE.DirectionalLight(0xffe4ca, 3.2);
+      three.scene.add(new THREE.HemisphereLight(0xe8fff9, 0x355952, 2.35));
+      three.scene.add(new THREE.AmbientLight(0xd7eee9, 0.85));
+      const keyLight = new THREE.DirectionalLight(0xffead7, 2.35);
       keyLight.position.set(20, 44, 26);
       three.scene.add(keyLight);
-      const rimLight = new THREE.DirectionalLight(0x5fd3c3, 1.5);
+      const rimLight = new THREE.DirectionalLight(0x8ff4df, 1.85);
       rimLight.position.set(-28, 12, -22);
       three.scene.add(rimLight);
 
       three.voxelGeometry = new THREE.BoxGeometry(1, 1, 1);
       three.voxelMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        roughness: 0.42,
-        metalness: 0.04,
+        roughness: 0.52,
+        metalness: 0,
         vertexColors: true
       });
       three.voxels = new THREE.InstancedMesh(
@@ -862,14 +858,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   elements.limit.addEventListener("change", function announceLimit() {
     announce("Showing up to " + model.historyLimit + " recent layers.");
-  });
-
-  elements.spacing.addEventListener("input", function changeSpacing() {
-    model.layerSpacing = Number(elements.spacing.value);
-    elements.spacingValue.textContent = model.layerSpacing.toFixed(2) + "×";
-    refreshSceneGuides();
-    rebuildHistoryMesh();
-    fitView(false);
   });
 
   elements.play.addEventListener("click", function togglePlayback() {
