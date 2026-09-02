@@ -34,6 +34,9 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     alive: document.getElementById("life-alive"),
     voxels: document.getElementById("life-voxels"),
     boundary: document.getElementById("life-boundary"),
+    axisNow: document.getElementById("history-axis-now"),
+    axisOldest: document.getElementById("history-axis-oldest"),
+    historyRange: document.getElementById("history-range"),
     historyState: document.getElementById("history-state-description"),
     announcer: document.getElementById("life-announcer")
   };
@@ -51,13 +54,13 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     neighborTable: null,
     wrap: elements.wrap.checked,
     generation: 0,
-    generationLimit: Number(elements.limit.value),
+    historyLimit: Number(elements.limit.value),
     layerSpacing: Number(elements.spacing.value),
     speed: Number(elements.speed.value),
     playing: false,
     stopReason: "ready",
     autoStartPending: !reducedMotion,
-    renderBlocked: false,
+    inViewport: typeof IntersectionObserver !== "function",
     totalVoxels: 0,
     drawValue: 1,
     cursorRow: 0,
@@ -104,7 +107,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     pointers: new Map(),
     pinchDistance: 0
   };
-  let autoStartObserver = null;
+  let viewportObserver = null;
 
   function announce(message) {
     elements.announcer.textContent = "";
@@ -115,21 +118,40 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   function cancelAutoStart() {
     model.autoStartPending = false;
-    if (autoStartObserver) {
-      autoStartObserver.disconnect();
-      autoStartObserver = null;
-    }
   }
 
   function armAutoStart() {
-    if (!model.autoStartPending || typeof IntersectionObserver !== "function") return;
-    autoStartObserver = new IntersectionObserver(function startVisibleRun(entries) {
+    if (typeof IntersectionObserver !== "function") {
+      model.inViewport = true;
+      if (model.autoStartPending) {
+        cancelAutoStart();
+        setPlaying(true, "running", false);
+      }
+      return;
+    }
+    viewportObserver = new IntersectionObserver(function trackVisibleRun(entries) {
       const latestEntry = entries[entries.length - 1];
-      if (!latestEntry || !latestEntry.isIntersecting || latestEntry.intersectionRatio < 0.22) return;
-      cancelAutoStart();
-      setPlaying(true, "running", false);
-    }, { threshold: 0.22 });
-    autoStartObserver.observe(elements.historyViewport);
+      if (!latestEntry) return;
+      const wasVisible = model.inViewport;
+      model.inViewport = latestEntry.isIntersecting && latestEntry.intersectionRatio >= 0.05;
+
+      if (!model.inViewport && model.animationFrame) {
+        window.cancelAnimationFrame(model.animationFrame);
+        model.animationFrame = 0;
+        model.previousFrame = 0;
+        model.accumulator = 0;
+      } else if (!wasVisible && model.inViewport && model.playing) {
+        model.previousFrame = 0;
+        model.accumulator = 0;
+        requestAnimation();
+      }
+
+      if (model.autoStartPending && model.inViewport && latestEntry.intersectionRatio >= 0.22) {
+        cancelAutoStart();
+        setPlaying(true, "running", false);
+      }
+    }, { threshold: [0, 0.05, 0.22] });
+    viewportObserver.observe(elements.historyViewport);
   }
 
   function currentEntry() {
@@ -138,6 +160,29 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   function currentState() {
     return currentEntry().state;
+  }
+
+  function firstVisibleGeneration() {
+    return model.generation - model.history.length + 1;
+  }
+
+  function visibleStackHeight() {
+    return Math.max(1, (model.history.length - 1) * model.layerSpacing);
+  }
+
+  function discardOldestLayer() {
+    if (model.history.length <= 1) return false;
+    const removed = model.history.shift();
+    const removedPopulation = Number.isFinite(removed.population)
+      ? removed.population
+      : Life.countAlive(removed.state);
+    model.totalVoxels = Math.max(0, model.totalVoxels - removedPopulation);
+    return true;
+  }
+
+  function trimHistoryWindow() {
+    while (model.history.length > model.historyLimit) discardOldestLayer();
+    while (model.totalVoxels > voxelLimit && model.history.length > 1) discardOldestLayer();
   }
 
   function setDrawValue(value, shouldAnnounce) {
@@ -151,23 +196,30 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   function updateOutputs() {
     const living = Life.countAlive(currentState());
+    const generationLabel = model.generation.toLocaleString();
     elements.speedValue.textContent = model.speed + " gen/s";
-    elements.limitValue.textContent = model.generationLimit + " generations";
+    const oldestGeneration = firstVisibleGeneration();
+    const oldestGenerationLabel = oldestGeneration.toLocaleString();
+    elements.limitValue.textContent = model.historyLimit + " layers";
     elements.spacingValue.textContent = model.layerSpacing.toFixed(2) + "×";
-    elements.generation.textContent = String(model.generation);
+    elements.generation.textContent = generationLabel;
     elements.alive.textContent = living.toLocaleString();
     elements.voxels.textContent = model.totalVoxels.toLocaleString();
     elements.boundary.textContent = model.wrap ? "Wrapped" : "Finite";
     elements.play.textContent = model.playing ? "Pause" : "Play";
     elements.play.setAttribute("aria-pressed", model.playing ? "true" : "false");
-    elements.step.disabled =
-      model.playing || model.renderBlocked || living === 0 || model.generation >= model.generationLimit;
-    elements.play.disabled =
-      model.renderBlocked || living === 0 || model.generation >= model.generationLimit;
-    elements.status.textContent = "Generation " + model.generation + " · " + model.stopReason;
+    elements.step.disabled = model.playing || living === 0;
+    elements.play.disabled = living === 0;
+    elements.status.textContent = "Generation " + generationLabel + " · " + model.stopReason;
+    elements.axisNow.textContent = "Now · " + generationLabel;
+    elements.axisOldest.textContent = "Oldest · " + oldestGenerationLabel;
+    elements.historyRange.textContent =
+      "Time ↑ · " + oldestGenerationLabel + "–" + generationLabel;
     elements.historyState.textContent =
-      "Generation " + model.generation + ", " + living.toLocaleString() +
-      " living cells, " + model.totalVoxels.toLocaleString() + " voxels drawn.";
+      "Generation " + generationLabel + ", " + living.toLocaleString() +
+      " living cells, " + model.totalVoxels.toLocaleString() +
+      " visible voxels across generations " + oldestGenerationLabel +
+      " through " + generationLabel + ".";
     elements.seedCanvas.setAttribute(
       "aria-label",
       "Editable " + model.size + " by " + model.size +
@@ -177,18 +229,10 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   function setPlaying(playing, reason, shouldAnnounce) {
     if (playing) {
-      if (model.renderBlocked) {
-        model.playing = false;
-        model.stopReason = "voxel limit reached";
-        if (shouldAnnounce) announce("Change the seed, board, or height before continuing.");
-      } else if (Life.countAlive(currentState()) === 0) {
+      if (Life.countAlive(currentState()) === 0) {
         model.playing = false;
         model.stopReason = "seed is empty";
         if (shouldAnnounce) announce("Draw at least one living cell before playing.");
-      } else if (model.generation >= model.generationLimit) {
-        model.playing = false;
-        model.stopReason = "height reached";
-        if (shouldAnnounce) announce("The chosen height has been reached. Raise it or restart the run.");
       } else {
         model.playing = true;
         model.stopReason = "running";
@@ -207,10 +251,14 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   }
 
   function resetEvolution(reason) {
-    model.history = [{ state: model.seed.slice(), births: emptyBirths(model.size) }];
+    const seedPopulation = Life.countAlive(model.seed);
+    model.history = [{
+      state: model.seed.slice(),
+      births: emptyBirths(model.size),
+      population: seedPopulation
+    }];
     model.generation = 0;
-    model.totalVoxels = Life.countAlive(model.seed);
-    model.renderBlocked = false;
+    model.totalVoxels = seedPopulation;
     model.accumulator = 0;
     model.stopReason = reason || "paused";
     rebuildHistoryMesh();
@@ -259,27 +307,13 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   }
 
   function stepEvolution(shouldAnnounce, deferVisualUpdate) {
-    if (model.generation >= model.generationLimit) {
-      setPlaying(false, "height reached", false);
-      if (shouldAnnounce) announce("The chosen height has been reached.");
-      return false;
-    }
-
     const result = Life.step(currentState(), model.size, model.wrap, model.neighborTable);
     const nextPopulation = Life.countAlive(result.state);
-    if (model.totalVoxels + nextPopulation > voxelLimit) {
-      model.renderBlocked = true;
-      setPlaying(false, "voxel limit reached", false);
-      showHistoryMessage(
-        "This run reached the safe rendering limit. Use a smaller board, a shorter height, or a sparser seed."
-      );
-      if (shouldAnnounce) announce("The run stopped at the safe rendering limit.");
-      return false;
-    }
-
+    result.population = nextPopulation;
     model.history.push(result);
     model.generation += 1;
     model.totalVoxels += nextPopulation;
+    trimHistoryWindow();
     model.stopReason = model.playing ? "running" : "paused";
     if (!deferVisualUpdate) {
       rebuildHistoryMesh(false);
@@ -289,9 +323,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     if (nextPopulation === 0) {
       setPlaying(false, "extinct", false);
       if (shouldAnnounce) announce("The pattern became extinct at generation " + model.generation + ".");
-    } else if (model.generation >= model.generationLimit) {
-      setPlaying(false, "height complete", false);
-      if (shouldAnnounce) announce("The spacetime stack reached generation " + model.generation + ".");
     } else {
       updateOutputs();
       if (shouldAnnounce) announce("Advanced to generation " + model.generation + ".");
@@ -303,15 +334,20 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     model.playing = false;
     model.seedName = "custom";
     model.stopReason = "editing seed";
-    model.history = [{ state: model.seed.slice(), births: emptyBirths(model.size) }];
+    const seedPopulation = Life.countAlive(model.seed);
+    model.history = [{
+      state: model.seed.slice(),
+      births: emptyBirths(model.size),
+      population: seedPopulation
+    }];
     model.generation = 0;
-    model.totalVoxels = Life.countAlive(model.seed);
-    model.renderBlocked = false;
+    model.totalVoxels = seedPopulation;
     model.accumulator = 0;
   }
 
   function refreshSeedEdit() {
     model.totalVoxels = Life.countAlive(model.seed);
+    model.history[0].population = model.totalVoxels;
     rebuildHistoryMesh();
     drawSeedGrid();
     updateOutputs();
@@ -461,6 +497,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
   function refreshSceneGuides() {
     if (!three.ready) return;
+    const finalLayer = model.history.length - 1;
     [three.baseGrid, three.currentGrid, three.timeArrow].forEach(function removeGuide(guide) {
       if (!guide) return;
       three.scene.remove(guide);
@@ -474,7 +511,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
     three.currentGrid = new THREE.GridHelper(model.size, model.size, 0xf0b18b, 0xf9e5d2);
     configureMaterialOpacity(three.currentGrid.material, 0.13);
-    three.currentGrid.position.y = model.generation * model.layerSpacing + model.layerSpacing * 0.42;
+    three.currentGrid.position.y = finalLayer * model.layerSpacing + model.layerSpacing * 0.42;
     three.scene.add(three.currentGrid);
 
     const arrowOrigin = new THREE.Vector3(
@@ -482,7 +519,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       -Math.max(0.18, model.layerSpacing * 0.42),
       model.size / 2 + 1.5
     );
-    const arrowLength = Math.max(2.4, (model.generation + 1) * model.layerSpacing);
+    const arrowLength = Math.max(2.4, model.history.length * model.layerSpacing);
     three.timeArrow = new THREE.ArrowHelper(
       new THREE.Vector3(0, 1, 0),
       arrowOrigin,
@@ -544,19 +581,13 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       three.voxels.instanceColor.needsUpdate = true;
     }
     if (three.currentGrid) {
-      three.currentGrid.position.y = model.generation * model.layerSpacing + model.layerSpacing * 0.42;
+      three.currentGrid.position.y = finalLayer * model.layerSpacing + model.layerSpacing * 0.42;
     }
     if (three.timeArrow) {
-      const length = Math.max(2.4, (model.generation + 1) * model.layerSpacing);
+      const length = Math.max(2.4, model.history.length * model.layerSpacing);
       three.timeArrow.setLength(length, Math.min(1.5, length * 0.18), 0.72);
     }
-    if (model.renderBlocked) {
-      showHistoryMessage(
-        "This run reached the safe rendering limit. Use a smaller board, a shorter height, or a sparser seed."
-      );
-    } else if (!three.failed) {
-      showHistoryMessage("");
-    }
+    if (!three.failed) showHistoryMessage("");
     if (renderAfterUpdate !== false) renderScene();
   }
 
@@ -569,6 +600,17 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       orbit.radius * sinPhi * Math.sin(orbit.theta)
     );
     three.camera.lookAt(0, orbit.targetY, 0);
+    const sceneRadius = 0.5 * Math.sqrt(
+      Math.pow(model.size + 4, 2) * 2 + Math.pow(visibleStackHeight() + 2, 2)
+    );
+    const requiredFar = Math.ceil(orbit.radius + sceneRadius * 1.25);
+    if (requiredFar > three.camera.far) {
+      three.camera.far = requiredFar;
+      three.camera.updateProjectionMatrix();
+    }
+    if (three.scene.fog) {
+      three.scene.fog.density = Life.clamp(0.45 / orbit.radius, 0.00065, 0.0025);
+    }
   }
 
   function fittedRadius(height) {
@@ -582,9 +624,13 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     return (boundingRadius / Math.sin(limitingHalfFov)) * 1.12;
   }
 
+  function orbitRadiusCeiling() {
+    return Math.max(900, fittedRadius(visibleStackHeight()) * 1.25);
+  }
+
   function fitView(resetAngles) {
     if (!three.ready) return;
-    const height = Math.max(1, model.generation * model.layerSpacing);
+    const height = visibleStackHeight();
     if (resetAngles) {
       orbit.theta = 0.72;
       orbit.phi = 1.02;
@@ -599,7 +645,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   function updateFollowCamera() {
     if (!three.ready) return;
     if (orbit.autoFollow) {
-      const height = Math.max(1, model.generation * model.layerSpacing);
+      const height = visibleStackHeight();
       orbit.targetY = height * 0.5;
       orbit.radius = Math.max(orbit.radius, fittedRadius(height));
       applyOrbit();
@@ -639,7 +685,7 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
 
       three.scene = new THREE.Scene();
       three.scene.fog = new THREE.FogExp2(0x071c18, 0.0025);
-      three.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1000);
+      three.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1800);
 
       three.scene.add(new THREE.HemisphereLight(0xd8fff4, 0x10131e, 1.8));
       const keyLight = new THREE.DirectionalLight(0xffe4ca, 3.2);
@@ -717,7 +763,11 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     if (orbit.pointers.size >= 2) {
       const distance = pointerDistance(Array.from(orbit.pointers.values()).slice(0, 2));
       if (orbit.pinchDistance > 0 && distance > 0) {
-        orbit.radius = Life.clamp(orbit.radius * (orbit.pinchDistance / distance), model.size * 0.72, 420);
+        orbit.radius = Life.clamp(
+          orbit.radius * (orbit.pinchDistance / distance),
+          model.size * 0.72,
+          orbitRadiusCeiling()
+        );
       }
       orbit.pinchDistance = distance;
     } else {
@@ -735,12 +785,14 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   }
 
   function requestAnimation() {
-    if (!model.animationFrame) model.animationFrame = window.requestAnimationFrame(animate);
+    if (!model.animationFrame && model.playing && model.inViewport && !document.hidden) {
+      model.animationFrame = window.requestAnimationFrame(animate);
+    }
   }
 
   function animate(timestamp) {
     model.animationFrame = 0;
-    if (!model.playing) return;
+    if (!model.playing || !model.inViewport || document.hidden) return;
     if (!model.previousFrame) model.previousFrame = timestamp;
     const delta = Math.min(250, timestamp - model.previousFrame);
     model.previousFrame = timestamp;
@@ -801,20 +853,15 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   });
 
   elements.limit.addEventListener("input", function changeLimit() {
-    model.generationLimit = Number(elements.limit.value);
-    if (model.generation > model.generationLimit) {
-      model.history = model.history.slice(0, model.generationLimit + 1);
-      model.generation = model.generationLimit;
-      model.totalVoxels = Life.countHistory(model.history);
-      model.renderBlocked = false;
-      setPlaying(false, "height shortened", false);
-      rebuildHistoryMesh();
-    } else if (!model.playing && model.generation < model.generationLimit) {
-      model.stopReason = "paused";
-    }
-    elements.limitValue.textContent = model.generationLimit + " generations";
+    model.historyLimit = Number(elements.limit.value);
+    trimHistoryWindow();
+    rebuildHistoryMesh();
     updateOutputs();
     fitView(false);
+  });
+
+  elements.limit.addEventListener("change", function announceLimit() {
+    announce("Showing up to " + model.historyLimit + " recent layers.");
   });
 
   elements.spacing.addEventListener("input", function changeSpacing() {
@@ -974,7 +1021,11 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     if (!three.ready) return;
     event.preventDefault();
     orbit.autoFollow = false;
-    orbit.radius = Life.clamp(orbit.radius * Math.exp(event.deltaY * 0.0012), model.size * 0.72, 420);
+    orbit.radius = Life.clamp(
+      orbit.radius * Math.exp(event.deltaY * 0.0012),
+      model.size * 0.72,
+      orbitRadiusCeiling()
+    );
     applyOrbit();
     renderScene();
   }, { passive: false });
@@ -987,7 +1038,9 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     else if (event.key === "ArrowUp") orbit.phi = Life.clamp(orbit.phi - 0.06, 0.3, 1.48);
     else if (event.key === "ArrowDown") orbit.phi = Life.clamp(orbit.phi + 0.06, 0.3, 1.48);
     else if (event.key === "+" || event.key === "=") orbit.radius = Math.max(model.size * 0.72, orbit.radius * 0.9);
-    else if (event.key === "-" || event.key === "_") orbit.radius = Math.min(420, orbit.radius * 1.1);
+    else if (event.key === "-" || event.key === "_") {
+      orbit.radius = Math.min(orbitRadiusCeiling(), orbit.radius * 1.1);
+    }
     else if (event.key === "0") {
       fitView(true);
       event.preventDefault();
@@ -1004,7 +1057,12 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   document.addEventListener("visibilitychange", function handleVisibility() {
     model.previousFrame = 0;
     model.accumulator = 0;
-    if (!document.hidden && model.playing) requestAnimation();
+    if (document.hidden && model.animationFrame) {
+      window.cancelAnimationFrame(model.animationFrame);
+      model.animationFrame = 0;
+    } else if (!document.hidden && model.playing) {
+      requestAnimation();
+    }
   });
 
   if (typeof ResizeObserver === "function") {
@@ -1018,8 +1076,12 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
   model.cursorRow = Math.floor(model.size / 2);
   model.cursorColumn = Math.floor(model.size / 2);
   rebuildNeighbors();
-  model.history = [{ state: model.seed.slice(), births: emptyBirths(model.size) }];
   model.totalVoxels = Life.countAlive(model.seed);
+  model.history = [{
+    state: model.seed.slice(),
+    births: emptyBirths(model.size),
+    population: model.totalVoxels
+  }];
   setDrawValue(1, false);
   initializeThree();
   drawSeedGrid();

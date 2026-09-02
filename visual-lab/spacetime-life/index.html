@@ -6,7 +6,7 @@
     <title>Game of Life Through Time | Bryce Christopherson</title>
     <meta
       name="description"
-      content="Draw a Conway's Game of Life seed and watch its generations accumulate upward as an interactive three-dimensional spacetime history."
+      content="Draw a Conway's Game of Life seed and watch generations rise indefinitely through a rolling three-dimensional spacetime history."
     />
     <meta name="author" content="Bryce A. Christopherson" />
     <meta name="theme-color" content="#0b5748" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="Game of Life Through Time | Bryce Christopherson" />
     <meta
       property="og:description"
-      content="Edit a flat Game of Life grid, then orbit the full history with time as the vertical axis."
+      content="Edit a flat Game of Life grid, then orbit a rolling history with time as the vertical axis."
     />
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -76,9 +76,10 @@
             <h1>Life through time</h1>
             <p class="app-hero-copy">
               Draw a starting generation on a square grid, then let Conway’s
-              rule build upward. Each horizontal layer is one instant; together
-              the layers turn motion, repetition, and extinction into solid
-              geometry that you can rotate and inspect.
+              rule build upward. Each horizontal layer is one instant. The
+              generation count keeps advancing while a rolling window turns
+              motion, repetition, and extinction into solid geometry that you
+              can rotate and inspect.
             </p>
           </div>
         </div>
@@ -117,7 +118,7 @@
                 <option value="glider">Glider</option>
                 <option value="r-pentomino">R-pentomino</option>
                 <option value="acorn">Acorn</option>
-                <option value="pulsar">Pulsar</option>
+                <option value="pulsar" selected>Pulsar</option>
                 <option value="gosper">Gosper glider gun</option>
                 <option value="random">Random soup</option>
                 <option value="blank">Blank grid</option>
@@ -155,10 +156,15 @@
               <input id="life-speed" type="range" min="1" max="20" value="6" step="1" />
 
               <div class="field-label field-label-spaced">
-                <label for="generation-limit">Height</label>
-                <output id="generation-limit-value" for="generation-limit">60 generations</output>
+                <label for="generation-limit">History window</label>
+                <output id="generation-limit-value" for="generation-limit">120 layers</output>
               </div>
-              <input id="generation-limit" type="range" min="12" max="96" value="60" step="4" />
+              <input id="generation-limit" type="range" min="24" max="240" value="120" step="8" />
+              <p class="control-help">
+                Keep up to this many recent layers without stopping the evolution.
+                Once full, the oldest layer drops away as a new one appears. Dense
+                runs may retain fewer layers to keep the 3D view responsive.
+              </p>
 
               <div class="field-label field-label-spaced">
                 <label for="layer-spacing">Layer spacing</label>
@@ -218,7 +224,7 @@
                   <div class="pane-heading pane-heading-dark">
                     <div>
                       <span>02</span>
-                      <h3 id="history-title">Accumulated history</h3>
+                      <h3 id="history-title">Rolling history</h3>
                     </div>
                     <p id="history-help">Drag: orbit · scroll/pinch: zoom · keys: arrows, +/−, 0</p>
                   </div>
@@ -227,27 +233,27 @@
                       id="history-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Interactive three-dimensional history of the Game of Life evolution"
+                      aria-label="Interactive rolling three-dimensional history of the Game of Life evolution"
                       aria-describedby="history-help history-legend-description history-state-description"
                     ></canvas>
                     <div class="history-message" id="history-message" role="status" hidden></div>
                     <div class="history-axis" aria-hidden="true">
-                      <span>Present</span>
+                      <span id="history-axis-now">Now · 0</span>
                       <i></i>
-                      <span>Generation 0</span>
+                      <span id="history-axis-oldest">Oldest · 0</span>
                     </div>
                     <div class="history-overlay" aria-hidden="true">
                       <span><i class="legend-current"></i>Recent</span>
                       <span><i class="legend-birth"></i>Birth</span>
                       <span><i class="legend-past"></i>Earlier</span>
-                      <strong>Time ↑</strong>
+                      <strong id="history-range">Time ↑ · 0–0</strong>
                     </div>
                     <p class="sr-only" id="history-legend-description">
-                      Earlier generations are dark blue and green, recent generations are peach,
-                      and cells born in a generation are teal. Time increases upward.
+                      Earlier visible generations are dark blue and green, recent generations are
+                      peach, and cells born in a generation are teal. Time increases upward.
                     </p>
                     <p class="sr-only" id="history-state-description">
-                      Generation 0, 5 living cells, 5 voxels drawn.
+                      Generation 0, 48 living cells, 48 visible voxels.
                     </p>
                   </div>
                 </section>
@@ -261,11 +267,11 @@
               </div>
               <div class="telemetry-item">
                 <span>Living now</span>
-                <strong id="life-alive">5</strong>
+                <strong id="life-alive">48</strong>
               </div>
               <div class="telemetry-item">
-                <span>Voxels drawn</span>
-                <strong id="life-voxels">5</strong>
+                <span>Visible voxels</span>
+                <strong id="life-voxels">48</strong>
               </div>
               <div class="telemetry-item">
                 <span>Boundary</span>
@@ -274,13 +280,14 @@
             </section>
 
             <p class="app-note">
-              <strong>How to read the stack.</strong> The bottom layer is the grid you
-              drew. Conway’s B3/S23 rule produces the next layer: a dead cell is born
-              with exactly three living neighbors, while a living cell survives with
-              two or three. Repeating this process makes discrete time the vertical
-              coordinate. A still life forms straight pillars, an oscillator forms a
-              repeating braid, and a glider leaves a diagonal trail because it moves
-              through space as time rises.
+              <strong>How to read the stack.</strong> The bottom layer is the oldest
+              generation currently visible; at first, it is the grid you drew.
+              Conway’s B3/S23 rule produces each next layer: a dead cell is born with
+              exactly three living neighbors, while a living cell survives with two
+              or three. When the selected history window is full, the oldest layer
+              falls away but the generation count continues. A still life forms
+              straight pillars, an oscillator forms a repeating braid, and a glider
+              leaves a diagonal trail because it moves through space as time rises.
             </p>
           </div>
         </div>
