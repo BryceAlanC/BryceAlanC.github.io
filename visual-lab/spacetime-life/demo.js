@@ -84,8 +84,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     baseGrid: null,
     currentGrid: null,
     timeArrow: null,
-    viewLight: null,
-    viewLightTarget: null,
     resizeObserver: null,
     ready: false,
     failed: false,
@@ -597,10 +595,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       orbit.radius * sinPhi * Math.sin(orbit.theta)
     );
     three.camera.lookAt(0, orbit.targetY, 0);
-    if (three.viewLight && three.viewLightTarget) {
-      three.viewLight.position.copy(three.camera.position);
-      three.viewLightTarget.position.set(0, orbit.targetY, 0);
-    }
     const sceneRadius = 0.5 * Math.sqrt(
       Math.pow(model.size + 4, 2) * 2 + Math.pow(visibleStackHeight() + 2, 2)
     );
@@ -678,32 +672,26 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
         powerPreference: "high-performance"
       });
       three.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      three.renderer.toneMapping = THREE.NeutralToneMapping;
-      three.renderer.toneMappingExposure = 1;
 
       three.scene = new THREE.Scene();
       three.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1800);
 
-      three.scene.add(new THREE.HemisphereLight(0xf7fffd, 0x899b95, 1));
-      three.scene.add(new THREE.AmbientLight(0xfffbf3, 0.6));
-      const keyLight = new THREE.DirectionalLight(0xffead7, 0.55);
-      keyLight.position.set(20, 44, 26);
-      three.scene.add(keyLight);
-      const rimLight = new THREE.DirectionalLight(0xb4f7e9, 0.5);
-      rimLight.position.set(-28, 12, -22);
-      three.scene.add(rimLight);
-
-      three.viewLightTarget = new THREE.Object3D();
-      three.scene.add(three.viewLightTarget);
-      three.viewLight = new THREE.DirectionalLight(0xfff8ee, 2.2);
-      three.viewLight.position.set(20, 30, 20);
-      three.viewLight.target = three.viewLightTarget;
-      three.scene.add(three.viewLight);
-
       three.voxelGeometry = new THREE.BoxGeometry(1, 1, 1);
-      three.voxelMaterial = new THREE.MeshLambertMaterial({
-        color: 0xffffff,
-        vertexColors: true
+      const voxelFaceColors = [
+        0xf8f7f2,
+        0xe8eeeb,
+        0xffffff,
+        0xdce3e0,
+        0xf2f5f2,
+        0xe4eae7
+      ];
+      three.voxelMaterial = voxelFaceColors.map(function createVoxelFaceMaterial(color) {
+        return new THREE.MeshBasicMaterial({
+          color: color,
+          vertexColors: true,
+          fog: false,
+          toneMapped: false
+        });
       });
       three.voxels = new THREE.InstancedMesh(
         three.voxelGeometry,
