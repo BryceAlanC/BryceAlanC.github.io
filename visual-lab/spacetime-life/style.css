@@ -282,16 +282,16 @@
 .history-overlay i {
   width: 9px;
   height: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  background: #f0b18b;
+  border: 1px solid rgba(12, 45, 42, 0.58);
+  background: #f8d5b4;
 }
 
 .history-overlay .legend-birth {
-  background: #82ead5;
+  background: #c9f5e8;
 }
 
 .history-overlay .legend-past {
-  background: #5c88a2;
+  background: #d5ddd9;
 }
 
 .history-overlay strong {

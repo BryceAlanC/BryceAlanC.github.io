@@ -84,16 +84,18 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     baseGrid: null,
     currentGrid: null,
     timeArrow: null,
+    viewLight: null,
+    viewLightTarget: null,
     resizeObserver: null,
     ready: false,
     failed: false,
     dummy: new THREE.Object3D(),
     color: new THREE.Color(),
-    oldColor: new THREE.Color("#5f8fa8"),
-    middleColor: new THREE.Color("#32b49b"),
-    recentColor: new THREE.Color("#f5bd93"),
-    currentColor: new THREE.Color("#fff4dd"),
-    birthColor: new THREE.Color("#82ead5")
+    oldColor: new THREE.Color("#d5ddd9"),
+    middleColor: new THREE.Color("#eee9dc"),
+    recentColor: new THREE.Color("#f8d5b4"),
+    currentColor: new THREE.Color("#fffdf5"),
+    birthColor: new THREE.Color("#c9f5e8")
   };
 
   const orbit = {
@@ -595,6 +597,10 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       orbit.radius * sinPhi * Math.sin(orbit.theta)
     );
     three.camera.lookAt(0, orbit.targetY, 0);
+    if (three.viewLight && three.viewLightTarget) {
+      three.viewLight.position.copy(three.camera.position);
+      three.viewLightTarget.position.set(0, orbit.targetY, 0);
+    }
     const sceneRadius = 0.5 * Math.sqrt(
       Math.pow(model.size + 4, 2) * 2 + Math.pow(visibleStackHeight() + 2, 2)
     );
@@ -602,9 +608,6 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
     if (requiredFar > three.camera.far) {
       three.camera.far = requiredFar;
       three.camera.updateProjectionMatrix();
-    }
-    if (three.scene.fog) {
-      three.scene.fog.density = Life.clamp(0.22 / orbit.radius, 0.0003, 0.0012);
     }
   }
 
@@ -676,26 +679,30 @@ import * as THREE from "../ball-blaster/vendor/three.module.min.js";
       });
       three.renderer.outputColorSpace = THREE.SRGBColorSpace;
       three.renderer.toneMapping = THREE.NeutralToneMapping;
-      three.renderer.toneMappingExposure = 1.15;
+      three.renderer.toneMappingExposure = 1;
 
       three.scene = new THREE.Scene();
-      three.scene.fog = new THREE.FogExp2(0x173b36, 0.0012);
       three.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 1800);
 
-      three.scene.add(new THREE.HemisphereLight(0xe8fff9, 0x355952, 2.35));
-      three.scene.add(new THREE.AmbientLight(0xd7eee9, 0.85));
-      const keyLight = new THREE.DirectionalLight(0xffead7, 2.35);
+      three.scene.add(new THREE.HemisphereLight(0xf7fffd, 0x899b95, 1));
+      three.scene.add(new THREE.AmbientLight(0xfffbf3, 0.6));
+      const keyLight = new THREE.DirectionalLight(0xffead7, 0.55);
       keyLight.position.set(20, 44, 26);
       three.scene.add(keyLight);
-      const rimLight = new THREE.DirectionalLight(0x8ff4df, 1.85);
+      const rimLight = new THREE.DirectionalLight(0xb4f7e9, 0.5);
       rimLight.position.set(-28, 12, -22);
       three.scene.add(rimLight);
 
+      three.viewLightTarget = new THREE.Object3D();
+      three.scene.add(three.viewLightTarget);
+      three.viewLight = new THREE.DirectionalLight(0xfff8ee, 2.2);
+      three.viewLight.position.set(20, 30, 20);
+      three.viewLight.target = three.viewLightTarget;
+      three.scene.add(three.viewLight);
+
       three.voxelGeometry = new THREE.BoxGeometry(1, 1, 1);
-      three.voxelMaterial = new THREE.MeshStandardMaterial({
+      three.voxelMaterial = new THREE.MeshLambertMaterial({
         color: 0xffffff,
-        roughness: 0.52,
-        metalness: 0,
         vertexColors: true
       });
       three.voxels = new THREE.InstancedMesh(
