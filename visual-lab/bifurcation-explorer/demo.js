@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-5";
+} from "./model.js?v=20261001-6";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -39,10 +39,22 @@ const elements = {
   nFoldControl: document.getElementById("n-fold-control"),
   nFoldCount: document.getElementById("n-fold-count"),
   nFoldCountValue: document.getElementById("n-fold-count-value"),
-  imperfectionControl: document.getElementById("imperfection-control"),
-  imperfectionEpsilon: document.getElementById("imperfection-epsilon"),
-  imperfectionEpsilonValue: document.getElementById("imperfection-epsilon-value"),
-  imperfectionHelp: document.getElementById("imperfection-help"),
+  customEquationControls: document.getElementById("custom-equation-controls"),
+  customEquation: document.getElementById("custom-equation"),
+  customXMin: document.getElementById("custom-x-min"),
+  customXMax: document.getElementById("custom-x-max"),
+  customRMin: document.getElementById("custom-r-min"),
+  customRMax: document.getElementById("custom-r-max"),
+  customEquationError: document.getElementById("custom-equation-error"),
+  applyCustomEquation: document.getElementById("apply-custom-equation"),
+  pitchforkControls: document.getElementById("pitchfork-controls"),
+  pitchforkCase: document.getElementById("pitchfork-case"),
+  pitchforkSigns: document.getElementById("pitchfork-signs"),
+  pitchforkTimeSign: document.getElementById("pitchfork-time-sign"),
+  pitchforkAlpha: document.getElementById("pitchfork-alpha"),
+  pitchforkAlphaValue: document.getElementById("pitchfork-alpha-value"),
+  pitchforkBeta: document.getElementById("pitchfork-beta"),
+  pitchforkBetaValue: document.getElementById("pitchfork-beta-value"),
   parameter: document.getElementById("parameter-r"),
   parameterValue: document.getElementById("parameter-r-value"),
   toggleSweep: document.getElementById("toggle-sweep"),
@@ -64,7 +76,9 @@ const elements = {
   telemetryR: document.getElementById("telemetry-r"),
   telemetryEquilibria: document.getElementById("telemetry-equilibria"),
   telemetryEvent: document.getElementById("telemetry-event"),
-  microscopeStatus: document.getElementById("microscope-status"),
+  localPopover: document.getElementById("local-popover"),
+  localPopoverTitle: document.getElementById("local-popover-title"),
+  closeLocalPopover: document.getElementById("close-local-popover"),
   microscopeDescription: document.getElementById("microscope-description"),
   taylorLegend: document.getElementById("taylor-legend"),
   classificationBadge: document.getElementById("classification-badge"),
@@ -77,6 +91,8 @@ const elements = {
   hysteresisDirection: document.getElementById("hysteresis-direction"),
   hysteresisState: document.getElementById("hysteresis-state"),
   hysteresisMemory: document.getElementById("hysteresis-memory"),
+  hysteresisControls: document.getElementById("hysteresis-controls"),
+  hysteresisPanel: document.getElementById("hysteresis-panel"),
   announcer: document.getElementById("bifurcation-announcer"),
   bifurcationCanvas: document.getElementById("bifurcation-canvas"),
   slopeCanvas: document.getElementById("slope-canvas"),
@@ -123,6 +139,9 @@ const state = {
   lastRenderTime: 0,
   elapsed: 0,
   localDirty: true,
+  localPopoverOpen: false,
+  localPopoverNeedsPosition: false,
+  localPopoverTrigger: null,
   hysteresisDirty: true,
   hysteresis: {
     running: false,
@@ -576,6 +595,9 @@ function drawBifurcationDiagram() {
     context.textBaseline = "bottom";
     context.fillText(`B${index + 1}`, x + 9, y - 7);
   });
+  if (state.localPopoverOpen && state.localPopoverNeedsPosition) {
+    positionLocalPopover();
+  }
 }
 
 function trajectoryPoints(x0, r, duration = 6, step = 0.035) {
@@ -797,6 +819,7 @@ function drawPhaseLine() {
 }
 
 function drawLocalDiagram() {
+  if (!state.localPopoverOpen || elements.localPopover.hidden) return;
   const { context, width, height } = canvasSurface(elements.microscopeCanvas);
   context.clearRect(0, 0, width, height);
   context.fillStyle = COLORS.plot;
@@ -843,6 +866,7 @@ function drawLocalDiagram() {
 }
 
 function drawHysteresisPanel() {
+  if (elements.hysteresisPanel.hidden) return;
   const { context, width, height } = canvasSurface(elements.hysteresisCanvas);
   context.clearRect(0, 0, width, height);
   context.fillStyle = COLORS.plot;
@@ -1385,7 +1409,13 @@ function selectCandidate(index, options = {}) {
   state.localDirty = true;
   updateMicroscopeCopy(candidate);
   elements.telemetryEvent.textContent = `B${next + 1} · ${candidate.label}`;
-  if (options.focus) focusSelectedCandidate();
+  const candidateVisible = state.view && (
+    candidate.r >= state.view.rMin && candidate.r <= state.view.rMax
+    && candidate.x >= state.view.xMin && candidate.x <= state.view.xMax
+  );
+  if (options.focus || (options.open && !candidateVisible)) focusSelectedCandidate();
+  if (options.open) openLocalPopover(options.trigger || null);
+  else if (state.localPopoverOpen) state.localPopoverNeedsPosition = true;
   if (options.announce !== false) {
     announce(`Selected B${next + 1}, ${candidate.label}, at r ${formatNumber(candidate.r, 3)} and x ${formatNumber(candidate.x, 3)}.`);
   }
@@ -1394,7 +1424,7 @@ function selectCandidate(index, options = {}) {
 function updateMicroscopeCopy(candidate) {
   const classification = state.taylor.classification;
   const branchCount = classification.branchCount || candidate.branchCount || state.family.branchCount || 0;
-  elements.microscopeStatus.textContent = `B${state.selectedCandidate + 1} · local degree-${state.taylor.degree} comparison`;
+  elements.localPopoverTitle.textContent = `B${state.selectedCandidate + 1} · ${classification.label}`;
   elements.classificationBadge.textContent = classification.label;
   elements.candidateCoordinate.textContent = `r* = ${formatNumber(candidate.r, 4)} · x* = ${formatNumber(candidate.x, 4)}`;
   const derivativeKeys = ["f", "fx", "fr", "fxx", "fxr", "fxxx"];
@@ -1415,9 +1445,12 @@ function updateMicroscopeCopy(candidate) {
   elements.microscopeDescription.textContent = taylorCurveOmitted
     ? `At this ${branchCount}-fold point, all derivatives through total degree 4 vanish. The exact local family is compared with its degree-${branchCount} branch-product normal form; there is no separate quartic Taylor curve.`
     : "The selected point is translated to μ = r − r* and y = x − x*. The exact local family is compared with its Taylor polynomial and corresponding normal form.";
-  if (state.family.imperfection && classification.type === "saddle-node") {
+  if (classification.type === "triple-root-passage") {
     elements.classificationNote.textContent =
-      "The nonzero bias breaks x ↔ −x symmetry. The perfect pitchfork has unfolded into this ordinary saddle-node fold; varying ε traces slices of the two-parameter cusp.";
+      "Here f = fₓ = fₓₓ = 0 while fᵣ and fₓₓₓ remain nonzero. A single local equilibrium passes through a triple root without changing the local equilibrium count or stability.";
+  } else if (state.family.supportsUnfolding && classification.type === "saddle-node") {
+    elements.classificationNote.textContent =
+      `This is one ordinary fold in the ${state.family.unfolding.caseLabel.toLowerCase()} regime of the cubic pitchfork unfolding.`;
   } else if (classification.type === "saddle-node") {
     elements.classificationNote.textContent =
       "The parameter term and quadratic state term are both nonzero. Two nearby equilibria meet at a fold; one attracts and one repels.";
@@ -1444,6 +1477,111 @@ function updateMicroscopeCopy(candidate) {
   }
 }
 
+function positionLocalPopover() {
+  if (!state.localPopoverOpen || elements.localPopover.hidden) return false;
+  const marker = state.candidateScreens.find((entry) => entry.index === state.selectedCandidate);
+  if (!marker) {
+    dismissLocalPopover();
+    return false;
+  }
+  const host = elements.localPopover.parentElement;
+  const hostRect = host.getBoundingClientRect();
+  const canvasRect = elements.bifurcationCanvas.getBoundingClientRect();
+  const markerX = canvasRect.left - hostRect.left + marker.x;
+  const markerY = canvasRect.top - hostRect.top + marker.y;
+  const padding = 12;
+  const gap = 24;
+  const width = elements.localPopover.offsetWidth;
+  const height = elements.localPopover.offsetHeight;
+  const hostMaxLeft = Math.max(padding, host.clientWidth - width - padding);
+  const hostMaxTop = Math.max(padding, host.clientHeight - height - padding);
+  const viewportWidth = Number(window.innerWidth) || host.clientWidth;
+  const viewportHeight = Number(window.innerHeight) || host.clientHeight;
+  const viewportMinLeft = padding - hostRect.left;
+  const viewportMaxLeft = viewportWidth - padding - hostRect.left - width;
+  const viewportMinTop = padding - hostRect.top;
+  const viewportMaxTop = viewportHeight - padding - hostRect.top - height;
+  const minLeft = Math.max(padding, viewportMinLeft);
+  const maxLeft = Math.min(hostMaxLeft, viewportMaxLeft);
+  const minTop = Math.max(padding, viewportMinTop);
+  const maxTop = Math.min(hostMaxTop, viewportMaxTop);
+  const placements = [
+    { side: "left", left: markerX + gap, top: markerY - height * 0.28 },
+    { side: "right", left: markerX - gap - width, top: markerY - height * 0.28 },
+    { side: "top", left: markerX - width * 0.28, top: markerY + gap },
+    { side: "bottom", left: markerX - width * 0.28, top: markerY - gap - height }
+  ].map((placement, index) => {
+    const left = minLeft <= maxLeft
+      ? clamp(placement.left, minLeft, maxLeft)
+      : clamp(placement.left, padding, hostMaxLeft);
+    const top = minTop <= maxTop
+      ? clamp(placement.top, minTop, maxTop)
+      : clamp(placement.top, padding, hostMaxTop);
+    const overflow = Math.abs(left - placement.left) + Math.abs(top - placement.top);
+    const absoluteLeft = hostRect.left + left;
+    const absoluteTop = hostRect.top + top;
+    const viewportOverflow = Math.max(0, padding - absoluteLeft)
+      + Math.max(0, absoluteLeft + width + padding - viewportWidth)
+      + Math.max(0, padding - absoluteTop)
+      + Math.max(0, absoluteTop + height + padding - viewportHeight);
+    const coversMarker = markerX > left - 18 && markerX < left + width + 18
+      && markerY > top - 18 && markerY < top + height + 18;
+    return {
+      ...placement,
+      left,
+      top,
+      score: overflow + viewportOverflow * 20 + (coversMarker ? 100000 : 0) + index * 0.01
+    };
+  });
+  placements.sort((left, right) => left.score - right.score);
+  const placement = placements[0];
+  const { left, top } = placement;
+  elements.localPopover.style.left = `${Math.round(left)}px`;
+  elements.localPopover.style.top = `${Math.round(top)}px`;
+  elements.localPopover.style.setProperty("--pointer-x", `${Math.round(clamp(markerX - left, 18, width - 18))}px`);
+  elements.localPopover.style.setProperty("--pointer-y", `${Math.round(clamp(markerY - top, 18, height - 18))}px`);
+  elements.localPopover.dataset.side = placement.side;
+  state.localPopoverNeedsPosition = false;
+  return true;
+}
+
+function openLocalPopover(trigger = null) {
+  if (!state.microscope || state.selectedCandidate < 0) return;
+  state.localPopoverOpen = true;
+  state.localPopoverNeedsPosition = true;
+  state.localPopoverTrigger = trigger || document.activeElement;
+  state.localDirty = true;
+  elements.localPopover.hidden = false;
+  elements.bifurcationCanvas.setAttribute("aria-expanded", "true");
+  elements.focusCandidate.setAttribute("aria-expanded", "true");
+  window.requestAnimationFrame(() => {
+    if (!state.localPopoverOpen) return;
+    drawBifurcationDiagram();
+    if (!state.localPopoverOpen || !positionLocalPopover()) return;
+    drawLocalDiagram();
+    state.localDirty = false;
+    if (trigger && trigger !== elements.bifurcationCanvas) {
+      elements.localPopover.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      elements.closeLocalPopover.focus();
+    }
+  });
+}
+
+function dismissLocalPopover(options = {}) {
+  if (!state.localPopoverOpen && elements.localPopover.hidden) return;
+  const trigger = state.localPopoverTrigger;
+  state.localPopoverOpen = false;
+  state.localPopoverNeedsPosition = false;
+  state.localPopoverTrigger = null;
+  elements.localPopover.hidden = true;
+  elements.bifurcationCanvas.setAttribute("aria-expanded", "false");
+  elements.focusCandidate.setAttribute("aria-expanded", "false");
+  if (options.restoreFocus && trigger?.isConnected && typeof trigger.focus === "function") {
+    trigger.focus({ preventScroll: true });
+  }
+  if (options.announce) announce("Local bifurcation lens closed.");
+}
+
 function focusSelectedCandidate() {
   const candidate = state.candidates[state.selectedCandidate];
   if (!candidate) return;
@@ -1466,6 +1604,7 @@ function focusSelectedCandidate() {
   state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
   state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
   updateDiagramNavigationMode();
+  state.localPopoverNeedsPosition = state.localPopoverOpen;
   setParameter(candidate.r, { manual: true });
   resetParticles();
 }
@@ -1483,40 +1622,77 @@ function updateFamilyCopy() {
   elements.familyEquation.textContent = state.family.formula;
   if (state.family.seed) elements.familySeed.textContent = `Seed ${state.family.seed}`;
   else if (state.family.branchCount) elements.familySeed.textContent = `${state.family.branchCount}-branch construction`;
-  else if (familyIsPitchfork(state.family.id)) {
-    elements.familySeed.textContent = Math.abs(state.family.imperfection || 0) < 1e-12
-      ? "Perfect symmetry · ε = 0"
-      : `Symmetry broken · ε = ${formatNumber(state.family.imperfection, 3)}`;
+  else if (state.family.supportsUnfolding) {
+    const { alpha, beta, caseLabel } = state.family.unfolding;
+    const ratio = Math.abs(beta) > 1e-10 ? alpha / (beta ** 3) : null;
+    elements.familySeed.textContent = ratio == null
+      ? `${caseLabel} · α = ${formatNumber(alpha, 3)} · β = ${formatNumber(beta, 3)}`
+      : `${caseLabel} · α/β³ = ${formatNumber(ratio, 4)}`;
+  } else if (state.family.sourceType === "custom") {
+    elements.familySeed.textContent = state.family.expressionUsesParameter
+      ? "Restricted parser · variables x and r"
+      : "Restricted parser · expression has no r dependence";
   } else elements.familySeed.textContent = "Classical preset";
   elements.telemetryFamily.textContent = state.family.shortName;
+  elements.generateFamily.hidden = state.family.sourceType !== "random";
   elements.generateFamily.disabled = state.family.sourceType !== "random";
-  elements.generateFamily.textContent = state.family.sourceType === "random"
-    ? "Generate a new family"
-    : "Random generator unavailable for preset";
+  elements.generateFamily.textContent = "Generate another family";
+  const showHysteresis = Boolean(state.family.supportsHysteresis);
+  elements.hysteresisControls.hidden = !showHysteresis;
+  elements.hysteresisPanel.hidden = !showHysteresis;
+  if (showHysteresis) state.hysteresisDirty = true;
 }
 
 function familyIsPitchfork(id) {
-  return id === "supercritical-pitchfork" || id === "subcritical-pitchfork";
+  return id === "pitchfork-unfolding"
+    || id === "supercritical-pitchfork"
+    || id === "subcritical-pitchfork";
+}
+
+const PITCHFORK_CASE_PRESETS = Object.freeze({
+  perfect: Object.freeze({ alpha: 0, beta: 0 }),
+  additive: Object.freeze({ alpha: 0.18, beta: 0 }),
+  "transcritical-fold": Object.freeze({ alpha: 0, beta: 1 }),
+  "three-folds": Object.freeze({ alpha: 0.0625, beta: 1.5 }),
+  "triple-boundary": Object.freeze({ alpha: 0.125, beta: 1.5 }),
+  "one-fold": Object.freeze({ alpha: 0.18, beta: 0.8 })
+});
+
+function updatePitchforkReadouts() {
+  const alpha = clamp(Number(elements.pitchforkAlpha.value) || 0, -0.4, 0.4);
+  const beta = clamp(Number(elements.pitchforkBeta.value) || 0, -1.5, 1.5);
+  elements.pitchforkAlpha.value = String(alpha);
+  elements.pitchforkBeta.value = String(beta);
+  elements.pitchforkAlphaValue.value = formatNumber(alpha, 3);
+  elements.pitchforkAlphaValue.textContent = formatNumber(alpha, 3);
+  elements.pitchforkBetaValue.value = formatNumber(beta, 3);
+  elements.pitchforkBetaValue.textContent = formatNumber(beta, 3);
+}
+
+function applyPitchforkCase(caseId) {
+  const preset = PITCHFORK_CASE_PRESETS[caseId];
+  if (!preset) return;
+  elements.pitchforkAlpha.value = String(preset.alpha);
+  elements.pitchforkBeta.value = String(preset.beta);
+  updatePitchforkReadouts();
 }
 
 function updateFamilySpecificControls(id) {
   const showNFold = id === "n-fold";
-  const showImperfection = familyIsPitchfork(id);
+  const showPitchfork = familyIsPitchfork(id);
+  const showCustom = id === "custom";
   elements.nFoldControl.hidden = !showNFold;
-  elements.imperfectionControl.hidden = !showImperfection;
+  elements.pitchforkControls.hidden = !showPitchfork;
+  elements.customEquationControls.hidden = !showCustom;
+  elements.hysteresisControls.hidden = id !== "hysteresis";
+  elements.hysteresisPanel.hidden = id !== "hysteresis";
+  if (id !== "hysteresis") stopHysteresis(false);
+  elements.generateFamily.hidden = id !== "random";
   const branchCount = clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9);
   elements.nFoldCount.value = String(branchCount);
   elements.nFoldCountValue.value = String(branchCount);
   elements.nFoldCountValue.textContent = String(branchCount);
-  const epsilon = clamp(Number(elements.imperfectionEpsilon.value) || 0, -0.4, 0.4);
-  elements.imperfectionEpsilon.value = String(epsilon);
-  elements.imperfectionEpsilonValue.value = formatNumber(epsilon, 3);
-  elements.imperfectionEpsilonValue.textContent = formatNumber(epsilon, 3);
-  if (showImperfection) {
-    elements.imperfectionHelp.textContent = Math.abs(epsilon) < 1e-12
-      ? "ε = 0 preserves exact x ↔ −x reflection symmetry and the perfect pitchfork."
-      : "This constant bias breaks x ↔ −x symmetry and unfolds the pitchfork into one saddle-node fold; it is deterministic, not noise.";
-  }
+  updatePitchforkReadouts();
 }
 
 function familyCreationOptions(id) {
@@ -1524,30 +1700,106 @@ function familyCreationOptions(id) {
     return { branchCount: clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9) };
   }
   if (familyIsPitchfork(id)) {
-    return { imperfection: clamp(Number(elements.imperfectionEpsilon.value) || 0, -0.4, 0.4) };
+    const [couplingSign, cubicSign] = elements.pitchforkSigns.value.split(",").map(Number);
+    return {
+      alpha: clamp(Number(elements.pitchforkAlpha.value) || 0, -0.4, 0.4),
+      beta: clamp(Number(elements.pitchforkBeta.value) || 0, -1.5, 1.5),
+      couplingSign,
+      cubicSign,
+      timeSign: Number(elements.pitchforkTimeSign.value)
+    };
+  }
+  if (id === "custom") {
+    return {
+      expression: elements.customEquation.value,
+      xRange: [Number(elements.customXMin.value), Number(elements.customXMax.value)],
+      rRange: [Number(elements.customRMin.value), Number(elements.customRMax.value)]
+    };
   }
   return {};
 }
 
 function chooseInitialParameter(family) {
-  if (family.sourceType !== "random" || !family.knownCandidates.length) return family.defaultR;
-  const candidate = family.knownCandidates[0];
+  if (!family.knownCandidates.length) return family.defaultR;
   const span = family.rRange[1] - family.rRange[0];
-  const offset = span * 0.18;
-  const choices = [
-    clamp(candidate.r - offset, family.rRange[0], family.rRange[1]),
-    clamp(candidate.r + offset, family.rRange[0], family.rRange[1])
-  ];
-  let best = { r: family.defaultR, count: -1 };
+  const margin = span * 0.045;
+  const eventValues = [...new Set(family.knownCandidates.map((candidate) => candidate.r))]
+    .sort((left, right) => left - right);
+  const boundaries = [family.rRange[0], ...eventValues, family.rRange[1]];
+  const choices = [family.defaultR, (family.rRange[0] + family.rRange[1]) / 2];
+  for (let index = 1; index < boundaries.length; index += 1) {
+    choices.push((boundaries[index - 1] + boundaries[index]) / 2);
+  }
+  for (const r of eventValues) {
+    choices.push(clamp(r - margin, family.rRange[0], family.rRange[1]));
+    choices.push(clamp(r + margin, family.rRange[0], family.rRange[1]));
+  }
+  const center = (family.rRange[0] + family.rRange[1]) / 2;
+  let best = { r: family.defaultR, count: -1, centerDistance: Infinity };
   for (const r of choices) {
     const count = findEquilibria(family, r, { samples: 360 }).length;
-    if (count > best.count) best = { r, count };
+    const centerDistance = Math.abs(r - center);
+    if (count > best.count || (count === best.count && centerDistance < best.centerDistance)) {
+      best = { r, count, centerDistance };
+    }
   }
   return best.r;
 }
 
+function clearCustomEquationError() {
+  elements.customEquationError.hidden = true;
+  elements.customEquationError.textContent = "";
+  for (const input of [
+    elements.customEquation,
+    elements.customXMin,
+    elements.customXMax,
+    elements.customRMin,
+    elements.customRMax
+  ]) input.removeAttribute("aria-invalid");
+}
+
+function showCustomEquationError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  elements.customEquationError.textContent = message;
+  elements.customEquationError.hidden = false;
+  let invalidInputs = [elements.customEquation];
+  if (/xRange/i.test(message)) invalidInputs = [elements.customXMin, elements.customXMax];
+  else if (/rRange/i.test(message)) invalidInputs = [elements.customRMin, elements.customRMax];
+  for (const input of invalidInputs) input.setAttribute("aria-invalid", "true");
+  invalidInputs[0].focus();
+}
+
+function applyCustomFamily(options = {}) {
+  clearCustomEquationError();
+  let preparedFamily;
+  try {
+    preparedFamily = createFamily("custom", undefined, familyCreationOptions("custom"));
+  } catch (error) {
+    showCustomEquationError(error);
+    return false;
+  }
+  loadFamily("custom", {
+    announce: options.announce !== false,
+    preparedFamily
+  });
+  return true;
+}
+
 function loadFamily(id, options = {}) {
   window.clearTimeout(reloadConfiguredFamily.timeout);
+  updateFamilySpecificControls(id);
+  const seed = id === "random" ? state.seed : undefined;
+  let nextFamily;
+  try {
+    nextFamily = options.preparedFamily || createFamily(id, seed, familyCreationOptions(id));
+  } catch (error) {
+    if (id === "custom") showCustomEquationError(error);
+    else {
+      console.error(error);
+      announce("The selected family could not be created.");
+    }
+    return false;
+  }
   const previousR = state.r;
   const previousView = state.view ? { ...state.view } : null;
   const previousSlopeCursor = state.slopeCursorX;
@@ -1555,11 +1807,10 @@ function loadFamily(id, options = {}) {
   const token = ++state.calculationToken;
   stopSweep();
   stopHysteresis(false);
+  dismissLocalPopover();
   elements.stageStatus.textContent = "Computing equilibrium branches…";
   elements.generateFamily.disabled = true;
-  updateFamilySpecificControls(id);
-  const seed = id === "random" ? state.seed : undefined;
-  state.family = createFamily(id, seed, familyCreationOptions(id));
+  state.family = nextFamily;
   state.fullView = {
     rMin: state.family.rRange[0],
     rMax: state.family.rRange[1],
@@ -1608,7 +1859,7 @@ function loadFamily(id, options = {}) {
       state.candidates = diagram.candidates;
       state.selectedCandidate = state.candidates.length ? 0 : -1;
       buildCandidateOptions();
-      if (state.candidates.length) selectCandidate(0, { announce: false });
+      if (state.candidates.length) selectCandidate(0, { announce: false, open: false });
       else {
         state.taylor = null;
         elements.telemetryEvent.textContent = "None resolved";
@@ -1642,6 +1893,7 @@ function loadFamily(id, options = {}) {
       announce("The selected family could not be analyzed.");
     }
   }, 24);
+  return true;
 }
 
 function generateFamily() {
@@ -1710,6 +1962,7 @@ function refreshSharedView(options = {}) {
   applyParameterReadout(false);
   updateCurrentSlice();
   updateDiagramNavigationMode();
+  state.localPopoverNeedsPosition = state.localPopoverOpen;
   if (options.resetParticles) resetParticles();
 }
 
@@ -1911,7 +2164,13 @@ function handleDiagramKey(event) {
   const step = span * (event.shiftKey ? 0.025 : 0.005);
   const viewRSpan = state.view.rMax - state.view.rMin;
   const viewXSpan = state.view.xMax - state.view.xMin;
-  if (event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+  if (event.key === "Enter" && state.candidates.length) {
+    event.preventDefault();
+    selectCandidate(Math.max(0, state.selectedCandidate), {
+      open: true,
+      trigger: elements.bifurcationCanvas
+    });
+  } else if (event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
     event.preventDefault();
     const deltaR = event.key === "ArrowLeft"
       ? -viewRSpan * 0.08
@@ -1957,10 +2216,13 @@ function handleDiagramKey(event) {
 }
 
 elements.familySelect.addEventListener("change", () => {
-  if (elements.familySelect.value === "random") {
+  const id = elements.familySelect.value;
+  updateFamilySpecificControls(id);
+  if (id === "random") {
     state.seed = makeSeed();
   }
-  loadFamily(elements.familySelect.value, { announce: true });
+  if (id === "custom") applyCustomFamily({ announce: true });
+  else loadFamily(id, { announce: true });
 });
 elements.generateFamily.addEventListener("click", generateFamily);
 elements.nFoldCount.addEventListener("input", () => {
@@ -1968,11 +2230,38 @@ elements.nFoldCount.addEventListener("input", () => {
   scheduleConfiguredFamilyReload();
 });
 elements.nFoldCount.addEventListener("change", () => reloadConfiguredFamily(true));
-elements.imperfectionEpsilon.addEventListener("input", () => {
-  updateFamilySpecificControls(elements.familySelect.value);
-  scheduleConfiguredFamilyReload();
+elements.pitchforkCase.addEventListener("change", () => {
+  applyPitchforkCase(elements.pitchforkCase.value);
+  reloadConfiguredFamily(true);
 });
-elements.imperfectionEpsilon.addEventListener("change", () => reloadConfiguredFamily(true));
+for (const control of [elements.pitchforkAlpha, elements.pitchforkBeta]) {
+  control.addEventListener("input", () => {
+    elements.pitchforkCase.value = "custom";
+    updatePitchforkReadouts();
+    scheduleConfiguredFamilyReload();
+  });
+  control.addEventListener("change", () => reloadConfiguredFamily(true));
+}
+elements.pitchforkSigns.addEventListener("change", () => reloadConfiguredFamily(true));
+elements.pitchforkTimeSign.addEventListener("change", () => reloadConfiguredFamily(true));
+elements.applyCustomEquation.addEventListener("click", () => applyCustomFamily({ announce: true }));
+elements.customEquation.addEventListener("input", clearCustomEquationError);
+for (const control of [
+  elements.customEquation,
+  elements.customXMin,
+  elements.customXMax,
+  elements.customRMin,
+  elements.customRMax
+]) {
+  control.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyCustomFamily({ announce: true });
+  });
+}
+elements.customEquation.addEventListener("change", () => {
+  if (!elements.customEquationError.hidden) clearCustomEquationError();
+});
 elements.parameter.addEventListener("input", () => setParameter(elements.parameter.value, { manual: true }));
 elements.parameter.addEventListener("change", () => announce(`Parameter r is ${formatNumber(state.r, 3)}.`));
 elements.toggleSweep.addEventListener("click", toggleSweep);
@@ -1985,8 +2274,15 @@ elements.sweepSpeed.addEventListener("input", () => {
   elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
   elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 });
-elements.candidateSelect.addEventListener("change", () => selectCandidate(elements.candidateSelect.value));
-elements.focusCandidate.addEventListener("click", focusSelectedCandidate);
+elements.candidateSelect.addEventListener("change", () => selectCandidate(elements.candidateSelect.value, {
+  open: true,
+  trigger: elements.candidateSelect
+}));
+elements.focusCandidate.addEventListener("click", () => selectCandidate(state.selectedCandidate, {
+  focus: true,
+  open: true,
+  trigger: elements.focusCandidate
+}));
 elements.fitBranches.addEventListener("click", fitAllBranches);
 elements.resetParticles.addEventListener("click", () => {
   resetParticles();
@@ -2000,6 +2296,10 @@ elements.toggleParticles.addEventListener("click", () => {
 });
 elements.runHysteresis.addEventListener("click", requestHysteresis);
 elements.hysteresisPanelButton.addEventListener("click", requestHysteresis);
+elements.closeLocalPopover.addEventListener("click", () => dismissLocalPopover({
+  restoreFocus: true,
+  announce: true
+}));
 
 elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
   if ((event.button !== 0 && event.button !== 1) || event.isPrimary === false || !state.plotBox || !state.view) return;
@@ -2010,6 +2310,7 @@ elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
   ) return;
   const mode = event.button === 1 ? "pan" : "parameter";
   const candidate = mode === "parameter" ? candidateMarkerAt(position) : null;
+  if (mode === "parameter" && !candidate) dismissLocalPopover();
   if (mode === "pan") {
     event.preventDefault();
     elements.bifurcationCanvas.focus({ preventScroll: true });
@@ -2029,8 +2330,14 @@ elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
   if (mode === "parameter" && !candidate) updateParameterFromDiagram(event);
 });
 elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
-  if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
   const position = pointerPosition(elements.bifurcationCanvas, event);
+  if (!state.pointerDragging) {
+    const candidate = candidateMarkerAt(position);
+    if (candidate) elements.bifurcationCanvas.dataset.hoverCandidate = String(candidate.index);
+    else delete elements.bifurcationCanvas.dataset.hoverCandidate;
+    return;
+  }
+  if (event.pointerId !== state.pointerStart?.pointerId) return;
   const deltaX = position.x - state.pointerStart.x;
   const deltaY = position.y - state.pointerStart.y;
   if (!state.pointerMoved && Math.hypot(deltaX, deltaY) < 5) return;
@@ -2054,7 +2361,11 @@ elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
   if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
   if (state.pointerStart.mode === "parameter") {
     if (!state.pointerMoved && state.pointerStart.candidateIndex != null) {
-      selectCandidate(state.pointerStart.candidateIndex, { focus: false });
+      selectCandidate(state.pointerStart.candidateIndex, {
+        focus: false,
+        open: true,
+        trigger: elements.bifurcationCanvas
+      });
     } else {
       updateParameterFromDiagram(event, true);
     }
@@ -2066,6 +2377,9 @@ elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
 elements.bifurcationCanvas.addEventListener("pointercancel", (event) => {
   clearDiagramPointer(event);
 });
+elements.bifurcationCanvas.addEventListener("pointerleave", () => {
+  if (!state.pointerDragging) delete elements.bifurcationCanvas.dataset.hoverCandidate;
+});
 elements.bifurcationCanvas.addEventListener("lostpointercapture", (event) => clearDiagramPointer(event));
 elements.bifurcationCanvas.addEventListener("mousedown", (event) => {
   if (event.button === 1) event.preventDefault();
@@ -2076,6 +2390,14 @@ elements.bifurcationCanvas.addEventListener("auxclick", (event) => {
 elements.bifurcationCanvas.addEventListener("wheel", handleDiagramWheel, { passive: false });
 elements.bifurcationCanvas.addEventListener("dblclick", fitAllBranches);
 elements.bifurcationCanvas.addEventListener("keydown", handleDiagramKey);
+function handleLocalPopoverEscape(event) {
+  if (event.key !== "Escape" || !state.localPopoverOpen) return;
+  event.preventDefault();
+  dismissLocalPopover({ restoreFocus: true, announce: true });
+}
+elements.localPopover.addEventListener("keydown", handleLocalPopoverEscape);
+elements.candidateSelect.addEventListener("keydown", handleLocalPopoverEscape);
+elements.bifurcationCanvas.addEventListener("keydown", handleLocalPopoverEscape);
 elements.slopeCanvas.addEventListener("click", addSlopeInitial);
 elements.slopeCanvas.addEventListener("keydown", (event) => handleInitialConditionKey("slope", event));
 elements.phaseCanvas.addEventListener("click", addPhaseParticle);
@@ -2096,11 +2418,11 @@ function animate(now) {
     drawBifurcationDiagram();
     drawSlopeField();
     drawPhaseLine();
-    if (state.localDirty) {
+    if (state.localPopoverOpen && state.localDirty) {
       drawLocalDiagram();
       state.localDirty = false;
     }
-    if (state.hysteresis.running || state.hysteresisDirty) {
+    if (!elements.hysteresisPanel.hidden && (state.hysteresis.running || state.hysteresisDirty)) {
       drawHysteresisPanel();
       state.hysteresisDirty = false;
     }
@@ -2114,8 +2436,12 @@ if (typeof ResizeObserver === "function") {
     drawBifurcationDiagram();
     drawSlopeField();
     drawPhaseLine();
-    drawLocalDiagram();
-    drawHysteresisPanel();
+    if (state.localPopoverOpen) {
+      state.localPopoverNeedsPosition = true;
+      drawLocalDiagram();
+      positionLocalPopover();
+    }
+    if (!elements.hysteresisPanel.hidden) drawHysteresisPanel();
   });
   [
     elements.bifurcationCanvas,

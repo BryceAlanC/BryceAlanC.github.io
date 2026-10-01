@@ -23,7 +23,10 @@ function normalizeRange(range, fallback, label) {
   const candidate = Array.isArray(range) && range.length >= 2 ? range : fallback;
   const minimum = assertFinite(Number(candidate[0]), `${label}[0]`);
   const maximum = assertFinite(Number(candidate[1]), `${label}[1]`);
-  if (!(maximum > minimum)) throw new RangeError(`${label} must have positive width`);
+  const width = maximum - minimum;
+  if (!(width > 0) || !Number.isFinite(width)) {
+    throw new RangeError(`${label} must have finite positive width`);
+  }
   return Object.freeze([minimum, maximum]);
 }
 
@@ -43,6 +46,18 @@ function makeFamily(definition) {
     throw new TypeError("A family requires an eval(x, r) function");
   }
 
+  const unfolding = definition.unfolding && typeof definition.unfolding === "object"
+    ? Object.freeze({
+      alpha: Number(definition.unfolding.alpha) || 0,
+      beta: Number(definition.unfolding.beta) || 0,
+      couplingSign: Number(definition.unfolding.couplingSign) < 0 ? -1 : 1,
+      cubicSign: Number(definition.unfolding.cubicSign) < 0 ? -1 : 1,
+      timeSign: Number(definition.unfolding.timeSign) < 0 ? -1 : 1,
+      caseId: String(definition.unfolding.caseId || "custom"),
+      caseLabel: String(definition.unfolding.caseLabel || "Custom unfolding")
+    })
+    : null;
+
   return Object.freeze({
     id: String(definition.id),
     name: String(definition.name),
@@ -54,7 +69,9 @@ function makeFamily(definition) {
     defaultR: Number.isFinite(definition.defaultR) ? definition.defaultR : 0,
     supportsHysteresis: Boolean(definition.supportsHysteresis),
     supportsImperfection: Boolean(definition.supportsImperfection),
+    supportsUnfolding: Boolean(definition.supportsUnfolding),
     imperfection: Number.isFinite(definition.imperfection) ? definition.imperfection : 0,
+    unfolding,
     branchCount: Number.isInteger(definition.branchCount) ? definition.branchCount : null,
     branchSlopes: Object.freeze(Array.isArray(definition.branchSlopes)
       ? definition.branchSlopes.map(Number)
@@ -62,6 +79,10 @@ function makeFamily(definition) {
     nongeneric: Boolean(definition.nongeneric),
     seed: definition.seed == null ? null : String(definition.seed),
     sourceType: definition.sourceType || "preset",
+    expression: definition.expression == null ? null : String(definition.expression),
+    expressionUsesParameter: definition.expressionUsesParameter == null
+      ? null
+      : Boolean(definition.expressionUsesParameter),
     knownCandidates: Object.freeze((definition.knownCandidates || []).map(freezeCandidate)),
     eval: definition.eval
   });
@@ -230,29 +251,154 @@ function normalizeImperfection(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function createPitchforkDefinition(id, imperfection = 0) {
-  const epsilon = normalizeImperfection(imperfection);
-  const base = presetDefinitions[id];
-  const cubicSign = id === "supercritical-pitchfork" ? -1 : 1;
-  if (epsilon === 0) return { ...base, imperfection: 0 };
+function normalizeSign(value, fallback = 1) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric === 0) return fallback < 0 ? -1 : 1;
+  return numeric < 0 ? -1 : 1;
+}
 
-  const foldX = Math.cbrt(epsilon / (2 * cubicSign));
-  const foldR = -3 * cubicSign * foldX * foldX;
-  const epsilonText = String(Number(epsilon.toPrecision(5))).replace("-", "−");
-  const epsilonMagnitude = String(Number(Math.abs(epsilon).toPrecision(5)));
+function compactNumber(value, digits = 5) {
+  const clean = Math.abs(value) < 10 ** (-(digits + 1)) ? 0 : value;
+  return String(Number(clean.toFixed(digits))).replace("-", "−");
+}
+
+function unfoldingCase(alpha, beta) {
+  const scale = Math.max(1, Math.abs(alpha), Math.abs(beta) ** 3);
+  const tolerance = 2e-8 * scale;
+  if (Math.abs(alpha) <= tolerance && Math.abs(beta) <= tolerance) {
+    return { id: "perfect", label: "Perfect pitchfork" };
+  }
+  if (Math.abs(alpha) <= tolerance && Math.abs(beta) > tolerance) {
+    return { id: "transcritical-fold", label: "Transcritical crossing + saddle-node" };
+  }
+  if (Math.abs(beta) > tolerance) {
+    const boundary = beta ** 3 / 27;
+    if (Math.abs(alpha - boundary) <= tolerance) {
+      return { id: "triple-boundary", label: "Saddle-node + triple-root passage" };
+    }
+    const ratio = alpha / (beta ** 3);
+    if (ratio > 0 && ratio < 1 / 27) {
+      return { id: "three-folds", label: "Three saddle-nodes" };
+    }
+  }
+  if (Math.abs(beta) <= tolerance) {
+    return { id: "additive", label: "Additive bias · one saddle-node" };
+  }
+  return { id: "one-fold", label: "One saddle-node + continuing branch" };
+}
+
+function formatUnfoldingExpression(alpha, beta, couplingSign, cubicSign) {
+  const terms = [
+    { coefficient: alpha, symbol: "" },
+    { coefficient: beta, symbol: "x²" },
+    { coefficient: couplingSign, symbol: "rx" },
+    { coefficient: cubicSign, symbol: "x³" }
+  ].filter((term, index) => index >= 2 || Math.abs(term.coefficient) > 1e-12);
+  let expression = "";
+  terms.forEach((term, index) => {
+    const magnitude = Math.abs(term.coefficient);
+    const coefficient = term.symbol && Math.abs(magnitude - 1) < 1e-12
+      ? ""
+      : compactNumber(magnitude);
+    const body = `${coefficient}${term.symbol}` || "0";
+    if (index === 0) expression += term.coefficient < 0 ? `−${body}` : body;
+    else expression += term.coefficient < 0 ? ` − ${body}` : ` + ${body}`;
+  });
+  return expression || "0";
+}
+
+function pitchforkFoldRoots(alpha, beta, cubicSign) {
+  const polynomial = (x) => alpha - beta * x * x - 2 * cubicSign * x * x * x;
+  const bound = 1 + Math.max(Math.abs(beta) / 2, Math.abs(alpha) / 2);
+  const critical = uniqueSorted([-bound, 0, -beta / (3 * cubicSign), bound], 1e-12);
+  const tolerance = 2e-11 * Math.max(1, Math.abs(alpha), Math.abs(beta));
+  const roots = [];
+  for (const point of critical) {
+    if (Math.abs(polynomial(point)) <= tolerance) roots.push(point);
+  }
+  for (let index = 1; index < critical.length; index += 1) {
+    const left = critical[index - 1];
+    const right = critical[index];
+    const leftValue = polynomial(left);
+    const rightValue = polynomial(right);
+    if (leftValue * rightValue < 0) {
+      const root = bisectRoot(polynomial, left, right, tolerance, 100);
+      if (root != null) roots.push(root);
+    }
+  }
+  return uniqueSorted(roots, 2e-7);
+}
+
+function createPitchforkDefinition(id, options = {}) {
+  const fallbackCubic = id === "subcritical-pitchfork" ? 1 : -1;
+  const legacyImperfection = options.imperfection;
+  const alpha = normalizeImperfection(options.alpha ?? legacyImperfection ?? 0);
+  const beta = normalizeImperfection(options.beta ?? 0);
+  const couplingSign = normalizeSign(options.couplingSign, 1);
+  const cubicSign = normalizeSign(options.cubicSign, fallbackCubic);
+  const timeSign = normalizeSign(options.timeSign, 1);
+  const caseData = unfoldingCase(alpha, beta);
+  const roots = pitchforkFoldRoots(alpha, beta, cubicSign);
+  const scale = Math.max(1, Math.abs(beta));
+  const specialTolerance = 3e-6 * scale;
+  const perfectType = couplingSign * cubicSign < 0
+    ? "supercritical-pitchfork"
+    : "subcritical-pitchfork";
+  const tripleX = -beta / (3 * cubicSign);
+  const knownCandidates = roots.map((x) => {
+    const r = -couplingSign * (2 * beta * x + 3 * cubicSign * x * x);
+    let type = "saddle-node";
+    let label = "Saddle-node";
+    if (caseData.id === "perfect" && Math.abs(x) <= specialTolerance) {
+      type = perfectType;
+      label = perfectType === "supercritical-pitchfork"
+        ? "Supercritical pitchfork"
+        : "Subcritical pitchfork";
+    } else if (caseData.id === "transcritical-fold" && Math.abs(x) <= specialTolerance) {
+      type = "transcritical";
+      label = "Transcritical crossing";
+    } else if (caseData.id === "triple-boundary" && Math.abs(x - tripleX) <= specialTolerance) {
+      type = "triple-root-passage";
+      label = "Degenerate triple-root passage";
+    }
+    return { x, r, type, label };
+  });
+  const maximumCandidateX = knownCandidates.reduce((maximum, point) => Math.max(maximum, Math.abs(point.x)), 0);
+  const maximumCandidateR = knownCandidates.reduce((maximum, point) => Math.max(maximum, Math.abs(point.r)), 0);
+  const xLimit = Math.max(2.2, maximumCandidateX + 0.8);
+  const rLimit = Math.max(2.2, maximumCandidateR + 0.8);
+  const inner = formatUnfoldingExpression(alpha, beta, couplingSign, cubicSign);
+  const formula = timeSign < 0 ? `ẋ = −(${inner})` : `ẋ = ${inner}`;
+
   return {
-    ...base,
-    formula: `ẋ = rx ${cubicSign < 0 ? "−" : "+"} x³ ${epsilon < 0 ? "−" : "+"} ${epsilonMagnitude}`,
-    description: `${base.description} The symmetry-breaking imperfection ε = ${epsilonText} unfolds the pitchfork into a saddle-node fold.`,
-    imperfection: epsilon,
-    knownCandidates: [{
-      x: foldX,
-      r: foldR,
-      type: "saddle-node",
-      label: "Imperfect-pitchfork fold"
-    }],
+    id: "pitchfork-unfolding",
+    name: "Pitchfork universal unfolding",
+    shortName: caseData.label,
+    formula,
+    description: `The cubic universal unfolding with independent constant and quadratic imperfections. Current slice: ${caseData.label.toLowerCase()}.`,
+    xRange: [-xLimit, xLimit],
+    rRange: [-rLimit, rLimit],
+    defaultR: 0,
+    supportsImperfection: true,
+    supportsUnfolding: true,
+    imperfection: alpha,
+    unfolding: {
+      alpha,
+      beta,
+      couplingSign,
+      cubicSign,
+      timeSign,
+      caseId: caseData.id,
+      caseLabel: caseData.label
+    },
+    knownCandidates,
     eval(x, r) {
-      return r * x + cubicSign * x * x * x + epsilon;
+      return timeSign * (
+        alpha
+        + beta * x * x
+        + couplingSign * r * x
+        + cubicSign * x * x * x
+      );
     }
   };
 }
@@ -272,6 +418,7 @@ export const PRESETS = Object.freeze(Object.fromEntries(
       defaultR: family.defaultR,
       supportsHysteresis: family.supportsHysteresis,
       supportsImperfection: family.supportsImperfection,
+      supportsUnfolding: family.supportsUnfolding,
       imperfection: family.imperfection,
       branchCount: family.branchCount,
       nongeneric: family.nongeneric
@@ -287,6 +434,8 @@ const FAMILY_ALIASES = Object.freeze({
   "pitchfork-subcritical": "subcritical-pitchfork",
   supercritical: "supercritical-pitchfork",
   subcritical: "subcritical-pitchfork",
+  unfolding: "pitchfork-unfolding",
+  "pitchfork-universal-unfolding": "pitchfork-unfolding",
   fourfold: "four-fold",
   "four_fold": "four-fold",
   nfold: "n-fold",
@@ -371,12 +520,37 @@ function stableExpRemainder(z, subtractQuadratic = false) {
   return Math.expm1(z) - z - quadratic;
 }
 
+function polynomialFromRoots(roots) {
+  let coefficients = [1];
+  for (const root of roots) {
+    const next = Array(coefficients.length + 1).fill(0);
+    coefficients.forEach((coefficient, index) => {
+      next[index] -= root * coefficient;
+      next[index + 1] += coefficient;
+    });
+    coefficients = next;
+  }
+  return coefficients;
+}
+
+function integratePolynomial(coefficients) {
+  return [0, ...coefficients.map((coefficient, index) => coefficient / (index + 1))];
+}
+
+function evaluatePolynomial(coefficients, value) {
+  let total = 0;
+  for (let index = coefficients.length - 1; index >= 0; index -= 1) {
+    total = total * value + coefficients[index];
+  }
+  return total;
+}
+
 /**
  * Build a reproducible analytic family. Every generated family contains a
  * planted codimension-one bifurcation, plus small polynomial, trigonometric,
  * exponential, and logarithmic perturbations that preserve its local type.
  */
-export function createRandomFamily(seed = "bifurcation", options = {}) {
+function createLocalRandomFamily(seed = "bifurcation", options = {}) {
   const random = createRng(seed);
   const randomKinds = RANDOM_FAMILY_KINDS;
   const allowedKinds = (options.kinds || randomKinds).filter((id) => randomKinds.includes(id));
@@ -458,7 +632,7 @@ export function createRandomFamily(seed = "bifurcation", options = {}) {
 
   const displayName = kind.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
   return makeFamily({
-    id: `random-${hashSeed(seed).toString(16).padStart(8, "0")}`,
+    id: `random-${hashSeed(`${seed}|local|${kind}|${x0}|${r0}`).toString(16).padStart(8, "0")}`,
     name: `Random analytic family · ${displayName}`,
     shortName: `Random · ${displayName}`,
     description: "A seeded analytic perturbation with a known local bifurcation and possible additional global structure.",
@@ -470,6 +644,395 @@ export function createRandomFamily(seed = "bifurcation", options = {}) {
     sourceType: "random",
     knownCandidates: [{ x: x0, r: r0, type: kind, label: displayName }],
     eval: evaluate
+  });
+}
+
+/**
+ * Build a globally richer generic family. Its equilibrium set is one analytic
+ * snake r = g(x) with three to six planted ordinary folds. The positive speed
+ * factor changes the flow without changing the equilibrium geometry.
+ */
+function createRandomLandscapeFamily(seed = "bifurcation", options = {}) {
+  const random = createRng(seed);
+  const requestedCount = Math.round(Number(options.foldCount));
+  const foldCount = Number.isFinite(requestedCount)
+    ? clamp(requestedCount, 3, 6)
+    : 3 + Math.floor(random() * 4);
+  const centerX = Number.isFinite(options.x0) ? Number(options.x0) : randomBetween(random, -0.25, 0.25);
+  const centerR = Number.isFinite(options.r0) ? Number(options.r0) : randomBetween(random, -0.2, 0.2);
+  const halfWidth = 1.62;
+  const spacing = 2 * halfWidth / Math.max(1, foldCount - 1);
+  const foldXs = Array.from({ length: foldCount }, (_, index) => {
+    const base = centerX - halfWidth + spacing * index;
+    const jitter = randomBetween(random, -0.07, 0.07) * spacing;
+    return base + jitter;
+  }).sort((left, right) => left - right);
+  const derivativePolynomial = polynomialFromRoots(foldXs);
+  const antiderivativePolynomial = integratePolynomial(derivativePolynomial);
+  const rawCriticalValues = foldXs.map((x) => evaluatePolynomial(antiderivativePolynomial, x));
+  const rawMinimum = Math.min(...rawCriticalValues);
+  const rawMaximum = Math.max(...rawCriticalValues);
+  const rawMidpoint = (rawMinimum + rawMaximum) / 2;
+  const orientation = randomSign(random);
+  const geometryScale = orientation * 2.7 / Math.max(1e-9, rawMaximum - rawMinimum);
+  const gain = randomBetween(random, 0.35, 0.55);
+  const sineWeight = randomBetween(random, 0.1, 0.28);
+  const sineFrequency = randomBetween(random, 0.75, 1.25);
+  const sinePhase = randomBetween(random, -Math.PI, Math.PI);
+  const logWeight = randomBetween(random, 0.04, 0.12);
+  const logRate = randomBetween(random, 0.25, 0.5);
+
+  const equilibriumCurve = (x) => centerR + geometryScale * (
+    evaluatePolynomial(antiderivativePolynomial, x) - rawMidpoint
+  );
+  const speedFactor = (x, r) => gain
+    * Math.exp(sineWeight * Math.sin(sineFrequency * x + sinePhase))
+    * (1 + logWeight * Math.log1p(logRate * (r - centerR) ** 2));
+  const knownCandidates = foldXs.map((x, index) => ({
+    x,
+    r: equilibriumCurve(x),
+    type: "saddle-node",
+    label: `Fold ${index + 1}`
+  }));
+  const foldList = foldXs.map((value) => compactNumber(value, 3)).join(", ");
+  const scaleText = String(Number(geometryScale.toPrecision(4))).replace("-", "−");
+  const formula = `ẋ = M(x,r)[r − g(x)],  g(x) = ${compactNumber(centerR, 3)} + ${scaleText}∫₀ˣ∏(s−qⱼ)ds, `
+    + `q = (${foldList});  M = ${gain.toFixed(2)}exp(${sineWeight.toFixed(2)}sin(${sineFrequency.toFixed(2)}x ${sinePhase < 0 ? "−" : "+"} ${Math.abs(sinePhase).toFixed(2)}))`
+    + `[1 + ${logWeight.toFixed(2)}ln(1 + ${logRate.toFixed(2)}(r−${compactNumber(centerR, 3)})²)]`;
+
+  return makeFamily({
+    id: `random-${hashSeed(`${seed}|landscape|${foldCount}|${foldXs.join(",")}`).toString(16).padStart(8, "0")}`,
+    name: `Random analytic landscape · ${foldCount} folds`,
+    shortName: `Random · ${foldCount} folds`,
+    description: `A seeded analytic family with ${foldCount} distinct generic saddle-node bifurcations in the displayed window.`,
+    formula,
+    xRange: options.xRange || [foldXs[0] - 0.22, foldXs[foldXs.length - 1] + 0.22],
+    rRange: options.rRange || [centerR - 1.72, centerR + 1.72],
+    defaultR: centerR,
+    seed,
+    sourceType: "random",
+    knownCandidates,
+    eval(x, r) {
+      return speedFactor(x, r) * (r - equilibriumCurve(x));
+    }
+  });
+}
+
+export function createRandomFamily(seed = "bifurcation", options = {}) {
+  if (options.mode === "local" || options.kind || options.kinds) {
+    return createLocalRandomFamily(seed, options);
+  }
+  return createRandomLandscapeFamily(seed, options);
+}
+
+const EXPRESSION_FUNCTIONS = Object.freeze({
+  sin: Math.sin,
+  cos: Math.cos,
+  tan: Math.tan,
+  asin: Math.asin,
+  acos: Math.acos,
+  atan: Math.atan,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
+  tanh: Math.tanh,
+  exp: Math.exp,
+  log: Math.log,
+  ln: Math.log,
+  log1p: Math.log1p,
+  sqrt: Math.sqrt,
+  abs: Math.abs
+});
+
+const SUPERSCRIPT_DIGITS = Object.freeze({
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+  "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9"
+});
+
+function expressionSyntaxError(message, position = 0) {
+  return new SyntaxError(`${message} at character ${Math.max(0, position) + 1}.`);
+}
+
+function normalizeExpressionSource(source) {
+  const text = String(source ?? "").trim();
+  if (!text) throw expressionSyntaxError("Enter a right-hand side for f(x, r)", 0);
+  if (text.length > 256) throw new RangeError("The equation is too long; use at most 256 characters.");
+  return text
+    .replace(/\*\*/g, "^")
+    .replace(/[−–—]/g, "-")
+    .replace(/[×·]/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/π/g, "pi")
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (digits) => `^${[...digits].map((digit) => SUPERSCRIPT_DIGITS[digit]).join("")}`);
+}
+
+function tokenizeExpression(source) {
+  const tokens = [];
+  let index = 0;
+  const push = (type, value, position = index) => {
+    tokens.push(Object.freeze({ type, value, position }));
+    if (tokens.length > 160) throw new RangeError("The equation has too many terms; simplify it and try again.");
+  };
+  while (index < source.length) {
+    if (/\s/.test(source[index])) {
+      index += 1;
+      continue;
+    }
+    const position = index;
+    const numberMatch = source.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (numberMatch) {
+      const value = Number(numberMatch[0]);
+      if (!Number.isFinite(value)) throw expressionSyntaxError("Numeric literal must be finite", position);
+      push("number", value, position);
+      index += numberMatch[0].length;
+      continue;
+    }
+    const nameMatch = source.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (nameMatch) {
+      const name = nameMatch[0].toLowerCase();
+      if (/^[xr]{2,}$/.test(name)) {
+        [...name].forEach((variable, offset) => push("name", variable, position + offset));
+      } else push("name", name, position);
+      index += nameMatch[0].length;
+      continue;
+    }
+    const character = source[index];
+    if ("+-*/^".includes(character)) push("operator", character, position);
+    else if (character === "(") push("left", character, position);
+    else if (character === ")") push("right", character, position);
+    else throw expressionSyntaxError(`Unsupported character “${character}”`, position);
+    index += 1;
+  }
+  tokens.push(Object.freeze({ type: "end", value: "", position: source.length }));
+  return tokens;
+}
+
+function parseExpressionTokens(tokens) {
+  let cursor = 0;
+  let nodeCount = 0;
+  let nesting = 0;
+  const variables = new Set();
+  const peek = () => tokens[cursor];
+  const consume = () => tokens[cursor++];
+  const makeNode = (node) => {
+    nodeCount += 1;
+    if (nodeCount > 96) throw new RangeError("The equation is too complex; use at most 96 operations and values.");
+    return Object.freeze(node);
+  };
+  const enterNesting = (token) => {
+    nesting += 1;
+    if (nesting > 24) throw expressionSyntaxError("Parentheses are nested too deeply", token.position);
+  };
+  const leaveNesting = () => { nesting -= 1; };
+  const expectRight = () => {
+    if (peek().type !== "right") throw expressionSyntaxError("Expected a closing parenthesis", peek().position);
+    consume();
+  };
+  const beginsImplicitFactor = (token) => token.type === "number" || token.type === "name" || token.type === "left";
+
+  let parseAdditive;
+  let parseUnary;
+
+  const parsePrimary = () => {
+    const token = peek();
+    if (token.type === "number") {
+      consume();
+      return makeNode({ type: "number", value: token.value });
+    }
+    if (token.type === "name") {
+      consume();
+      if (token.value === "x" || token.value === "r") {
+        variables.add(token.value);
+        return makeNode({ type: "variable", name: token.value });
+      }
+      if (token.value === "pi" || token.value === "e") {
+        return makeNode({ type: "number", value: token.value === "pi" ? Math.PI : Math.E });
+      }
+      if (!Object.prototype.hasOwnProperty.call(EXPRESSION_FUNCTIONS, token.value)) {
+        throw expressionSyntaxError(`Unknown name “${token.value}”; use only x, r, pi, e, or a supported function`, token.position);
+      }
+      if (peek().type !== "left") {
+        throw expressionSyntaxError(`Function “${token.value}” needs parentheses`, peek().position);
+      }
+      const left = consume();
+      enterNesting(left);
+      const argument = parseAdditive();
+      expectRight();
+      leaveNesting();
+      return makeNode({ type: "function", name: token.value, argument });
+    }
+    if (token.type === "left") {
+      consume();
+      enterNesting(token);
+      const expression = parseAdditive();
+      expectRight();
+      leaveNesting();
+      return expression;
+    }
+    throw expressionSyntaxError("Expected a number, x, r, a function, or an opening parenthesis", token.position);
+  };
+
+  const parsePower = () => {
+    const base = parsePrimary();
+    if (peek().type === "operator" && peek().value === "^") {
+      consume();
+      return makeNode({ type: "binary", operator: "^", left: base, right: parseUnary() });
+    }
+    return base;
+  };
+
+  parseUnary = () => {
+    const token = peek();
+    if (token.type === "operator" && (token.value === "+" || token.value === "-")) {
+      consume();
+      return makeNode({ type: "unary", operator: token.value, argument: parseUnary() });
+    }
+    return parsePower();
+  };
+
+  const parseMultiplicative = () => {
+    let left = parseUnary();
+    while (true) {
+      const token = peek();
+      if (token.type === "operator" && (token.value === "*" || token.value === "/")) {
+        consume();
+        left = makeNode({ type: "binary", operator: token.value, left, right: parseUnary() });
+      } else if (beginsImplicitFactor(token)) {
+        if (token.type === "number") {
+          throw expressionSyntaxError("Adjacent numbers need an operator", token.position);
+        }
+        left = makeNode({ type: "binary", operator: "*", left, right: parseUnary() });
+      } else break;
+    }
+    return left;
+  };
+
+  parseAdditive = () => {
+    let left = parseMultiplicative();
+    while (peek().type === "operator" && (peek().value === "+" || peek().value === "-")) {
+      const operator = consume().value;
+      left = makeNode({ type: "binary", operator, left, right: parseMultiplicative() });
+    }
+    return left;
+  };
+
+  const ast = parseAdditive();
+  if (peek().type !== "end") throw expressionSyntaxError(`Unexpected “${peek().value}”`, peek().position);
+  return Object.freeze({ ast, variables: Object.freeze([...variables]) });
+}
+
+function evaluateExpressionNode(node, x, r) {
+  if (node.type === "number") return node.value;
+  if (node.type === "variable") return node.name === "x" ? x : r;
+  if (node.type === "unary") {
+    const value = evaluateExpressionNode(node.argument, x, r);
+    return node.operator === "-" ? -value : value;
+  }
+  if (node.type === "function") {
+    return EXPRESSION_FUNCTIONS[node.name](evaluateExpressionNode(node.argument, x, r));
+  }
+  const left = evaluateExpressionNode(node.left, x, r);
+  const right = evaluateExpressionNode(node.right, x, r);
+  if (node.operator === "+") return left + right;
+  if (node.operator === "-") return left - right;
+  if (node.operator === "*") return left * right;
+  if (node.operator === "/") return left / right;
+  return left ** right;
+}
+
+/** Compile a bounded mathematical expression without evaluating JavaScript. */
+export function compileExpression(source) {
+  const normalized = normalizeExpressionSource(source);
+  const parsed = parseExpressionTokens(tokenizeExpression(normalized));
+  const variableSet = new Set(parsed.variables);
+  return Object.freeze({
+    source: String(source).trim(),
+    canonical: normalized,
+    variables: parsed.variables,
+    usesX: variableSet.has("x"),
+    usesR: variableSet.has("r"),
+    evaluate(x, r) {
+      try {
+        const value = evaluateExpressionNode(parsed.ast, Number(x), Number(r));
+        return Number.isFinite(value) && Math.abs(value) <= 1e100 ? value : Number.NaN;
+      } catch {
+        return Number.NaN;
+      }
+    }
+  });
+}
+
+/** Turn a user-authored expression into the same immutable family contract. */
+export function createCustomFamily(expression, options = {}) {
+  const compiled = compileExpression(expression);
+  if (!compiled.usesX) {
+    throw new RangeError("The equation must depend on x so its equilibria are isolated points rather than whole state lines.");
+  }
+  const xRange = normalizeRange(options.xRange, [-3, 3], "xRange");
+  const rRange = normalizeRange(options.rRange, [-2, 2], "rRange");
+  const rows = [];
+  const magnitudes = [];
+  let finiteCount = 0;
+  let variesWithState = false;
+  const sampleCount = 13;
+  for (let rIndex = 0; rIndex < sampleCount; rIndex += 1) {
+    const r = rRange[0] + (rRange[1] - rRange[0]) * rIndex / (sampleCount - 1);
+    const row = [];
+    for (let xIndex = 0; xIndex < sampleCount; xIndex += 1) {
+      const x = xRange[0] + (xRange[1] - xRange[0]) * xIndex / (sampleCount - 1);
+      const value = compiled.evaluate(x, r);
+      row.push(value);
+      if (Number.isFinite(value)) {
+        finiteCount += 1;
+        magnitudes.push(Math.abs(value));
+      }
+    }
+    const finite = row.filter(Number.isFinite);
+    if (finite.length >= 3) {
+      const rowMinimum = Math.min(...finite);
+      const rowMaximum = Math.max(...finite);
+      const rowScale = Math.max(1, Math.abs(rowMinimum), Math.abs(rowMaximum));
+      if (rowMaximum - rowMinimum > 1e-10 * rowScale) variesWithState = true;
+    }
+    rows.push(row);
+  }
+  if (finiteCount < Math.ceil(sampleCount * sampleCount * 0.25)) {
+    throw new RangeError("The equation is undefined across too much of the selected window. Narrow the window or revise the expression.");
+  }
+  const upperMagnitude = Math.max(...magnitudes, 0);
+  if (upperMagnitude > 1e12) {
+    throw new RangeError("The equation becomes too large in the selected window. Narrow the window or revise the expression.");
+  }
+  if (!variesWithState) {
+    throw new RangeError("The equation must genuinely vary with x in the selected window so its equilibria are isolated points.");
+  }
+  if (rows.some((row) => {
+    const finite = row.filter(Number.isFinite);
+    if (finite.length < Math.ceil(sampleCount * 0.75)) return false;
+    const rowMagnitude = Math.max(...finite.map(Math.abs), 0);
+    const zeroTolerance = 1e-10 * Math.max(1, rowMagnitude);
+    return finite.every((value) => Math.abs(value) <= zeroTolerance);
+  })) {
+    throw new RangeError("At one parameter value, the equation makes every visible state an equilibrium. This viewer currently requires isolated equilibria.");
+  }
+  const defaultR = 0 >= rRange[0] && 0 <= rRange[1]
+    ? 0
+    : rRange[0] + (rRange[1] - rRange[0]) / 2;
+  return makeFamily({
+    id: `custom-${hashSeed(`${compiled.canonical}|${xRange.join(",")}|${rRange.join(",")}`).toString(16).padStart(8, "0")}`,
+    name: "Custom equation",
+    shortName: "Custom equation",
+    formula: `ẋ = ${compiled.source}`,
+    description: compiled.usesR
+      ? "A user-authored scalar family evaluated by the restricted mathematical expression parser."
+      : "A user-authored autonomous flow with no parameter r in its expression.",
+    xRange,
+    rRange,
+    defaultR,
+    sourceType: "custom",
+    expression: compiled.source,
+    expressionUsesParameter: compiled.usesR,
+    knownCandidates: [],
+    eval: compiled.evaluate
   });
 }
 
@@ -485,8 +1048,15 @@ export function createFamily(id = "saddle-node", seed = "bifurcation", options =
       candidateType: "n-fold"
     }));
   }
-  if (normalizedId === "supercritical-pitchfork" || normalizedId === "subcritical-pitchfork") {
-    return makeFamily(createPitchforkDefinition(normalizedId, options.imperfection));
+  if (normalizedId === "custom") {
+    return createCustomFamily(options.expression, options);
+  }
+  if (
+    normalizedId === "pitchfork-unfolding"
+    || normalizedId === "supercritical-pitchfork"
+    || normalizedId === "subcritical-pitchfork"
+  ) {
+    return makeFamily(createPitchforkDefinition(normalizedId, options));
   }
   const definition = presetDefinitions[normalizedId];
   if (!definition) throw new RangeError(`Unknown family: ${id}`);
@@ -627,10 +1197,11 @@ function scanSignChangeRoots(fn, minimum, maximum, samples, valueTolerance) {
 
 function refineRootNewton(family, r, initial, xMin, xMax, tolerance) {
   let x = initial;
-  for (let iteration = 0; iteration < 12; iteration += 1) {
+  for (let iteration = 0; iteration < 20; iteration += 1) {
     const value = evaluateFamily(family, x, r);
-    if (!Number.isFinite(value) || Math.abs(value) <= tolerance) break;
+    if (!Number.isFinite(value)) break;
     const derivative = partialDerivative(family, x, r, 1, 0);
+    if (Math.abs(value) <= tolerance && Math.abs(derivative) >= Math.sqrt(tolerance)) break;
     if (!Number.isFinite(derivative) || Math.abs(derivative) < 1e-12) break;
     const next = x - value / derivative;
     if (!Number.isFinite(next) || next < xMin || next > xMax) break;
@@ -725,13 +1296,18 @@ export function findEquilibria(family, r, xMin = family.xRange[0], xMax = family
   }
   const samples = Math.max(40, Math.floor(options.samples || 720));
   const span = xMax - xMin;
-  let maximumMagnitude = 1;
+  const sampledMagnitudes = [];
   for (let index = 0; index <= Math.min(samples, 160); index += 1) {
     const value = evaluateFamily(family, xMin + span * index / Math.min(samples, 160), r);
-    if (Number.isFinite(value)) maximumMagnitude = Math.max(maximumMagnitude, Math.abs(value));
+    if (Number.isFinite(value)) sampledMagnitudes.push(Math.abs(value));
   }
-  const valueTolerance = options.valueTolerance || 5e-11 * maximumMagnitude;
-  const tangentTolerance = options.tangentTolerance || 2e-7 * maximumMagnitude;
+  sampledMagnitudes.sort((left, right) => left - right);
+  const robustMagnitude = Math.max(
+    1,
+    sampledMagnitudes[Math.floor(0.9 * Math.max(0, sampledMagnitudes.length - 1))] || 1
+  );
+  const valueTolerance = options.valueTolerance || 5e-11 * robustMagnitude;
+  const tangentTolerance = options.tangentTolerance || 2e-7 * robustMagnitude;
   const fn = (x) => evaluateFamily(family, x, r);
   const candidates = scanSignChangeRoots(fn, xMin, xMax, samples, valueTolerance);
 
@@ -912,6 +1488,7 @@ function candidateTypeLabel(type, branchCount = null) {
     transcritical: "Transcritical",
     "supercritical-pitchfork": "Supercritical pitchfork",
     "subcritical-pitchfork": "Subcritical pitchfork",
+    "triple-root-passage": "Degenerate triple-root passage",
     "four-fold": "Four-fold branch crossing",
     "n-fold": "n-fold branch crossing",
     "degenerate-pitchfork": "Pitchfork-like degeneracy",
@@ -960,6 +1537,17 @@ export function classifyCandidate(family, candidate, options = {}) {
     if (Number.isInteger(branchCount) && branchCount <= 4) {
       normalFormTerms = Array.from({ length: branchCount + 1 }, (_, rOrder) => [branchCount - rOrder, rOrder]);
     }
+  } else if (
+    guaranteedType === "triple-root-passage"
+    || (
+      Math.abs(derivatives.fr) > zeroTolerance
+      && Math.abs(derivatives.fxx) <= zeroTolerance
+      && Math.abs(derivatives.fxxx) > zeroTolerance
+    )
+  ) {
+    type = "triple-root-passage";
+    normalForm = "u̇ ≈ aμ + cμu + bu³";
+    normalFormTerms = [[0, 1], [1, 1], [3, 0]];
   } else if (Math.abs(derivatives.fr) > zeroTolerance && Math.abs(derivatives.fxx) > zeroTolerance) {
     type = "saddle-node";
     normalForm = "u̇ ≈ aμ + bu²";
@@ -1031,6 +1619,42 @@ export function detectBifurcations(family, options = {}) {
     .map((candidate) => ({ ...candidate }));
   const rStep = (rMax - rMin) / rSamples;
 
+  // Custom families have no planted events. Reuse the already sampled branch
+  // derivatives when available: a sign change of f_x along an equilibrium
+  // branch pins down transcritical and pitchfork points that a uniform r-grid
+  // can otherwise step over.
+  for (const branch of options.branches || []) {
+    const points = branch.points || [];
+    const derivativeMagnitudes = points
+      .map((point) => Math.abs(point.derivative))
+      .filter(Number.isFinite)
+      .sort((left, right) => left - right);
+    const derivativeScale = derivativeMagnitudes.length
+      ? derivativeMagnitudes[Math.floor(0.75 * (derivativeMagnitudes.length - 1))]
+      : 1;
+    const smallDerivative = Math.max(2e-5, derivativeScale * 0.035);
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      if (!Number.isFinite(point.derivative)) continue;
+      if (Math.abs(point.derivative) <= smallDerivative) seeds.push({ x: point.x, r: point.r });
+      if (index > 0) {
+        const previous = points[index - 1];
+        if (
+          Number.isFinite(previous.derivative)
+          && previous.derivative * point.derivative < 0
+          && Math.abs(point.r - previous.r) <= 2.5 * rStep
+        ) {
+          const amount = Math.abs(previous.derivative)
+            / (Math.abs(previous.derivative) + Math.abs(point.derivative));
+          seeds.push({
+            x: previous.x + (point.x - previous.x) * amount,
+            r: previous.r + (point.r - previous.r) * amount
+          });
+        }
+      }
+    }
+  }
+
   // Along each r-slice, extrema of f are possible fold points. Track sign
   // changes of f evaluated at those extrema to seed the two-variable solve.
   let previousExtrema = [];
@@ -1054,6 +1678,8 @@ export function detectBifurcations(family, options = {}) {
   }
 
   const refined = [];
+  const xDedupeTolerance = Math.max(2e-3, (xMax - xMin) * 6e-4);
+  const rDedupeTolerance = Math.max(2e-3, rStep * 0.72);
   for (const seed of seeds) {
     // Known points are already exact and should not drift along a degenerate
     // zero set under the regularized solve.
@@ -1062,8 +1688,11 @@ export function detectBifurcations(family, options = {}) {
     const point = Math.hypot(seedF, seedFx) < 1e-8
       ? { x: seed.x, r: seed.r, residual: Math.hypot(seedF, seedFx), derivatives: derivativesAt(family, seed.x, seed.r) }
       : refineBifurcationCandidate(family, seed, bounds, options);
-    if (point.residual > (options.maximumResidual || 2e-5)) continue;
-    if (refined.some((other) => Math.abs(other.x - point.x) < 2e-3 && Math.abs(other.r - point.r) < 2e-3)) continue;
+    if (point.residual > (options.maximumResidual || 2e-8)) continue;
+    if (refined.some((other) =>
+      Math.abs(other.x - point.x) < xDedupeTolerance
+      && Math.abs(other.r - point.r) < rDedupeTolerance
+    )) continue;
     refined.push(point);
   }
 
@@ -1106,7 +1735,7 @@ export function sampleBifurcation(
     : connectBranches(slices, xMax - xMin, (rMax - rMin) / Math.max(1, rSamples - 1));
   const candidates = options.detectCandidates === false
     ? []
-    : detectBifurcations(family, { ...options, xMin, xMax, rMin, rMax });
+    : detectBifurcations(family, { ...options, xMin, xMax, rMin, rMax, branches });
   return Object.freeze({
     familyId: family.id,
     ranges: Object.freeze({ rMin, rMax, xMin, xMax }),
@@ -1232,6 +1861,8 @@ export default Object.freeze({
   createRng,
   createFamily,
   createRandomFamily,
+  compileExpression,
+  createCustomFamily,
   evaluateFamily,
   partialDerivative,
   derivativesAt,
