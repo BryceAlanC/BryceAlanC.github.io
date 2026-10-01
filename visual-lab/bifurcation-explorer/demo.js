@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-3";
+} from "./model.js?v=20261001-4";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -300,6 +300,18 @@ function branchStyle(stability, onDark = false) {
   return { color: onDark ? COLORS.currentBright : COLORS.current, dash: [2, 5], width: 2.2 };
 }
 
+function sameBranchStyle(left, right) {
+  if (!left || !right) return false;
+  const leftDash = left.dash || [];
+  const rightDash = right.dash || [];
+  return (
+    left.color === right.color &&
+    (left.width || 2) === (right.width || 2) &&
+    leftDash.length === rightDash.length &&
+    leftDash.every((value, index) => value === rightDash[index])
+  );
+}
+
 function drawBranchCollection(context, branches, ranges, box, options = {}) {
   context.save();
   context.beginPath();
@@ -307,33 +319,39 @@ function drawBranchCollection(context, branches, ranges, box, options = {}) {
   context.clip();
   context.lineCap = "round";
   context.lineJoin = "round";
+  context.globalAlpha = options.alpha ?? 1;
   for (const branch of branches || []) {
     const points = branch.points || [];
+    let activeStyle = null;
+    let pathOpen = false;
+    const strokePath = () => {
+      if (!pathOpen || !activeStyle) return;
+      context.strokeStyle = activeStyle.color;
+      context.lineWidth = activeStyle.width || 2;
+      context.setLineDash(activeStyle.dash || []);
+      context.stroke();
+      pathOpen = false;
+    };
     for (let index = 1; index < points.length; index += 1) {
       const previous = points[index - 1];
       const current = points[index];
-      if (
-        (previous.r < ranges.rMin && current.r < ranges.rMin) ||
-        (previous.r > ranges.rMax && current.r > ranges.rMax) ||
-        (previous.x < ranges.xMin && current.x < ranges.xMin) ||
-        (previous.x > ranges.xMax && current.x > ranges.xMax)
-      ) continue;
       const style = options.fixedStyle || branchStyle(current.stability, options.onDark);
-      context.strokeStyle = style.color;
-      context.lineWidth = style.width || 2;
-      context.setLineDash(style.dash || []);
-      context.globalAlpha = options.alpha ?? 1;
-      context.beginPath();
-      context.moveTo(
-        mapHorizontal(previous.r, ranges.rMin, ranges.rMax, box),
-        mapVertical(previous.x, ranges.xMin, ranges.xMax, box)
-      );
+      if (!sameBranchStyle(style, activeStyle)) {
+        strokePath();
+        activeStyle = style;
+        context.beginPath();
+        context.moveTo(
+          mapHorizontal(previous.r, ranges.rMin, ranges.rMax, box),
+          mapVertical(previous.x, ranges.xMin, ranges.xMax, box)
+        );
+      }
       context.lineTo(
         mapHorizontal(current.r, ranges.rMin, ranges.rMax, box),
         mapVertical(current.x, ranges.xMin, ranges.xMax, box)
       );
-      context.stroke();
+      pathOpen = true;
     }
+    strokePath();
   }
   context.restore();
 }
@@ -900,7 +918,14 @@ function resetParticles() {
   state.particleCursor = 0;
   state.particles = Array.from({ length: 11 }, (_, index) => {
     const x = lerp(state.view.xMin, state.view.xMax, (index + 1) / 12);
-    return { x, age: index * 0.28, lane: ((index % 3) - 1) * 9, trail: [x] };
+    return {
+      x,
+      age: index * 0.28,
+      settledFor: 0,
+      respawnDelay: 0.55 + (index % 5) * 0.14,
+      lane: ((index % 3) - 1) * 9,
+      trail: [x]
+    };
   });
   state.extraSlopeInitials = [];
 }
@@ -909,6 +934,7 @@ function respawnParticle(particle) {
   const x = randomParticleStart();
   particle.x = x;
   particle.age = 0;
+  particle.settledFor = 0;
   particle.trail = [x];
 }
 
@@ -928,11 +954,14 @@ function updateParticles(delta) {
       if (particle.trail.length > 20) particle.trail.shift();
     }
     const flow = Number.isFinite(particle.x) ? Math.abs(state.family.eval(particle.x, state.r)) : Infinity;
+    const visiblySettled = flow < span * 0.0015;
+    if (visiblySettled) particle.settledFor = (particle.settledFor || 0) + delta;
+    else particle.settledFor = 0;
     if (
       !Number.isFinite(particle.x) ||
       particle.x < state.view.xMin - span * 0.03 ||
       particle.x > state.view.xMax + span * 0.03 ||
-      (flow < span * 0.0006 && particle.age > 5.2) ||
+      particle.settledFor > (particle.respawnDelay || 0.85) ||
       particle.age > 12
     ) respawnParticle(particle);
   }
@@ -1787,6 +1816,8 @@ function addPhaseParticleValue(value) {
   const particle = {
     x,
     age: 0,
+    settledFor: 0,
+    respawnDelay: 0.9,
     lane: ((state.particles.length % 3) - 1) * 9,
     trail: []
   };
