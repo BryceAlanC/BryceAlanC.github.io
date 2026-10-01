@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261001-2" />
-    <script type="module" src="./demo.js?v=20261001-2"></script>
+    <link rel="stylesheet" href="./style.css?v=20261001-3" />
+    <script type="module" src="./demo.js?v=20261001-3"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to visualizer</a>
@@ -215,7 +215,8 @@
             </fieldset>
 
             <p class="keyboard-help">
-              Keys over the branch diagram: ←/→ adjust r · +/- zoom · Ctrl + arrows pan ·
+              Mouse over the branch diagram: scroll zooms · left click or drag adjusts r ·
+              middle-drag pans. Keys: ←/→ adjust r · +/- zoom · Ctrl + arrows pan ·
               Space plays the sweep · F or 0 fits the view · N makes a new random family.
             </p>
           </aside>
@@ -234,14 +235,14 @@
                 <section class="dynamics-panel branches-panel" aria-labelledby="branches-title">
                   <div class="dynamics-heading">
                     <div><span>01</span><h3 id="branches-title">Equilibria across parameter</h3></div>
-                    <p>Scroll: zoom · drag: pan · click: r</p>
+                    <p>Scroll: zoom · left click/drag: r · middle drag: pan</p>
                   </div>
                   <div class="canvas-frame canvas-frame-large">
                     <canvas
                       id="bifurcation-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Zoomable bifurcation diagram with parameter r on the horizontal axis and equilibrium state x on the vertical axis. Scroll to zoom around the pointer, drag to pan while zoomed, or click to set r."
+                      aria-label="Zoomable bifurcation diagram with parameter r on the horizontal axis and equilibrium state x on the vertical axis. Scroll to zoom around the pointer, left-click or left-drag to set r, or middle-drag to pan. Moving initial-condition particles from the phase line are mirrored on the current-parameter slice."
                       aria-describedby="branches-description"
                     ></canvas>
                     <div class="plot-legend" aria-hidden="true">
@@ -252,10 +253,12 @@
                   </div>
                   <p class="sr-only" id="branches-description">
                     Solid branches are stable equilibria. Dashed branches are unstable.
-                    Numbered diamonds mark detected singular equilibria. The slope field and
-                    phase line use this diagram's visible x range. With the diagram focused,
-                    plus and minus zoom, Control plus arrow keys pan, arrow keys change r,
-                    and F or 0 restores the complete view.
+                    Numbered diamonds mark detected singular equilibria. Moving circles on
+                    the current-parameter line mirror the same trajectories shown on the
+                    phase line below. The slope field and phase line use this diagram's visible
+                    x range. Scroll to zoom, left-click or left-drag to change r, and middle-drag
+                    to pan. With the diagram focused, plus and minus zoom, Control plus arrow
+                    keys pan, arrow keys change r, and F or 0 restores the complete view.
                   </p>
                 </section>
 

@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-2";
+} from "./model.js?v=20261001-3";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -372,6 +372,47 @@ function drawEquilibriumMarker(context, x, y, equilibrium, radius = 5, dark = fa
   context.restore();
 }
 
+function drawFlowParticles(context, project, options = {}) {
+  if (!state.view) return;
+  context.save();
+  if (options.clip) {
+    context.beginPath();
+    context.rect(
+      options.clip.left,
+      options.clip.top,
+      options.clip.right - options.clip.left,
+      options.clip.bottom - options.clip.top
+    );
+    context.clip();
+  }
+  for (const particle of state.particles) {
+    if (!Number.isFinite(particle.x) || particle.x < state.view.xMin || particle.x > state.view.xMax) continue;
+    for (let index = 1; index < particle.trail.length; index += 1) {
+      const previous = particle.trail[index - 1];
+      const current = particle.trail[index];
+      if (!Number.isFinite(previous) || !Number.isFinite(current)) continue;
+      const start = project(previous, particle.lane);
+      const end = project(current, particle.lane);
+      const alpha = index / particle.trail.length;
+      context.strokeStyle = `rgba(217, 167, 63, ${alpha * 0.24})`;
+      context.lineWidth = 1.8;
+      context.beginPath();
+      context.moveTo(start.x, start.y);
+      context.lineTo(end.x, end.y);
+      context.stroke();
+    }
+    const point = project(particle.x, particle.lane);
+    context.fillStyle = COLORS.current;
+    context.strokeStyle = COLORS.ivory;
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.arc(point.x, point.y, 4.5, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+  context.restore();
+}
+
 function drawHysteresisTrail(context, trail, ranges, box, color, width = 2.8, dash = []) {
   if (!trail || trail.length < 2) return;
   context.save();
@@ -418,29 +459,6 @@ function drawBifurcationDiagram() {
   drawHysteresisTrail(context, state.hysteresis.increasing, ranges, box, COLORS.current, 3.2);
   drawHysteresisTrail(context, state.hysteresis.decreasing, ranges, box, COLORS.backwardLight, 3.2, [7, 5]);
 
-  state.candidateScreens = [];
-  state.candidates.forEach((candidate, index) => {
-    if (
-      candidate.r < ranges.rMin || candidate.r > ranges.rMax ||
-      candidate.x < ranges.xMin || candidate.x > ranges.xMax
-    ) return;
-    const x = mapHorizontal(candidate.r, ranges.rMin, ranges.rMax, box);
-    const y = mapVertical(candidate.x, ranges.xMin, ranges.xMax, box);
-    state.candidateScreens.push({ index, x, y });
-    if (index === state.selectedCandidate) {
-      context.fillStyle = "rgba(217, 167, 63, 0.18)";
-      context.beginPath();
-      context.arc(x, y, 18, 0, Math.PI * 2);
-      context.fill();
-    }
-    drawDiamond(context, x, y, index === state.selectedCandidate ? 12 : 9, COLORS.current);
-    context.fillStyle = COLORS.ink;
-    context.font = "600 10px 'IBM Plex Mono', monospace";
-    context.textAlign = "left";
-    context.textBaseline = "bottom";
-    context.fillText(`B${index + 1}`, x + 9, y - 7);
-  });
-
   if (state.r >= ranges.rMin && state.r <= ranges.rMax) {
     const currentX = mapHorizontal(state.r, ranges.rMin, ranges.rMax, box);
     context.save();
@@ -471,6 +489,14 @@ function drawBifurcationDiagram() {
         false
       );
     }
+    drawFlowParticles(
+      context,
+      (value, lane) => ({
+        x: currentX + lane,
+        y: mapVertical(value, ranges.xMin, ranges.xMax, box)
+      }),
+      { clip: box }
+    );
   } else {
     const pointsRight = state.r > ranges.rMax;
     const edgeX = pointsRight ? box.right : box.left;
@@ -506,6 +532,29 @@ function drawBifurcationDiagram() {
     context.fill();
     context.stroke();
   }
+
+  state.candidateScreens = [];
+  state.candidates.forEach((candidate, index) => {
+    if (
+      candidate.r < ranges.rMin || candidate.r > ranges.rMax ||
+      candidate.x < ranges.xMin || candidate.x > ranges.xMax
+    ) return;
+    const x = mapHorizontal(candidate.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(candidate.x, ranges.xMin, ranges.xMax, box);
+    state.candidateScreens.push({ index, x, y });
+    if (index === state.selectedCandidate) {
+      context.fillStyle = "rgba(217, 167, 63, 0.18)";
+      context.beginPath();
+      context.arc(x, y, 18, 0, Math.PI * 2);
+      context.fill();
+    }
+    drawDiamond(context, x, y, index === state.selectedCandidate ? 12 : 9, COLORS.current);
+    context.fillStyle = COLORS.ink;
+    context.font = "600 10px 'IBM Plex Mono', monospace";
+    context.textAlign = "left";
+    context.textBaseline = "bottom";
+    context.fillText(`B${index + 1}`, x + 9, y - 7);
+  });
 }
 
 function trajectoryPoints(x0, r, duration = 6, step = 0.035) {
@@ -707,25 +756,10 @@ function drawPhaseLine() {
     );
   }
 
-  for (const particle of state.particles) {
-    if (!Number.isFinite(particle.x) || particle.x < state.view.xMin || particle.x > state.view.xMax) continue;
-    for (let index = 1; index < particle.trail.length; index += 1) {
-      const alpha = index / particle.trail.length;
-      context.strokeStyle = `rgba(217, 167, 63, ${alpha * 0.24})`;
-      context.lineWidth = 1.8;
-      context.beginPath();
-      context.moveTo(phaseX(particle.trail[index - 1], width), lineY + particle.lane);
-      context.lineTo(phaseX(particle.trail[index], width), lineY + particle.lane);
-      context.stroke();
-    }
-    context.fillStyle = COLORS.current;
-    context.strokeStyle = COLORS.ivory;
-    context.lineWidth = 1.5;
-    context.beginPath();
-    context.arc(phaseX(particle.x, width), lineY + particle.lane, 4.5, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
-  }
+  drawFlowParticles(context, (value, lane) => ({
+    x: phaseX(value, width),
+    y: lineY + lane
+  }), { clip: { left, right, top: 0, bottom: height } });
 
   if (Number.isFinite(state.phaseCursorX)) {
     const cursorX = phaseX(state.phaseCursorX, width);
@@ -1726,9 +1760,10 @@ function candidateMarkerAt(position) {
 function updateParameterFromDiagram(event, announceChange = false) {
   if (!state.plotBox || !state.view) return false;
   const position = pointerPosition(elements.bifurcationCanvas, event);
-  const value = valueFromHorizontal(position.x, state.view.rMin, state.view.rMax, state.plotBox);
+  const x = clamp(position.x, state.plotBox.left, state.plotBox.right);
+  const value = valueFromHorizontal(x, state.view.rMin, state.view.rMax, state.plotBox);
   setParameter(value, { manual: true, announce: announceChange });
-  return false;
+  return true;
 }
 
 function addSlopeInitialValue(value) {
@@ -1891,21 +1926,31 @@ elements.runHysteresis.addEventListener("click", requestHysteresis);
 elements.hysteresisPanelButton.addEventListener("click", requestHysteresis);
 
 elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || event.isPrimary === false || !state.plotBox || !state.view) return;
+  if ((event.button !== 0 && event.button !== 1) || event.isPrimary === false || !state.plotBox || !state.view) return;
   const position = pointerPosition(elements.bifurcationCanvas, event);
   if (
     position.x < state.plotBox.left || position.x > state.plotBox.right ||
     position.y < state.plotBox.top || position.y > state.plotBox.bottom
   ) return;
+  const mode = event.button === 1 ? "pan" : "parameter";
+  const candidate = mode === "parameter" ? candidateMarkerAt(position) : null;
+  if (mode === "pan") {
+    event.preventDefault();
+    elements.bifurcationCanvas.focus({ preventScroll: true });
+  }
   state.pointerDragging = true;
   state.pointerMoved = false;
   state.pointerStart = {
     pointerId: event.pointerId,
     x: position.x,
     y: position.y,
-    view: { ...state.view }
+    view: { ...state.view },
+    mode,
+    candidateIndex: candidate?.index ?? null
   };
+  elements.bifurcationCanvas.dataset.dragging = mode;
   elements.bifurcationCanvas.setPointerCapture(event.pointerId);
+  if (mode === "parameter" && !candidate) updateParameterFromDiagram(event);
 });
 elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
   if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
@@ -1914,7 +1959,12 @@ elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
   const deltaY = position.y - state.pointerStart.y;
   if (!state.pointerMoved && Math.hypot(deltaX, deltaY) < 5) return;
   state.pointerMoved = true;
-  elements.bifurcationCanvas.dataset.dragging = "true";
+  if (state.pointerStart.mode === "parameter") {
+    state.pointerStart.candidateIndex = null;
+    updateParameterFromDiagram(event);
+    return;
+  }
+  event.preventDefault();
   if (!viewIsZoomed()) return;
   const startView = state.pointerStart.view;
   const rSpan = startView.rMax - startView.rMin;
@@ -1926,13 +1976,14 @@ elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
 });
 elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
   if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
-  if (state.pointerMoved) {
+  if (state.pointerStart.mode === "parameter") {
+    if (!state.pointerMoved && state.pointerStart.candidateIndex != null) {
+      selectCandidate(state.pointerStart.candidateIndex, { focus: false });
+    } else {
+      updateParameterFromDiagram(event, true);
+    }
+  } else if (state.pointerMoved) {
     announce(viewIsZoomed() ? viewBoundsMessage("Panned view") : "Fit all is already showing the complete branch window.");
-  } else {
-    const position = pointerPosition(elements.bifurcationCanvas, event);
-    const marker = candidateMarkerAt(position);
-    if (marker) selectCandidate(marker.index, { focus: false });
-    else updateParameterFromDiagram(event, true);
   }
   clearDiagramPointer(event);
 });
@@ -1940,6 +1991,12 @@ elements.bifurcationCanvas.addEventListener("pointercancel", (event) => {
   clearDiagramPointer(event);
 });
 elements.bifurcationCanvas.addEventListener("lostpointercapture", (event) => clearDiagramPointer(event));
+elements.bifurcationCanvas.addEventListener("mousedown", (event) => {
+  if (event.button === 1) event.preventDefault();
+});
+elements.bifurcationCanvas.addEventListener("auxclick", (event) => {
+  if (event.button === 1) event.preventDefault();
+});
 elements.bifurcationCanvas.addEventListener("wheel", handleDiagramWheel, { passive: false });
 elements.bifurcationCanvas.addEventListener("dblclick", fitAllBranches);
 elements.bifurcationCanvas.addEventListener("keydown", handleDiagramKey);

@@ -1,11 +1,15 @@
+.bifurcation-app .lab-stage-shell {
+  width: min(2000px, calc(100% - 2rem));
+}
+
 .bifurcation-app-layout {
-  grid-template-columns: minmax(285px, 315px) minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
 }
 
 .bifurcation-app .control-panel {
-  max-height: calc(100vh - 104px);
-  overflow-y: auto;
-  scrollbar-width: thin;
+  position: static;
+  max-height: none;
+  overflow: visible;
 }
 
 .bifurcation-app .control-panel select {
@@ -234,11 +238,11 @@
   touch-action: pan-y;
 }
 
-#bifurcation-canvas[data-navigation="pan"] {
-  cursor: grab;
+#bifurcation-canvas[data-dragging="parameter"] {
+  cursor: ew-resize;
 }
 
-#bifurcation-canvas[data-dragging="true"] {
+#bifurcation-canvas[data-dragging="pan"] {
   cursor: grabbing;
 }
 
@@ -642,6 +646,12 @@
 
   .derivative-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .bifurcation-app .lab-stage-shell {
+    width: min(100% - 0.75rem, 2000px);
   }
 }
 
