@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-4";
+} from "./model.js?v=20261001-5";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -103,9 +103,12 @@ const state = {
   sweepRunning: false,
   sweepDirection: 1,
   sweepSpeed: Number(elements.sweepSpeed.value),
-  particlesPaused: motionQuery.matches,
+  particlesPaused: false,
   particles: [],
   particleCursor: 0,
+  particleEmitterElapsed: 0,
+  particleEmitterIndex: 0,
+  particleClock: 0,
   extraSlopeInitials: [],
   slopeCursorX: 0,
   phaseCursorX: 0,
@@ -660,7 +663,7 @@ function drawSlopeField() {
       else context.lineTo(x, y);
     });
     context.stroke();
-    const tracerClock = motionQuery.matches ? 0 : state.elapsed;
+    const tracerClock = state.particleClock;
     const tracer = points[Math.min(points.length - 1, Math.floor((tracerClock * 34 + index * 13) % points.length))];
     context.fillStyle = COLORS.ivory;
     context.beginPath();
@@ -914,8 +917,31 @@ function randomParticleStart() {
   return lerp(state.view.xMin, state.view.xMax, (index + 1) / (count + 1));
 }
 
+const PARTICLE_EMISSION_INTERVAL = 0.45;
+
+function emitterParticleStart(slot) {
+  const span = state.view.xMax - state.view.xMin;
+  const targetFlow = span * 0.12 / 1.45;
+  const candidates = [];
+  for (let index = 2; index <= 46; index += 1) {
+    const x = lerp(state.view.xMin, state.view.xMax, index / 48);
+    const flow = Math.abs(state.family.eval(x, state.r));
+    if (!Number.isFinite(flow)) continue;
+    candidates.push({
+      x,
+      score: Math.abs(Math.log((flow + 1e-12) / (targetFlow + 1e-12)))
+    });
+  }
+  candidates.sort((left, right) => left.score - right.score);
+  const launchPool = candidates.slice(0, Math.min(6, candidates.length));
+  return launchPool.length ? launchPool[slot % launchPool.length].x : randomParticleStart();
+}
+
 function resetParticles() {
   state.particleCursor = 0;
+  state.particleEmitterElapsed = PARTICLE_EMISSION_INTERVAL;
+  state.particleEmitterIndex = 0;
+  state.particleClock = 0;
   state.particles = Array.from({ length: 11 }, (_, index) => {
     const x = lerp(state.view.xMin, state.view.xMax, (index + 1) / 12);
     return {
@@ -923,6 +949,7 @@ function resetParticles() {
       age: index * 0.28,
       settledFor: 0,
       respawnDelay: 0.55 + (index % 5) * 0.14,
+      ambient: true,
       lane: ((index % 3) - 1) * 9,
       trail: [x]
     };
@@ -930,8 +957,8 @@ function resetParticles() {
   state.extraSlopeInitials = [];
 }
 
-function respawnParticle(particle) {
-  const x = randomParticleStart();
+function respawnParticle(particle, start = randomParticleStart()) {
+  const x = start;
   particle.x = x;
   particle.age = 0;
   particle.settledFor = 0;
@@ -940,6 +967,7 @@ function respawnParticle(particle) {
 
 function updateParticles(delta) {
   if (state.particlesPaused || !state.family || !state.view) return;
+  state.particleClock += delta;
   const stepTotal = Math.min(0.05, delta) * 1.45;
   const substeps = 2;
   const step = stepTotal / substeps;
@@ -964,6 +992,18 @@ function updateParticles(delta) {
       particle.settledFor > (particle.respawnDelay || 0.85) ||
       particle.age > 12
     ) respawnParticle(particle);
+  }
+
+  state.particleEmitterElapsed += delta;
+  if (state.particleEmitterElapsed >= PARTICLE_EMISSION_INTERVAL) {
+    state.particleEmitterElapsed %= PARTICLE_EMISSION_INTERVAL;
+    const ambientParticles = state.particles.filter((particle) => particle.ambient);
+    if (ambientParticles.length) {
+      const particle = ambientParticles[state.particleEmitterIndex % ambientParticles.length];
+      const start = emitterParticleStart(state.particleEmitterIndex);
+      state.particleEmitterIndex += 1;
+      respawnParticle(particle, start);
+    }
   }
 }
 
@@ -1818,12 +1858,16 @@ function addPhaseParticleValue(value) {
     age: 0,
     settledFor: 0,
     respawnDelay: 0.9,
+    ambient: false,
     lane: ((state.particles.length % 3) - 1) * 9,
     trail: []
   };
   particle.trail = [particle.x];
   state.particles.push(particle);
-  if (state.particles.length > 17) state.particles.shift();
+  if (state.particles.length > 17) {
+    const oldestAddedParticle = state.particles.findIndex((entry) => !entry.ambient);
+    state.particles.splice(oldestAddedParticle >= 0 ? oldestAddedParticle : 0, 1);
+  }
   announce(`Added a phase-line point at x ${formatNumber(particle.x, 2)}.`);
 }
 
@@ -1950,6 +1994,7 @@ elements.resetParticles.addEventListener("click", () => {
 });
 elements.toggleParticles.addEventListener("click", () => {
   state.particlesPaused = !state.particlesPaused;
+  if (!state.particlesPaused) state.particleEmitterElapsed = PARTICLE_EMISSION_INTERVAL;
   elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" : "Pause motion";
   announce(state.particlesPaused ? "Trajectory motion paused." : "Trajectory motion resumed.");
 });
@@ -2085,8 +2130,6 @@ motionQuery.addEventListener?.("change", (event) => {
   if (event.matches) {
     stopSweep();
     stopHysteresis(false);
-    state.particlesPaused = true;
-    elements.toggleParticles.textContent = "Resume motion";
   }
 });
 
