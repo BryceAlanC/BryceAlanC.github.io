@@ -1497,9 +1497,13 @@ function positionLocalPopover() {
   const hostMaxTop = Math.max(padding, host.clientHeight - height - padding);
   const viewportWidth = Number(window.innerWidth) || host.clientWidth;
   const viewportHeight = Number(window.innerHeight) || host.clientHeight;
+  const siteHeaderRect = document.querySelector(".site-header")?.getBoundingClientRect();
+  const viewportTopInset = siteHeaderRect && siteHeaderRect.top <= padding && siteHeaderRect.bottom > padding
+    ? Math.min(viewportHeight - padding, siteHeaderRect.bottom + padding)
+    : padding;
   const viewportMinLeft = padding - hostRect.left;
   const viewportMaxLeft = viewportWidth - padding - hostRect.left - width;
-  const viewportMinTop = padding - hostRect.top;
+  const viewportMinTop = viewportTopInset - hostRect.top;
   const viewportMaxTop = viewportHeight - padding - hostRect.top - height;
   const minLeft = Math.max(padding, viewportMinLeft);
   const maxLeft = Math.min(hostMaxLeft, viewportMaxLeft);
@@ -1522,7 +1526,7 @@ function positionLocalPopover() {
     const absoluteTop = hostRect.top + top;
     const viewportOverflow = Math.max(0, padding - absoluteLeft)
       + Math.max(0, absoluteLeft + width + padding - viewportWidth)
-      + Math.max(0, padding - absoluteTop)
+      + Math.max(0, viewportTopInset - absoluteTop)
       + Math.max(0, absoluteTop + height + padding - viewportHeight);
     const coversMarker = markerX > left - 18 && markerX < left + width + 18
       && markerY > top - 18 && markerY < top + height + 18;
@@ -1563,6 +1567,8 @@ function openLocalPopover(trigger = null) {
     if (trigger && trigger !== elements.bifurcationCanvas) {
       elements.localPopover.scrollIntoView?.({ block: "nearest", inline: "nearest" });
       elements.closeLocalPopover.focus();
+      state.localPopoverNeedsPosition = true;
+      positionLocalPopover();
     }
   });
 }
