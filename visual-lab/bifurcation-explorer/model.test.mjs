@@ -20,6 +20,8 @@ assert.deepEqual(model.PRESET_IDS, [
   "transcritical",
   "supercritical-pitchfork",
   "subcritical-pitchfork",
+  "four-fold",
+  "n-fold",
   "hysteresis"
 ]);
 
@@ -85,6 +87,114 @@ assert.deepEqual(model.PRESET_IDS, [
 }
 
 {
+  const cases = [
+    ["supercritical-pitchfork", 0.2, -1],
+    ["supercritical-pitchfork", -0.2, -1],
+    ["subcritical-pitchfork", 0.2, 1],
+    ["subcritical-pitchfork", -0.2, 1]
+  ];
+  for (const [id, imperfection, cubicSign] of cases) {
+    const family = model.createFamily(id, "unused", { imperfection });
+    assert.equal(family.supportsImperfection, true);
+    assert.equal(family.imperfection, imperfection);
+    assert.match(family.formula, new RegExp(String(Math.abs(imperfection))));
+    assert.match(family.description, /symmetry-breaking imperfection/i);
+    assert.equal(family.knownCandidates.length, 1);
+    const fold = family.knownCandidates[0];
+    const expectedX = Math.cbrt(imperfection / (2 * cubicSign));
+    const expectedR = -3 * cubicSign * expectedX * expectedX;
+    near(fold.x, expectedX, 1e-12, "imperfect-pitchfork fold x");
+    near(fold.r, expectedR, 1e-12, "imperfect-pitchfork fold r");
+    near(family.eval(fold.x, fold.r), 0, 1e-12, "imperfect fold must lie on f=0");
+    near(model.partialDerivative(family, fold.x, fold.r, 1, 0), 0, 1e-7, "imperfect fold must satisfy f_x=0");
+    assert.equal(model.classifyCandidate(family, fold).type, "saddle-node");
+  }
+
+  const exact = model.createFamily("supercritical-pitchfork", "unused", { imperfection: 0 });
+  assert.equal(exact.imperfection, 0);
+  assert.equal(exact.formula, "ẋ = rx − x³");
+  assert.equal(exact.knownCandidates[0].type, "supercritical-pitchfork");
+}
+
+{
+  const family = model.createFamily("four-fold");
+  assert.equal(family.branchCount, 4);
+  assert.equal(family.branchSlopes.length, 4);
+  assert.equal(family.nongeneric, true);
+  assert.match(family.description, /nongeneric/i);
+  const equilibria = model.findEquilibria(family, 0.8);
+  assert.equal(equilibria.length, 4);
+  for (const slope of family.branchSlopes) {
+    assert.ok(equilibriumNear(equilibria, slope * 0.8), `missing four-fold branch with slope ${slope}`);
+  }
+  const classification = model.classifyCandidate(family, family.knownCandidates[0]);
+  assert.equal(classification.type, "four-fold");
+  assert.equal(classification.branchCount, 4);
+  assert.equal(classification.nongeneric, true);
+  assert.match(classification.classificationNote, /high-codimension/i);
+  assert.deepEqual(classification.normalFormTerms, [[4, 0], [3, 1], [2, 2], [1, 3], [0, 4]]);
+  const detected = model.detectBifurcations(family);
+  assert.equal(detected.length, 1, "the exact product family has only its planted multi-branch crossing");
+  assert.equal(detected[0].type, "four-fold");
+  const diagram = model.sampleBifurcation(family, -1, 1, -2, 2, {
+    rSamples: 40,
+    detectCandidates: false
+  });
+  assert.equal(diagram.branches.length, 4);
+  for (const [index, branch] of diagram.branches.entries()) {
+    assert.ok(branch.points.some((point) => Math.abs(point.r) < 1e-14 && Math.abs(point.x) < 1e-14));
+    for (const point of branch.points) {
+      near(point.x, family.branchSlopes[index] * point.r, 1e-10, "four-fold branch continuity");
+      assert.equal(typeof point.stability, "string");
+    }
+  }
+}
+
+{
+  for (let branchCount = 3; branchCount <= 9; branchCount += 1) {
+    const family = model.createFamily("n-fold", "unused", { branchCount });
+    assert.equal(family.branchCount, branchCount);
+    assert.equal(family.branchSlopes.length, branchCount);
+    assert.equal(family.nongeneric, true);
+    const r = 0.8;
+    const equilibria = model.findEquilibria(family, r);
+    assert.equal(equilibria.length, branchCount, `${branchCount}-fold family should expose ${branchCount} branches`);
+    assert.equal(model.findEquilibria(family, 0).length, 1, "all branches should meet in one equilibrium at r = 0");
+    assert.equal(model.findEquilibria(family, 1e-8).length, branchCount, "nearby distinct analytic roots must not be merged or mistaken for a zero interval");
+    for (const slope of family.branchSlopes) {
+      assert.ok(equilibriumNear(equilibria, slope * r), `missing ${branchCount}-fold branch with slope ${slope}`);
+    }
+    const classification = model.classifyCandidate(family, family.knownCandidates[0]);
+    assert.equal(classification.type, "n-fold");
+    assert.equal(classification.branchCount, branchCount);
+    assert.equal(classification.normalFormTerms.length, branchCount <= 4 ? branchCount + 1 : 0);
+    assert.match(classification.normalForm, new RegExp(`1,…,${branchCount}`));
+    const detected = model.detectBifurcations(family);
+    assert.equal(detected.length, 1);
+    assert.equal(detected[0].branchCount, branchCount);
+    const diagram = model.sampleBifurcation(family, -1, 1, -2, 2, {
+      rSamples: 40,
+      detectCandidates: false
+    });
+    assert.equal(diagram.branches.length, branchCount, "each analytic equilibrium line should remain one branch");
+    for (const [index, branch] of diagram.branches.entries()) {
+      assert.ok(
+        branch.points.some((point) => Math.abs(point.r) < 1e-14 && Math.abs(point.x) < 1e-14),
+        `branch ${index + 1} of ${branchCount} should pass through the shared origin`
+      );
+      for (const point of branch.points) {
+        near(point.x, family.branchSlopes[index] * point.r, 1e-10, `${branchCount}-fold branch continuity`);
+      }
+    }
+  }
+
+  assert.equal(model.createFamily("n-fold", "unused", { branchCount: 2 }).branchCount, 3);
+  assert.equal(model.createFamily("n-fold", "unused", { branchCount: 12 }).branchCount, 9);
+  assert.equal(model.createFamily("n-fold", "unused", { branchCount: 5.7 }).branchCount, 6);
+  assert.equal(model.createFamily("n-fold", "unused", { branchCount: "not-a-number" }).branchCount, 5);
+}
+
+{
   const family = model.createFamily("hysteresis");
   assert.equal(family.supportsHysteresis, true);
   assert.equal(family.knownCandidates.length, 2);
@@ -111,6 +221,15 @@ assert.deepEqual(model.PRESET_IDS, [
   near(first.eval(planted.x, planted.r), 0, 1e-11, "planted point must satisfy f=0");
   near(model.partialDerivative(first, planted.x, planted.r, 1, 0), 0, 2e-7, "planted point must satisfy f_x=0");
   assert.equal(model.classifyCandidate(first, planted).type, planted.type);
+
+  const disallowed = model.createRandomFamily("multifold-is-not-random", { kind: "n-fold" });
+  assert.ok([
+    "saddle-node",
+    "transcritical",
+    "supercritical-pitchfork",
+    "subcritical-pitchfork"
+  ].includes(disallowed.knownCandidates[0].type));
+  assert.notEqual(disallowed.knownCandidates[0].type, "n-fold");
 }
 
 {

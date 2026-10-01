@@ -36,6 +36,13 @@ const elements = {
   familyKind: document.getElementById("family-kind"),
   familyEquation: document.getElementById("family-equation"),
   familySeed: document.getElementById("family-seed"),
+  nFoldControl: document.getElementById("n-fold-control"),
+  nFoldCount: document.getElementById("n-fold-count"),
+  nFoldCountValue: document.getElementById("n-fold-count-value"),
+  imperfectionControl: document.getElementById("imperfection-control"),
+  imperfectionEpsilon: document.getElementById("imperfection-epsilon"),
+  imperfectionEpsilonValue: document.getElementById("imperfection-epsilon-value"),
+  imperfectionHelp: document.getElementById("imperfection-help"),
   parameter: document.getElementById("parameter-r"),
   parameterValue: document.getElementById("parameter-r-value"),
   toggleSweep: document.getElementById("toggle-sweep"),
@@ -58,6 +65,8 @@ const elements = {
   telemetryEquilibria: document.getElementById("telemetry-equilibria"),
   telemetryEvent: document.getElementById("telemetry-event"),
   microscopeStatus: document.getElementById("microscope-status"),
+  microscopeDescription: document.getElementById("microscope-description"),
+  taylorLegend: document.getElementById("taylor-legend"),
   classificationBadge: document.getElementById("classification-badge"),
   candidateCoordinate: document.getElementById("candidate-coordinate"),
   derivativeGrid: document.getElementById("derivative-grid"),
@@ -102,6 +111,8 @@ const state = {
   phaseCursorX: 0,
   calculationToken: 0,
   pointerDragging: false,
+  pointerStart: null,
+  pointerMoved: false,
   plotBox: null,
   candidateScreens: [],
   lastSliceUpdate: 0,
@@ -160,7 +171,7 @@ function announce(message) {
   window.clearTimeout(announce.timeout);
   announce.timeout = window.setTimeout(() => {
     elements.announcer.textContent = message;
-  }, 120);
+  }, 180);
 }
 
 function canvasSurface(canvas) {
@@ -291,6 +302,9 @@ function branchStyle(stability, onDark = false) {
 
 function drawBranchCollection(context, branches, ranges, box, options = {}) {
   context.save();
+  context.beginPath();
+  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  context.clip();
   context.lineCap = "round";
   context.lineJoin = "round";
   for (const branch of branches || []) {
@@ -299,10 +313,10 @@ function drawBranchCollection(context, branches, ranges, box, options = {}) {
       const previous = points[index - 1];
       const current = points[index];
       if (
-        previous.r < ranges.rMin || previous.r > ranges.rMax ||
-        current.r < ranges.rMin || current.r > ranges.rMax ||
-        previous.x < ranges.xMin || previous.x > ranges.xMax ||
-        current.x < ranges.xMin || current.x > ranges.xMax
+        (previous.r < ranges.rMin && current.r < ranges.rMin) ||
+        (previous.r > ranges.rMax && current.r > ranges.rMax) ||
+        (previous.x < ranges.xMin && current.x < ranges.xMin) ||
+        (previous.x > ranges.xMax && current.x > ranges.xMax)
       ) continue;
       const style = options.fixedStyle || branchStyle(current.stability, options.onDark);
       context.strokeStyle = style.color;
@@ -457,6 +471,28 @@ function drawBifurcationDiagram() {
         false
       );
     }
+  } else {
+    const pointsRight = state.r > ranges.rMax;
+    const edgeX = pointsRight ? box.right : box.left;
+    context.save();
+    context.fillStyle = COLORS.current;
+    context.font = "600 9px 'IBM Plex Mono', monospace";
+    context.textAlign = pointsRight ? "right" : "left";
+    context.textBaseline = "top";
+    context.fillText(pointsRight ? "CURRENT r →" : "← CURRENT r", edgeX, box.top + 7);
+    context.beginPath();
+    if (pointsRight) {
+      context.moveTo(edgeX, box.top + 24);
+      context.lineTo(edgeX - 9, box.top + 19);
+      context.lineTo(edgeX - 9, box.top + 29);
+    } else {
+      context.moveTo(edgeX, box.top + 24);
+      context.lineTo(edgeX + 9, box.top + 19);
+      context.lineTo(edgeX + 9, box.top + 29);
+    }
+    context.closePath();
+    context.fill();
+    context.restore();
   }
 
   if (state.hysteresis.running && Number.isFinite(state.hysteresis.x)) {
@@ -477,7 +513,8 @@ function trajectoryPoints(x0, r, duration = 6, step = 0.035) {
   let x = x0;
   for (let t = step; t <= duration + 1e-9; t += step) {
     x = rk4Step(state.family, x, r, step);
-    if (!Number.isFinite(x) || x < state.view.xMin - 0.2 || x > state.view.xMax + 0.2) break;
+    const margin = (state.view.xMax - state.view.xMin) * 0.05;
+    if (!Number.isFinite(x) || x < state.view.xMin - margin || x > state.view.xMax + margin) break;
     points.push({ t, x });
   }
   return points;
@@ -732,6 +769,7 @@ function drawLocalDiagram() {
     xMax: ranges.xMax + state.microscope.center.x
   };
   function drawShifted(diagram, style) {
+    if (!diagram) return;
     const shiftedBoxRanges = {
       rMin: shiftedRanges.rMin,
       rMax: shiftedRanges.rMax,
@@ -957,7 +995,10 @@ function applyParameterReadout(recompute = true) {
   elements.parameter.value = String(state.r);
   elements.parameterValue.value = formatNumber(state.r, 3);
   elements.parameterValue.textContent = formatNumber(state.r, 3);
-  elements.slopeParameter.textContent = `r = ${formatNumber(state.r, 3)}`;
+  const xWindow = state.view
+    ? ` · x: ${formatNumber(state.view.xMin, 2)}…${formatNumber(state.view.xMax, 2)}`
+    : "";
+  elements.slopeParameter.textContent = `r = ${formatNumber(state.r, 3)}${xWindow}`;
   elements.telemetryR.textContent = formatNumber(state.r, 3);
   if (recompute) updateCurrentSlice();
 }
@@ -999,7 +1040,7 @@ function stabilityLabel(equilibrium) {
 
 function updateCurrentOutputs() {
   const count = state.equilibria.length;
-  elements.equilibriumSummary.textContent = `${count} ${count === 1 ? "equilibrium" : "equilibria"} at this r`;
+  elements.equilibriumSummary.textContent = `${count} visible ${count === 1 ? "equilibrium" : "equilibria"}`;
   elements.telemetryEquilibria.textContent = String(count);
   elements.phaseReadout.replaceChildren();
   if (!count) {
@@ -1144,7 +1185,8 @@ function formatTaylor(data) {
       coefficient: coefficient.value,
       monomial: `${exponentLabel("y", coefficient.xOrder)}${exponentLabel("μ", coefficient.rOrder)}`
     }));
-  if (!terms.length) return "T₃(y, μ) = 0";
+  const degreeLabel = ["", "₁", "₂", "₃", "₄"][data.degree] || String(data.degree);
+  if (!terms.length) return `T${degreeLabel}(y, μ) = 0`;
   let expression = "";
   terms.forEach((term, index) => {
     const magnitude = Math.abs(term.coefficient);
@@ -1155,7 +1197,7 @@ function formatTaylor(data) {
     if (!index) expression += term.coefficient < 0 ? `−${piece}` : piece;
     else expression += term.coefficient < 0 ? ` − ${piece}` : ` + ${piece}`;
   });
-  return `T₃(y, μ) = ${expression}`;
+  return `T${degreeLabel}(y, μ) = ${expression}`;
 }
 
 function normalFamilyFromTaylor(data, ranges) {
@@ -1176,13 +1218,34 @@ function normalFamilyFromTaylor(data, ranges) {
   };
 }
 
+function branchProductFamily(candidate, ranges) {
+  const slopes = candidate.branchSlopes || state.family.branchSlopes || [];
+  const center = { x: candidate.x, r: candidate.r };
+  return {
+    id: `${state.family.id}-branch-product`,
+    xRange: [ranges.xMin + center.x, ranges.xMax + center.x],
+    rRange: [ranges.rMin + center.r, ranges.rMax + center.r],
+    nongeneric: true,
+    branchCount: slopes.length,
+    branchSlopes: slopes,
+    eval(x, r) {
+      const y = x - center.x;
+      const mu = r - center.r;
+      return slopes.reduce((product, slope) => product * (y - slope * mu), 1);
+    }
+  };
+}
+
 function selectCandidate(index, options = {}) {
   if (!state.candidates.length) return;
   const next = clamp(Number(index) || 0, 0, state.candidates.length - 1);
   state.selectedCandidate = next;
   elements.candidateSelect.value = String(next);
   const candidate = state.candidates[next];
-  state.taylor = taylorData(state.family, candidate, { degree: 3 });
+  const branchCount = candidate.branchCount || state.family.branchCount || 0;
+  const isManyFold = candidate.type === "four-fold" || candidate.type === "n-fold" || branchCount >= 4;
+  const taylorDegree = isManyFold ? clamp(branchCount || 4, 3, 4) : 3;
+  state.taylor = taylorData(state.family, candidate, { degree: taylorDegree });
   const rRadius = (state.fullView.rMax - state.fullView.rMin) * 0.13;
   const xRadius = (state.fullView.xMax - state.fullView.xMin) * 0.15;
   const localRanges = { rMin: -rRadius, rMax: rRadius, xMin: -xRadius, xMax: xRadius };
@@ -1196,16 +1259,24 @@ function selectCandidate(index, options = {}) {
     id: `${state.family.id}-taylor`,
     xRange: [absoluteRanges.xMin, absoluteRanges.xMax],
     rRange: [absoluteRanges.rMin, absoluteRanges.rMax],
+    nongeneric: isManyFold,
+    branchCount: isManyFold ? branchCount : null,
+    branchSlopes: isManyFold ? state.family.branchSlopes : [],
     eval(x, r) {
       return taylorEvaluate(state.taylor, x, r);
     }
   };
-  const normalFamily = normalFamilyFromTaylor(state.taylor, localRanges);
+  const normalFamily = isManyFold && (candidate.branchSlopes || state.family.branchSlopes)
+    ? branchProductFamily(candidate, localRanges)
+    : normalFamilyFromTaylor(state.taylor, localRanges);
+  const taylorDiagram = branchCount > 4
+    ? null
+    : sampleBifurcation(taylorFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false });
   state.microscope = {
     center: { x: candidate.x, r: candidate.r },
     ranges: localRanges,
     exact: sampleBifurcation(state.family, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false }),
-    taylorDiagram: sampleBifurcation(taylorFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false }),
+    taylorDiagram,
     normalDiagram: sampleBifurcation(normalFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false })
   };
   state.localDirty = true;
@@ -1219,7 +1290,8 @@ function selectCandidate(index, options = {}) {
 
 function updateMicroscopeCopy(candidate) {
   const classification = state.taylor.classification;
-  elements.microscopeStatus.textContent = `B${state.selectedCandidate + 1} · local cubic comparison`;
+  const branchCount = classification.branchCount || candidate.branchCount || state.family.branchCount || 0;
+  elements.microscopeStatus.textContent = `B${state.selectedCandidate + 1} · local degree-${state.taylor.degree} comparison`;
   elements.classificationBadge.textContent = classification.label;
   elements.candidateCoordinate.textContent = `r* = ${formatNumber(candidate.r, 4)} · x* = ${formatNumber(candidate.x, 4)}`;
   const derivativeKeys = ["f", "fx", "fr", "fxx", "fxr", "fxxx"];
@@ -1229,7 +1301,21 @@ function updateMicroscopeCopy(candidate) {
   });
   elements.taylorFormula.textContent = formatTaylor(state.taylor);
   elements.normalFormula.textContent = classification.normalForm;
-  if (classification.type === "saddle-node") {
+  const taylorCurveOmitted = branchCount > 4;
+  elements.taylorLegend.hidden = taylorCurveOmitted;
+  elements.microscopeCanvas.setAttribute(
+    "aria-label",
+    taylorCurveOmitted
+      ? `Local comparison of the exact equilibrium branches and degree-${branchCount} branch-product normal form. The degree-4 Taylor jet is zero, so it has no separate curve.`
+      : `Local comparison of the exact equilibrium branches, degree-${state.taylor.degree} Taylor approximation, and normal-form geometry near the selected bifurcation.`
+  );
+  elements.microscopeDescription.textContent = taylorCurveOmitted
+    ? `At this ${branchCount}-fold point, all derivatives through total degree 4 vanish. The exact local family is compared with its degree-${branchCount} branch-product normal form; there is no separate quartic Taylor curve.`
+    : "The selected point is translated to μ = r − r* and y = x − x*. The exact local family is compared with its Taylor polynomial and corresponding normal form.";
+  if (state.family.imperfection && classification.type === "saddle-node") {
+    elements.classificationNote.textContent =
+      "The nonzero bias breaks x ↔ −x symmetry. The perfect pitchfork has unfolded into this ordinary saddle-node fold; varying ε traces slices of the two-parameter cusp.";
+  } else if (classification.type === "saddle-node") {
     elements.classificationNote.textContent =
       "The parameter term and quadratic state term are both nonzero. Two nearby equilibria meet at a fold; one attracts and one repels.";
   } else if (classification.type === "transcritical") {
@@ -1238,6 +1324,17 @@ function updateMicroscopeCopy(candidate) {
   } else if (classification.type.includes("pitchfork")) {
     elements.classificationNote.textContent =
       "The quadratic state term vanishes, leaving the mixed μy term and cubic y³ term to determine the symmetry-breaking geometry.";
+  } else if (classification.type === "four-fold" || classification.type === "n-fold" || branchCount >= 4) {
+    if (branchCount > 4) {
+      elements.classificationNote.textContent =
+        `All derivatives through total degree 4 vanish here. The first nonzero homogeneous term has degree ${branchCount}, so the green quartic Taylor zero set is intentionally absent; the dashed normal-form curve shows the degree-${branchCount} branch product. This simultaneous crossing is genuine but nongeneric.`;
+    } else if (branchCount === 4) {
+      elements.classificationNote.textContent =
+        "The first nonzero jet is quartic and factors into four equilibrium branches. Exact, Taylor, and branch-product curves overlap here by construction; a generic perturbation splits this high-codimension meeting.";
+    } else {
+      elements.classificationNote.textContent =
+        `The first nonzero jet has degree ${branchCount} and factors into ${branchCount} equilibrium branches. Exact, Taylor, and branch-product curves overlap here by construction; this simultaneous meeting is nongeneric.`;
+    }
   } else {
     elements.classificationNote.textContent =
       "The numerical derivative tests do not cleanly isolate a classical generic type. The local Taylor curve is shown without forcing a label.";
@@ -1265,16 +1362,14 @@ function focusSelectedCandidate() {
   }
   state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
   state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
+  updateDiagramNavigationMode();
   setParameter(candidate.r, { manual: true });
   resetParticles();
 }
 
 function fitAllBranches() {
   state.view = { ...state.fullView };
-  state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
-  state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
-  updateCurrentSlice();
-  resetParticles();
+  refreshSharedView({ resetParticles: true });
   announce("The full branch diagram is visible.");
 }
 
@@ -1283,12 +1378,52 @@ function updateFamilyCopy() {
     ? state.family.shortName
     : state.family.name;
   elements.familyEquation.textContent = state.family.formula;
-  elements.familySeed.textContent = state.family.seed ? `Seed ${state.family.seed}` : "Classical preset";
+  if (state.family.seed) elements.familySeed.textContent = `Seed ${state.family.seed}`;
+  else if (state.family.branchCount) elements.familySeed.textContent = `${state.family.branchCount}-branch construction`;
+  else if (familyIsPitchfork(state.family.id)) {
+    elements.familySeed.textContent = Math.abs(state.family.imperfection || 0) < 1e-12
+      ? "Perfect symmetry · ε = 0"
+      : `Symmetry broken · ε = ${formatNumber(state.family.imperfection, 3)}`;
+  } else elements.familySeed.textContent = "Classical preset";
   elements.telemetryFamily.textContent = state.family.shortName;
   elements.generateFamily.disabled = state.family.sourceType !== "random";
   elements.generateFamily.textContent = state.family.sourceType === "random"
     ? "Generate a new family"
     : "Random generator unavailable for preset";
+}
+
+function familyIsPitchfork(id) {
+  return id === "supercritical-pitchfork" || id === "subcritical-pitchfork";
+}
+
+function updateFamilySpecificControls(id) {
+  const showNFold = id === "n-fold";
+  const showImperfection = familyIsPitchfork(id);
+  elements.nFoldControl.hidden = !showNFold;
+  elements.imperfectionControl.hidden = !showImperfection;
+  const branchCount = clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9);
+  elements.nFoldCount.value = String(branchCount);
+  elements.nFoldCountValue.value = String(branchCount);
+  elements.nFoldCountValue.textContent = String(branchCount);
+  const epsilon = clamp(Number(elements.imperfectionEpsilon.value) || 0, -0.4, 0.4);
+  elements.imperfectionEpsilon.value = String(epsilon);
+  elements.imperfectionEpsilonValue.value = formatNumber(epsilon, 3);
+  elements.imperfectionEpsilonValue.textContent = formatNumber(epsilon, 3);
+  if (showImperfection) {
+    elements.imperfectionHelp.textContent = Math.abs(epsilon) < 1e-12
+      ? "ε = 0 preserves exact x ↔ −x reflection symmetry and the perfect pitchfork."
+      : "This constant bias breaks x ↔ −x symmetry and unfolds the pitchfork into one saddle-node fold; it is deterministic, not noise.";
+  }
+}
+
+function familyCreationOptions(id) {
+  if (id === "n-fold") {
+    return { branchCount: clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9) };
+  }
+  if (familyIsPitchfork(id)) {
+    return { imperfection: clamp(Number(elements.imperfectionEpsilon.value) || 0, -0.4, 0.4) };
+  }
+  return {};
 }
 
 function chooseInitialParameter(family) {
@@ -1309,23 +1444,45 @@ function chooseInitialParameter(family) {
 }
 
 function loadFamily(id, options = {}) {
+  window.clearTimeout(reloadConfiguredFamily.timeout);
+  const previousR = state.r;
+  const previousView = state.view ? { ...state.view } : null;
+  const previousSlopeCursor = state.slopeCursorX;
+  const previousPhaseCursor = state.phaseCursorX;
   const token = ++state.calculationToken;
   stopSweep();
   stopHysteresis(false);
   elements.stageStatus.textContent = "Computing equilibrium branches…";
   elements.generateFamily.disabled = true;
+  updateFamilySpecificControls(id);
   const seed = id === "random" ? state.seed : undefined;
-  state.family = createFamily(id, seed);
+  state.family = createFamily(id, seed, familyCreationOptions(id));
   state.fullView = {
     rMin: state.family.rRange[0],
     rMax: state.family.rRange[1],
     xMin: state.family.xRange[0],
     xMax: state.family.xRange[1]
   };
-  state.view = { ...state.fullView };
-  state.r = chooseInitialParameter(state.family);
-  state.slopeCursorX = (state.view.xMin + state.view.xMax) / 2;
-  state.phaseCursorX = (state.view.xMin + state.view.xMax) / 2;
+  const canPreserveView = options.preserveView && previousView;
+  state.view = canPreserveView ? {
+    rMin: clamp(previousView.rMin, state.fullView.rMin, state.fullView.rMax),
+    rMax: clamp(previousView.rMax, state.fullView.rMin, state.fullView.rMax),
+    xMin: clamp(previousView.xMin, state.fullView.xMin, state.fullView.xMax),
+    xMax: clamp(previousView.xMax, state.fullView.xMin, state.fullView.xMax)
+  } : { ...state.fullView };
+  if (!(state.view.rMax > state.view.rMin) || !(state.view.xMax > state.view.xMin)) {
+    state.view = { ...state.fullView };
+  }
+  updateDiagramNavigationMode();
+  state.r = options.preserveParameter
+    ? clamp(previousR, state.family.rRange[0], state.family.rRange[1])
+    : chooseInitialParameter(state.family);
+  state.slopeCursorX = canPreserveView
+    ? clamp(previousSlopeCursor, state.view.xMin, state.view.xMax)
+    : (state.view.xMin + state.view.xMax) / 2;
+  state.phaseCursorX = canPreserveView
+    ? clamp(previousPhaseCursor, state.view.xMin, state.view.xMax)
+    : (state.view.xMin + state.view.xMax) / 2;
   elements.parameter.min = String(state.family.rRange[0]);
   elements.parameter.max = String(state.family.rRange[1]);
   elements.parameter.step = String((state.family.rRange[1] - state.family.rRange[0]) / 1400);
@@ -1365,9 +1522,16 @@ function loadFamily(id, options = {}) {
       updateCurrentSlice();
       resetParticles();
       updateHysteresisReadout();
-      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${state.candidates.length} highlighted ${state.candidates.length === 1 ? "event" : "events"}`;
+      const selectedEvent = state.candidates[state.selectedCandidate];
+      const eventOutsideView = selectedEvent && (
+        selectedEvent.r < state.view.rMin || selectedEvent.r > state.view.rMax ||
+        selectedEvent.x < state.view.xMin || selectedEvent.x > state.view.xMax
+      );
+      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${state.candidates.length} highlighted ${state.candidates.length === 1 ? "event" : "events"}${eventOutsideView ? " · selected event is outside the zoomed view" : ""}`;
       updateFamilyCopy();
-      if (options.announce) announce(`${state.family.name} loaded with ${state.candidates.length} highlighted bifurcation points.`);
+      if (options.announce) {
+        announce(`${state.family.name} loaded with ${state.candidates.length} highlighted bifurcation points.${eventOutsideView ? " The selected event is outside the zoomed view; use Focus point or Fit all." : ""}`);
+      }
       if (typeof options.afterReady === "function") options.afterReady();
     } catch (error) {
       console.error(error);
@@ -1384,19 +1548,184 @@ function generateFamily() {
   loadFamily("random", { announce: true });
 }
 
+function reloadConfiguredFamily(announceChange = false) {
+  window.clearTimeout(reloadConfiguredFamily.timeout);
+  const id = elements.familySelect.value;
+  loadFamily(id, {
+    announce: announceChange,
+    preserveParameter: true,
+    preserveView: true
+  });
+}
+
+function scheduleConfiguredFamilyReload() {
+  window.clearTimeout(reloadConfiguredFamily.timeout);
+  reloadConfiguredFamily.timeout = window.setTimeout(() => reloadConfiguredFamily(false), 130);
+}
+
 function pointerPosition(canvas, event) {
   const rectangle = canvas.getBoundingClientRect();
   return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
 }
 
+const MIN_VIEW_FRACTION = 0.08;
+
+function viewIsZoomed() {
+  if (!state.view || !state.fullView) return false;
+  const fullRSpan = state.fullView.rMax - state.fullView.rMin;
+  const fullXSpan = state.fullView.xMax - state.fullView.xMin;
+  return (
+    state.view.rMax - state.view.rMin < fullRSpan * 0.9999 ||
+    state.view.xMax - state.view.xMin < fullXSpan * 0.9999
+  );
+}
+
+function boundedRange(minimum, maximum, fullMinimum, fullMaximum) {
+  const fullSpan = fullMaximum - fullMinimum;
+  const span = Math.min(fullSpan, maximum - minimum);
+  let nextMinimum = minimum;
+  let nextMaximum = minimum + span;
+  if (nextMinimum < fullMinimum) {
+    nextMinimum = fullMinimum;
+    nextMaximum = fullMinimum + span;
+  }
+  if (nextMaximum > fullMaximum) {
+    nextMaximum = fullMaximum;
+    nextMinimum = fullMaximum - span;
+  }
+  return [nextMinimum, nextMaximum];
+}
+
+function updateDiagramNavigationMode() {
+  elements.bifurcationCanvas.dataset.navigation = viewIsZoomed() ? "pan" : "parameter";
+}
+
+function refreshSharedView(options = {}) {
+  if (!state.view) return;
+  state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
+  state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
+  applyParameterReadout(false);
+  updateCurrentSlice();
+  updateDiagramNavigationMode();
+  if (options.resetParticles) resetParticles();
+}
+
+function zoomDiagram(factor, anchorR, anchorX, options = {}) {
+  if (!state.view || !state.fullView || !Number.isFinite(factor) || factor <= 0) return false;
+  const currentRSpan = state.view.rMax - state.view.rMin;
+  const currentXSpan = state.view.xMax - state.view.xMin;
+  const fullRSpan = state.fullView.rMax - state.fullView.rMin;
+  const fullXSpan = state.fullView.xMax - state.fullView.xMin;
+  const nextRSpan = clamp(currentRSpan * factor, fullRSpan * MIN_VIEW_FRACTION, fullRSpan);
+  const nextXSpan = clamp(currentXSpan * factor, fullXSpan * MIN_VIEW_FRACTION, fullXSpan);
+  const rFraction = clamp(inverseLerp(state.view.rMin, state.view.rMax, anchorR), 0, 1);
+  const xFraction = clamp(inverseLerp(state.view.xMin, state.view.xMax, anchorX), 0, 1);
+  const [rMin, rMax] = boundedRange(
+    anchorR - rFraction * nextRSpan,
+    anchorR + (1 - rFraction) * nextRSpan,
+    state.fullView.rMin,
+    state.fullView.rMax
+  );
+  const [xMin, xMax] = boundedRange(
+    anchorX - xFraction * nextXSpan,
+    anchorX + (1 - xFraction) * nextXSpan,
+    state.fullView.xMin,
+    state.fullView.xMax
+  );
+  const changed = (
+    Math.abs(rMin - state.view.rMin) > fullRSpan * 1e-9 ||
+    Math.abs(rMax - state.view.rMax) > fullRSpan * 1e-9 ||
+    Math.abs(xMin - state.view.xMin) > fullXSpan * 1e-9 ||
+    Math.abs(xMax - state.view.xMax) > fullXSpan * 1e-9
+  );
+  if (!changed) return false;
+  state.view = { rMin, rMax, xMin, xMax };
+  refreshSharedView({ resetParticles: Boolean(options.resetParticles) });
+  return true;
+}
+
+function viewBoundsMessage(prefix = "View") {
+  const currentOutside = state.r < state.view.rMin || state.r > state.view.rMax;
+  return `${prefix}: r from ${formatNumber(state.view.rMin, 2)} to ${formatNumber(state.view.rMax, 2)}; x from ${formatNumber(state.view.xMin, 2)} to ${formatNumber(state.view.xMax, 2)}.${currentOutside ? ` Current r ${formatNumber(state.r, 2)} is outside the branch window.` : ""}`;
+}
+
+function handleDiagramWheel(event) {
+  if (!state.plotBox || !state.view || state.pointerDragging) return;
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  if (
+    position.x < state.plotBox.left || position.x > state.plotBox.right ||
+    position.y < state.plotBox.top || position.y > state.plotBox.bottom
+  ) return;
+  const modeScale = event.deltaMode === 1
+    ? 16
+    : event.deltaMode === 2
+      ? state.plotBox.bottom - state.plotBox.top
+      : 1;
+  const normalizedDelta = clamp(event.deltaY * modeScale, -240, 240);
+  if (!normalizedDelta) return;
+  const factor = clamp(Math.exp(normalizedDelta * 0.0015), 0.75, 1.35);
+  const anchorR = valueFromHorizontal(position.x, state.view.rMin, state.view.rMax, state.plotBox);
+  const anchorX = valueFromVertical(position.y, state.view.xMin, state.view.xMax, state.plotBox);
+  if (zoomDiagram(factor, anchorR, anchorX, { resetParticles: false })) {
+    event.preventDefault();
+    announce(viewBoundsMessage(factor < 1 ? "Zoomed in" : "Zoomed out"));
+  }
+}
+
+function clearDiagramPointer(event) {
+  const pointerId = state.pointerStart?.pointerId;
+  state.pointerDragging = false;
+  state.pointerStart = null;
+  state.pointerMoved = false;
+  delete elements.bifurcationCanvas.dataset.dragging;
+  if (
+    pointerId != null &&
+    event?.type !== "lostpointercapture" &&
+    elements.bifurcationCanvas.hasPointerCapture(pointerId)
+  ) {
+    elements.bifurcationCanvas.releasePointerCapture(pointerId);
+  }
+}
+
+function panDiagram(deltaR, deltaX, options = {}) {
+  if (!state.view || !state.fullView || !viewIsZoomed()) return false;
+  const [rMin, rMax] = boundedRange(
+    state.view.rMin + deltaR,
+    state.view.rMax + deltaR,
+    state.fullView.rMin,
+    state.fullView.rMax
+  );
+  const [xMin, xMax] = boundedRange(
+    state.view.xMin + deltaX,
+    state.view.xMax + deltaX,
+    state.fullView.xMin,
+    state.fullView.xMax
+  );
+  const changed = rMin !== state.view.rMin || rMax !== state.view.rMax || xMin !== state.view.xMin || xMax !== state.view.xMax;
+  if (!changed) return false;
+  state.view = { rMin, rMax, xMin, xMax };
+  refreshSharedView({ resetParticles: Boolean(options.resetParticles) });
+  return true;
+}
+
+function candidateMarkerAt(position) {
+  if (!state.plotBox || !state.view) return null;
+  for (let index = 0; index < state.candidates.length; index += 1) {
+    const candidate = state.candidates[index];
+    if (
+      candidate.r < state.view.rMin || candidate.r > state.view.rMax ||
+      candidate.x < state.view.xMin || candidate.x > state.view.xMax
+    ) continue;
+    const x = mapHorizontal(candidate.r, state.view.rMin, state.view.rMax, state.plotBox);
+    const y = mapVertical(candidate.x, state.view.xMin, state.view.xMax, state.plotBox);
+    if (Math.hypot(x - position.x, y - position.y) < 15) return { index, x, y };
+  }
+  return null;
+}
+
 function updateParameterFromDiagram(event, announceChange = false) {
   if (!state.plotBox || !state.view) return false;
   const position = pointerPosition(elements.bifurcationCanvas, event);
-  const marker = state.candidateScreens.find((candidate) => Math.hypot(candidate.x - position.x, candidate.y - position.y) < 15);
-  if (marker && event.type === "pointerdown") {
-    selectCandidate(marker.index, { focus: false });
-    return true;
-  }
   const value = valueFromHorizontal(position.x, state.view.rMin, state.view.rMax, state.plotBox);
   setParameter(value, { manual: true, announce: announceChange });
   return false;
@@ -1470,7 +1799,30 @@ function handleDiagramKey(event) {
   if (!state.family) return;
   const span = state.family.rRange[1] - state.family.rRange[0];
   const step = span * (event.shiftKey ? 0.025 : 0.005);
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+  const viewRSpan = state.view.rMax - state.view.rMin;
+  const viewXSpan = state.view.xMax - state.view.xMin;
+  if (event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const deltaR = event.key === "ArrowLeft"
+      ? -viewRSpan * 0.08
+      : event.key === "ArrowRight"
+        ? viewRSpan * 0.08
+        : 0;
+    const deltaX = event.key === "ArrowUp"
+      ? viewXSpan * 0.08
+      : event.key === "ArrowDown"
+        ? -viewXSpan * 0.08
+        : 0;
+    if (panDiagram(deltaR, deltaX)) announce(viewBoundsMessage("Panned view"));
+  } else if (["+", "=", "-", "_"].includes(event.key)) {
+    event.preventDefault();
+    const zoomIn = event.key === "+" || event.key === "=";
+    const centerR = (state.view.rMin + state.view.rMax) / 2;
+    const centerX = (state.view.xMin + state.view.xMax) / 2;
+    if (zoomDiagram(zoomIn ? 0.8 : 1.25, centerR, centerX)) {
+      announce(viewBoundsMessage(zoomIn ? "Zoomed in" : "Zoomed out"));
+    }
+  } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     setParameter(state.r + (event.key === "ArrowRight" ? step : -step), { manual: true, announce: true });
   } else if (event.key === "Home") {
@@ -1483,6 +1835,9 @@ function handleDiagramKey(event) {
     event.preventDefault();
     toggleSweep();
   } else if (event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    fitAllBranches();
+  } else if (event.key === "0") {
     event.preventDefault();
     fitAllBranches();
   } else if (event.key.toLowerCase() === "n") {
@@ -1498,6 +1853,16 @@ elements.familySelect.addEventListener("change", () => {
   loadFamily(elements.familySelect.value, { announce: true });
 });
 elements.generateFamily.addEventListener("click", generateFamily);
+elements.nFoldCount.addEventListener("input", () => {
+  updateFamilySpecificControls("n-fold");
+  scheduleConfiguredFamilyReload();
+});
+elements.nFoldCount.addEventListener("change", () => reloadConfiguredFamily(true));
+elements.imperfectionEpsilon.addEventListener("input", () => {
+  updateFamilySpecificControls(elements.familySelect.value);
+  scheduleConfiguredFamilyReload();
+});
+elements.imperfectionEpsilon.addEventListener("change", () => reloadConfiguredFamily(true));
 elements.parameter.addEventListener("input", () => setParameter(elements.parameter.value, { manual: true }));
 elements.parameter.addEventListener("change", () => announce(`Parameter r is ${formatNumber(state.r, 3)}.`));
 elements.toggleSweep.addEventListener("click", toggleSweep);
@@ -1526,23 +1891,57 @@ elements.runHysteresis.addEventListener("click", requestHysteresis);
 elements.hysteresisPanelButton.addEventListener("click", requestHysteresis);
 
 elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
-  const selectedMarker = updateParameterFromDiagram(event);
-  state.pointerDragging = !selectedMarker;
-  if (!selectedMarker) elements.bifurcationCanvas.setPointerCapture(event.pointerId);
+  if (event.button !== 0 || event.isPrimary === false || !state.plotBox || !state.view) return;
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  if (
+    position.x < state.plotBox.left || position.x > state.plotBox.right ||
+    position.y < state.plotBox.top || position.y > state.plotBox.bottom
+  ) return;
+  state.pointerDragging = true;
+  state.pointerMoved = false;
+  state.pointerStart = {
+    pointerId: event.pointerId,
+    x: position.x,
+    y: position.y,
+    view: { ...state.view }
+  };
+  elements.bifurcationCanvas.setPointerCapture(event.pointerId);
 });
 elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
-  if (state.pointerDragging) updateParameterFromDiagram(event);
+  if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  const deltaX = position.x - state.pointerStart.x;
+  const deltaY = position.y - state.pointerStart.y;
+  if (!state.pointerMoved && Math.hypot(deltaX, deltaY) < 5) return;
+  state.pointerMoved = true;
+  elements.bifurcationCanvas.dataset.dragging = "true";
+  if (!viewIsZoomed()) return;
+  const startView = state.pointerStart.view;
+  const rSpan = startView.rMax - startView.rMin;
+  const xSpan = startView.xMax - startView.xMin;
+  const plotWidth = state.plotBox.right - state.plotBox.left;
+  const plotHeight = state.plotBox.bottom - state.plotBox.top;
+  state.view = { ...startView };
+  panDiagram(-deltaX / plotWidth * rSpan, deltaY / plotHeight * xSpan);
 });
 elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
-  state.pointerDragging = false;
-  if (elements.bifurcationCanvas.hasPointerCapture(event.pointerId)) {
-    elements.bifurcationCanvas.releasePointerCapture(event.pointerId);
+  if (!state.pointerDragging || event.pointerId !== state.pointerStart?.pointerId) return;
+  if (state.pointerMoved) {
+    announce(viewIsZoomed() ? viewBoundsMessage("Panned view") : "Fit all is already showing the complete branch window.");
+  } else {
+    const position = pointerPosition(elements.bifurcationCanvas, event);
+    const marker = candidateMarkerAt(position);
+    if (marker) selectCandidate(marker.index, { focus: false });
+    else updateParameterFromDiagram(event, true);
   }
-  announce(`Parameter r is ${formatNumber(state.r, 3)}.`);
+  clearDiagramPointer(event);
 });
-elements.bifurcationCanvas.addEventListener("pointercancel", () => {
-  state.pointerDragging = false;
+elements.bifurcationCanvas.addEventListener("pointercancel", (event) => {
+  clearDiagramPointer(event);
 });
+elements.bifurcationCanvas.addEventListener("lostpointercapture", (event) => clearDiagramPointer(event));
+elements.bifurcationCanvas.addEventListener("wheel", handleDiagramWheel, { passive: false });
+elements.bifurcationCanvas.addEventListener("dblclick", fitAllBranches);
 elements.bifurcationCanvas.addEventListener("keydown", handleDiagramKey);
 elements.slopeCanvas.addEventListener("click", addSlopeInitial);
 elements.slopeCanvas.addEventListener("keydown", (event) => handleInitialConditionKey("slope", event));

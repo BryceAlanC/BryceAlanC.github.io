@@ -101,8 +101,52 @@
                 <option value="transcritical">Transcritical</option>
                 <option value="supercritical-pitchfork">Supercritical pitchfork</option>
                 <option value="subcritical-pitchfork">Subcritical pitchfork</option>
+                <option value="four-fold">Four-fold branch crossing</option>
+                <option value="n-fold">Adjustable n-fold crossing</option>
                 <option value="hysteresis">Hysteresis / fold pair</option>
               </select>
+
+              <div class="family-parameter-control" id="n-fold-control" hidden>
+                <div class="field-label">
+                  <label for="n-fold-count">Branch count n</label>
+                  <output id="n-fold-count-value" for="n-fold-count">5</output>
+                </div>
+                <input
+                  id="n-fold-count"
+                  type="range"
+                  min="3"
+                  max="9"
+                  value="5"
+                  step="1"
+                  aria-describedby="n-fold-help"
+                />
+                <p class="control-help" id="n-fold-help">
+                  All n equilibrium branches meet at one point. This is a valid analytic
+                  family, but a highly nongeneric event: a small perturbation usually splits
+                  it into simpler bifurcations.
+                </p>
+              </div>
+
+              <div class="family-parameter-control" id="imperfection-control" hidden>
+                <div class="field-label">
+                  <label for="imperfection-epsilon">Imperfection ε</label>
+                  <output id="imperfection-epsilon-value" for="imperfection-epsilon">0.000</output>
+                </div>
+                <input
+                  id="imperfection-epsilon"
+                  type="range"
+                  min="-0.4"
+                  max="0.4"
+                  value="0"
+                  step="0.002"
+                  aria-describedby="imperfection-help"
+                />
+                <p class="control-help" id="imperfection-help">
+                  ε = 0 preserves the exact reflection symmetry. Any nonzero ε breaks that
+                  symmetry and unfolds the perfect pitchfork.
+                </p>
+              </div>
+
               <button class="lab-button lab-button-primary full-width-button" id="generate-family" type="button">
                 Generate a new family
               </button>
@@ -143,7 +187,7 @@
               </div>
               <p class="control-help">
                 Select a numbered marker—or click one in the diagram—to compare
-                the exact family with its cubic Taylor approximation.
+                the exact family with its local Taylor approximation.
               </p>
             </fieldset>
 
@@ -171,8 +215,8 @@
             </fieldset>
 
             <p class="keyboard-help">
-              Keys over the branch diagram: ←/→ adjust r · Shift for larger steps ·
-              Space plays the sweep · F fits the view · N makes a new random family.
+              Keys over the branch diagram: ←/→ adjust r · +/- zoom · Ctrl + arrows pan ·
+              Space plays the sweep · F or 0 fits the view · N makes a new random family.
             </p>
           </aside>
 
@@ -190,14 +234,14 @@
                 <section class="dynamics-panel branches-panel" aria-labelledby="branches-title">
                   <div class="dynamics-heading">
                     <div><span>01</span><h3 id="branches-title">Equilibria across parameter</h3></div>
-                    <p>Drag horizontally to change r</p>
+                    <p>Scroll: zoom · drag: pan · click: r</p>
                   </div>
                   <div class="canvas-frame canvas-frame-large">
                     <canvas
                       id="bifurcation-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Bifurcation diagram with parameter r on the horizontal axis and equilibrium state x on the vertical axis. Drag horizontally or use the arrow keys to change r."
+                      aria-label="Zoomable bifurcation diagram with parameter r on the horizontal axis and equilibrium state x on the vertical axis. Scroll to zoom around the pointer, drag to pan while zoomed, or click to set r."
                       aria-describedby="branches-description"
                     ></canvas>
                     <div class="plot-legend" aria-hidden="true">
@@ -208,7 +252,10 @@
                   </div>
                   <p class="sr-only" id="branches-description">
                     Solid branches are stable equilibria. Dashed branches are unstable.
-                    Numbered diamonds mark detected singular equilibria.
+                    Numbered diamonds mark detected singular equilibria. The slope field and
+                    phase line use this diagram's visible x range. With the diagram focused,
+                    plus and minus zoom, Control plus arrow keys pan, arrow keys change r,
+                    and F or 0 restores the complete view.
                   </p>
                 </section>
 
@@ -239,7 +286,7 @@
                     <div><span>03</span><h3 id="phase-title">Where initial conditions go</h3></div>
                     <p id="equilibrium-summary">Finding equilibria…</p>
                   </div>
-                  <div class="phase-readout" id="phase-readout" role="list" aria-label="Equilibria at the current parameter"></div>
+                  <div class="phase-readout" id="phase-readout" role="list" aria-label="Equilibria in the visible state window at the current parameter"></div>
                   <div class="canvas-frame canvas-frame-phase">
                     <canvas
                       id="phase-canvas"
@@ -269,7 +316,7 @@
                 <strong id="telemetry-r">0.000</strong>
               </div>
               <div class="telemetry-item">
-                <span>Equilibria now</span>
+                <span>Visible equilibria</span>
                 <strong id="telemetry-equilibria">—</strong>
               </div>
               <div class="telemetry-item">
@@ -291,12 +338,12 @@
                   <canvas
                     id="microscope-canvas"
                     role="img"
-                    aria-label="Local comparison of the exact equilibrium branches, cubic Taylor approximation, and canonical normal-form geometry near the selected bifurcation."
+                    aria-label="Local comparison of the exact equilibrium branches, Taylor approximation, and canonical normal-form geometry near the selected bifurcation."
                     aria-describedby="microscope-description"
                   ></canvas>
                   <div class="microscope-legend" aria-hidden="true">
                     <span><i class="legend-exact"></i>Exact family</span>
-                    <span><i class="legend-taylor"></i>Cubic Taylor zero set</span>
+                    <span id="taylor-legend"><i class="legend-taylor"></i>Taylor zero set</span>
                     <span><i class="legend-normal"></i>Normal form</span>
                   </div>
                 </div>
@@ -319,8 +366,8 @@
                     <div><dt>f<sub>xxx</sub></dt><dd>—</dd></div>
                   </dl>
                   <div class="formula-block">
-                    <span>Cubic Taylor model</span>
-                    <code id="taylor-formula">T₃(y, μ) = —</code>
+                    <span>Local Taylor model</span>
+                    <code id="taylor-formula">T(y, μ) = —</code>
                   </div>
                   <div class="formula-block formula-block-accent">
                     <span>Equivalent normal form</span>
@@ -390,6 +437,16 @@
               to contain a visible fold, branch crossing, or symmetry-breaking event; a truly
               unrestricted random one-parameter family would almost always produce folds and
               almost never land exactly on a transcritical or pitchfork degeneracy.
+            </p>
+            <p class="app-note">
+              <strong>What the many-fold examples mean.</strong> The four-fold and adjustable
+              n-fold families are genuine analytic scalar differential equations with several
+              equilibrium branches meeting at one parameter value. They are deliberately
+              constructed, high-codimension events—not structurally stable one-parameter
+              bifurcations. A small generic perturbation separates the meeting into simpler
+              events. The imperfection control demonstrates that same idea on a pitchfork:
+              ε = 0 has exact <span class="nowrap">x ↦ −x</span> symmetry, while
+              <span class="nowrap">ε ≠ 0</span> breaks it.
             </p>
           </div>
         </div>

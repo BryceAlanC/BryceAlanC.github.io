@@ -32,7 +32,9 @@ function freezeCandidate(candidate) {
     x: Number(candidate.x),
     r: Number(candidate.r),
     type: candidate.type || "unknown",
-    label: candidate.label || candidate.type || "Candidate"
+    label: candidate.label || candidate.type || "Candidate",
+    branchCount: Number.isInteger(candidate.branchCount) ? candidate.branchCount : null,
+    nongeneric: Boolean(candidate.nongeneric)
   });
 }
 
@@ -51,11 +53,70 @@ function makeFamily(definition) {
     rRange: normalizeRange(definition.rRange, [-2, 2], "rRange"),
     defaultR: Number.isFinite(definition.defaultR) ? definition.defaultR : 0,
     supportsHysteresis: Boolean(definition.supportsHysteresis),
+    supportsImperfection: Boolean(definition.supportsImperfection),
+    imperfection: Number.isFinite(definition.imperfection) ? definition.imperfection : 0,
+    branchCount: Number.isInteger(definition.branchCount) ? definition.branchCount : null,
+    branchSlopes: Object.freeze(Array.isArray(definition.branchSlopes)
+      ? definition.branchSlopes.map(Number)
+      : []),
+    nongeneric: Boolean(definition.nongeneric),
     seed: definition.seed == null ? null : String(definition.seed),
     sourceType: definition.sourceType || "preset",
     knownCandidates: Object.freeze((definition.knownCandidates || []).map(freezeCandidate)),
     eval: definition.eval
   });
+}
+
+const MIN_BRANCH_COUNT = 3;
+const MAX_BRANCH_COUNT = 9;
+
+function normalizeBranchCount(value, fallback = 5) {
+  const numeric = Number(value);
+  const count = Number.isFinite(numeric) ? Math.round(numeric) : fallback;
+  return clamp(count, MIN_BRANCH_COUNT, MAX_BRANCH_COUNT);
+}
+
+/**
+ * An exact n-branch crossing made from a product of n linear factors. It is a
+ * perfectly valid analytic scalar family, but the simultaneous meeting is a
+ * high-codimension degeneracy and therefore splits under generic perturbation.
+ */
+function createNFoldDefinition(branchCount = 5, options = {}) {
+  const n = normalizeBranchCount(branchCount);
+  const slopes = Object.freeze(Array.from(
+    { length: n },
+    (_, index) => -1.2 + 2.4 * index / (n - 1)
+  ));
+  const scale = 2 ** (2 - n);
+  const candidateType = options.candidateType || "n-fold";
+  const name = options.name || `${n}-fold branch crossing`;
+
+  return {
+    id: options.id || "n-fold",
+    name,
+    shortName: options.shortName || name,
+    formula: `ẋ = −${Number(scale.toPrecision(4))} ∏(x − aₖr),  k = 1,…,${n};  aₖ = −1.2 + 2.4(k−1)/(${n}−1)`,
+    description: `Exactly ${n} equilibrium branches meet at the origin. This analytic example is deliberately nongeneric: a small generic perturbation splits the simultaneous crossing into lower-order events.`,
+    xRange: [-2.2, 2.2],
+    rRange: [-1.35, 1.35],
+    defaultR: 0.75,
+    branchCount: n,
+    branchSlopes: slopes,
+    nongeneric: true,
+    knownCandidates: [{
+      x: 0,
+      r: 0,
+      type: candidateType,
+      branchCount: n,
+      nongeneric: true,
+      label: `${n}-fold branch crossing`
+    }],
+    eval(x, r) {
+      let product = 1;
+      for (const slope of slopes) product *= x - slope * r;
+      return -scale * product;
+    }
+  };
 }
 
 const presetDefinitions = {
@@ -93,6 +154,7 @@ const presetDefinitions = {
     xRange: [-2.2, 2.2],
     rRange: [-2, 2],
     defaultR: -1,
+    supportsImperfection: true,
     knownCandidates: [{
       x: 0,
       r: 0,
@@ -111,6 +173,7 @@ const presetDefinitions = {
     xRange: [-2.2, 2.2],
     rRange: [-2, 2],
     defaultR: -1,
+    supportsImperfection: true,
     knownCandidates: [{
       x: 0,
       r: 0,
@@ -121,6 +184,18 @@ const presetDefinitions = {
       return r * x + x * x * x;
     }
   },
+  "four-fold": createNFoldDefinition(4, {
+    id: "four-fold",
+    name: "Four-fold branch crossing",
+    shortName: "Four-fold",
+    candidateType: "four-fold"
+  }),
+  "n-fold": createNFoldDefinition(5, {
+    id: "n-fold",
+    name: "Adjustable n-fold crossing",
+    shortName: "n-fold",
+    candidateType: "n-fold"
+  }),
   hysteresis: {
     id: "hysteresis",
     name: "Fold pair / hysteresis",
@@ -150,6 +225,38 @@ const presetDefinitions = {
   }
 };
 
+function normalizeImperfection(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function createPitchforkDefinition(id, imperfection = 0) {
+  const epsilon = normalizeImperfection(imperfection);
+  const base = presetDefinitions[id];
+  const cubicSign = id === "supercritical-pitchfork" ? -1 : 1;
+  if (epsilon === 0) return { ...base, imperfection: 0 };
+
+  const foldX = Math.cbrt(epsilon / (2 * cubicSign));
+  const foldR = -3 * cubicSign * foldX * foldX;
+  const epsilonText = String(Number(epsilon.toPrecision(5))).replace("-", "−");
+  const epsilonMagnitude = String(Number(Math.abs(epsilon).toPrecision(5)));
+  return {
+    ...base,
+    formula: `ẋ = rx ${cubicSign < 0 ? "−" : "+"} x³ ${epsilon < 0 ? "−" : "+"} ${epsilonMagnitude}`,
+    description: `${base.description} The symmetry-breaking imperfection ε = ${epsilonText} unfolds the pitchfork into a saddle-node fold.`,
+    imperfection: epsilon,
+    knownCandidates: [{
+      x: foldX,
+      r: foldR,
+      type: "saddle-node",
+      label: "Imperfect-pitchfork fold"
+    }],
+    eval(x, r) {
+      return r * x + cubicSign * x * x * x + epsilon;
+    }
+  };
+}
+
 export const PRESET_IDS = Object.freeze(Object.keys(presetDefinitions));
 
 export const PRESETS = Object.freeze(Object.fromEntries(
@@ -163,7 +270,11 @@ export const PRESETS = Object.freeze(Object.fromEntries(
       xRange: family.xRange,
       rRange: family.rRange,
       defaultR: family.defaultR,
-      supportsHysteresis: family.supportsHysteresis
+      supportsHysteresis: family.supportsHysteresis,
+      supportsImperfection: family.supportsImperfection,
+      imperfection: family.imperfection,
+      branchCount: family.branchCount,
+      nongeneric: family.nongeneric
     })];
   })
 ));
@@ -175,8 +286,19 @@ const FAMILY_ALIASES = Object.freeze({
   "pitchfork-supercritical": "supercritical-pitchfork",
   "pitchfork-subcritical": "subcritical-pitchfork",
   supercritical: "supercritical-pitchfork",
-  subcritical: "subcritical-pitchfork"
+  subcritical: "subcritical-pitchfork",
+  fourfold: "four-fold",
+  "four_fold": "four-fold",
+  nfold: "n-fold",
+  "n_fold": "n-fold"
 });
+
+const RANDOM_FAMILY_KINDS = Object.freeze([
+  "saddle-node",
+  "transcritical",
+  "supercritical-pitchfork",
+  "subcritical-pitchfork"
+]);
 
 /** A deterministic 32-bit hash suitable for turning labels into PRNG seeds. */
 export function hashSeed(seed) {
@@ -256,7 +378,7 @@ function stableExpRemainder(z, subtractQuadratic = false) {
  */
 export function createRandomFamily(seed = "bifurcation", options = {}) {
   const random = createRng(seed);
-  const randomKinds = PRESET_IDS.filter((id) => id !== "hysteresis");
+  const randomKinds = RANDOM_FAMILY_KINDS;
   const allowedKinds = (options.kinds || randomKinds).filter((id) => randomKinds.includes(id));
   const requestedKind = options.kind && (FAMILY_ALIASES[options.kind] || options.kind);
   const kind = requestedKind && randomKinds.includes(requestedKind)
@@ -356,6 +478,15 @@ export function createFamily(id = "saddle-node", seed = "bifurcation", options =
   const normalizedId = FAMILY_ALIASES[id] || id;
   if (normalizedId === "random" || normalizedId === "random-analytic") {
     return createRandomFamily(seed, options);
+  }
+  if (normalizedId === "n-fold") {
+    return makeFamily(createNFoldDefinition(options.branchCount, {
+      id: "n-fold",
+      candidateType: "n-fold"
+    }));
+  }
+  if (normalizedId === "supercritical-pitchfork" || normalizedId === "subcritical-pitchfork") {
+    return makeFamily(createPitchforkDefinition(normalizedId, options.imperfection));
   }
   const definition = presetDefinitions[normalizedId];
   if (!definition) throw new RangeError(`Unknown family: ${id}`);
@@ -579,6 +710,19 @@ export function findEquilibria(family, r, xMin = family.xRange[0], xMax = family
   assertFinite(xMin, "xMin");
   assertFinite(xMax, "xMax");
   if (!(xMax > xMin)) throw new RangeError("xMax must exceed xMin");
+  if (family.nongeneric && Array.isArray(family.branchSlopes) && family.branchSlopes.length) {
+    const dedupeTolerance = options.dedupeTolerance || Math.max(1e-13, (xMax - xMin) * 1e-12);
+    const roots = uniqueSorted(
+      family.branchSlopes.map((slope) => slope * r).filter((x) => x >= xMin && x <= xMax),
+      dedupeTolerance
+    );
+    return roots.map((x) => Object.freeze({
+      x,
+      r,
+      residual: evaluateFamily(family, x, r),
+      ...stabilityAt(family, x, r, xMin, xMax, options)
+    }));
+  }
   const samples = Math.max(40, Math.floor(options.samples || 720));
   const span = xMax - xMin;
   let maximumMagnitude = 1;
@@ -659,6 +803,53 @@ function connectBranches(slices, xSpan, rStep) {
   return branches.map((branch) => Object.freeze({ id: branch.id, points: Object.freeze(branch.points.slice()) }));
 }
 
+function connectAnalyticMultifoldBranches(family, slices, bounds, options = {}) {
+  const slopes = family.branchSlopes;
+  const crossing = (family.knownCandidates || []).find((candidate) =>
+    candidate.type === "four-fold" || candidate.type === "n-fold"
+  ) || { x: 0, r: 0 };
+  const xSpan = bounds.xMax - bounds.xMin;
+  const matchingTolerance = Math.max(1e-11, xSpan * 1e-9);
+  let crossingEquilibrium = null;
+
+  if (
+    crossing.r >= bounds.rMin && crossing.r <= bounds.rMax
+    && crossing.x >= bounds.xMin && crossing.x <= bounds.xMax
+  ) {
+    crossingEquilibrium = findEquilibria(
+      family,
+      crossing.r,
+      bounds.xMin,
+      bounds.xMax,
+      options
+    ).find((equilibrium) => Math.abs(equilibrium.x - crossing.x) <= matchingTolerance) || null;
+  }
+
+  return slopes.map((slope, id) => {
+    const branchPoints = [];
+    for (const slice of slices) {
+      const targetX = crossing.x + slope * (slice.r - crossing.r);
+      if (targetX < bounds.xMin - matchingTolerance || targetX > bounds.xMax + matchingTolerance) continue;
+      let nearest = null;
+      for (const equilibrium of slice.equilibria) {
+        const distance = Math.abs(equilibrium.x - targetX);
+        if (!nearest || distance < nearest.distance) nearest = { equilibrium, distance };
+      }
+      if (nearest && nearest.distance <= matchingTolerance) branchPoints.push(nearest.equilibrium);
+    }
+
+    if (
+      crossingEquilibrium
+      && !branchPoints.some((point) => Math.abs(point.r - crossing.r) <= 1e-13)
+    ) {
+      branchPoints.push(crossingEquilibrium);
+      branchPoints.sort((left, right) => left.r - right.r);
+    }
+
+    return Object.freeze({ id, points: Object.freeze(branchPoints) });
+  });
+}
+
 function refineBifurcationCandidate(family, candidate, bounds, options = {}) {
   let x = clamp(candidate.x, bounds.xMin, bounds.xMax);
   let r = clamp(candidate.r, bounds.rMin, bounds.rMax);
@@ -714,12 +905,15 @@ function refineBifurcationCandidate(family, candidate, bounds, options = {}) {
   };
 }
 
-function candidateTypeLabel(type) {
+function candidateTypeLabel(type, branchCount = null) {
+  if (type === "n-fold" && Number.isInteger(branchCount)) return `${branchCount}-fold branch crossing`;
   return {
     "saddle-node": "Saddle-node",
     transcritical: "Transcritical",
     "supercritical-pitchfork": "Supercritical pitchfork",
     "subcritical-pitchfork": "Subcritical pitchfork",
+    "four-fold": "Four-fold branch crossing",
+    "n-fold": "n-fold branch crossing",
     "degenerate-pitchfork": "Pitchfork-like degeneracy",
     degenerate: "Higher-order degeneracy",
     unknown: "Unclassified candidate"
@@ -746,12 +940,27 @@ export function classifyCandidate(family, candidate, options = {}) {
     Math.abs(known.x - x) < 2e-3 && Math.abs(known.r - r) < 2e-3
   );
   const guaranteedType = candidate.type || matchingKnownCandidate?.type || null;
+  const branchCount = Number.isInteger(candidate.branchCount)
+    ? candidate.branchCount
+    : Number.isInteger(matchingKnownCandidate?.branchCount)
+      ? matchingKnownCandidate.branchCount
+      : Number.isInteger(family.branchCount)
+        ? family.branchCount
+        : guaranteedType === "four-fold" ? 4 : null;
   const guaranteedPersistentBranch = guaranteedType === "transcritical";
   let type = "unknown";
   let normalForm = "No generic codimension-one normal form identified";
   let normalFormTerms = [];
 
-  if (Math.abs(derivatives.fr) > zeroTolerance && Math.abs(derivatives.fxx) > zeroTolerance) {
+  if (guaranteedType === "four-fold" || guaranteedType === "n-fold") {
+    type = guaranteedType;
+    normalForm = Number.isInteger(branchCount)
+      ? `u̇ ≈ −C∏(u−aₖμ), k = 1,…,${branchCount}, with ${branchCount} equilibrium branches meeting at μ = 0`
+      : "u̇ ≈ −C∏ₖ(u−aₖμ)";
+    if (Number.isInteger(branchCount) && branchCount <= 4) {
+      normalFormTerms = Array.from({ length: branchCount + 1 }, (_, rOrder) => [branchCount - rOrder, rOrder]);
+    }
+  } else if (Math.abs(derivatives.fr) > zeroTolerance && Math.abs(derivatives.fxx) > zeroTolerance) {
     type = "saddle-node";
     normalForm = "u̇ ≈ aμ + bu²";
     normalFormTerms = [[0, 1], [2, 0]];
@@ -785,7 +994,12 @@ export function classifyCandidate(family, candidate, options = {}) {
     x,
     r,
     type,
-    label: candidateTypeLabel(type),
+    label: candidateTypeLabel(type, branchCount),
+    branchCount,
+    nongeneric: type === "four-fold" || type === "n-fold",
+    classificationNote: type === "four-fold" || type === "n-fold"
+      ? "This exact analytic branch crossing is a high-codimension, nongeneric degeneracy; a small generic perturbation splits it into lower-order events."
+      : "",
     normalForm,
     normalFormTerms: Object.freeze(normalFormTerms.map((term) => Object.freeze(term))),
     hessianDiscriminant,
@@ -804,6 +1018,12 @@ export function detectBifurcations(family, options = {}) {
   const xMax = options.xMax ?? family.xRange[1];
   const rMin = options.rMin ?? family.rRange[0];
   const rMax = options.rMax ?? family.rRange[1];
+  if (family.nongeneric && Number.isInteger(family.branchCount)) {
+    return (family.knownCandidates || [])
+      .filter((candidate) => candidate.x >= xMin && candidate.x <= xMax && candidate.r >= rMin && candidate.r <= rMax)
+      .map((candidate) => classifyCandidate(family, candidate, options))
+      .sort((left, right) => left.r - right.r || left.x - right.x);
+  }
   const bounds = { xMin, xMax, rMin, rMax };
   const rSamples = Math.max(24, Math.floor(options.rSamples || 96));
   const seeds = (family.knownCandidates || [])
@@ -881,7 +1101,9 @@ export function sampleBifurcation(
     slices.push(slice);
     points.push(...equilibria);
   }
-  const branches = connectBranches(slices, xMax - xMin, (rMax - rMin) / Math.max(1, rSamples - 1));
+  const branches = family.nongeneric && Array.isArray(family.branchSlopes) && family.branchSlopes.length
+    ? connectAnalyticMultifoldBranches(family, slices, { rMin, rMax, xMin, xMax }, options)
+    : connectBranches(slices, xMax - xMin, (rMax - rMin) / Math.max(1, rSamples - 1));
   const candidates = options.detectCandidates === false
     ? []
     : detectBifurcations(family, { ...options, xMin, xMax, rMin, rMax });

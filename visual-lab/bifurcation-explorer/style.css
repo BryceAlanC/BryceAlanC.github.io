@@ -36,6 +36,29 @@
   margin-top: 0.65rem;
 }
 
+.family-parameter-control {
+  margin-top: 0.7rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(11, 87, 72, 0.2);
+  background: rgba(240, 238, 229, 0.72);
+}
+
+.family-parameter-control[hidden] {
+  display: none;
+}
+
+.family-parameter-control .field-label {
+  margin-bottom: 0.35rem;
+}
+
+.family-parameter-control input[type="range"] {
+  width: 100%;
+}
+
+.family-parameter-control .control-help {
+  margin-top: 0.45rem;
+}
+
 .control-row-spaced,
 .field-label-spaced {
   margin-top: 0.8rem;
@@ -211,6 +234,14 @@
   touch-action: pan-y;
 }
 
+#bifurcation-canvas[data-navigation="pan"] {
+  cursor: grab;
+}
+
+#bifurcation-canvas[data-dragging="true"] {
+  cursor: grabbing;
+}
+
 #phase-canvas {
   position: absolute;
   inset: 0;
@@ -258,6 +289,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
+}
+
+.microscope-legend [hidden] {
+  display: none;
 }
 
 .plot-legend i,
