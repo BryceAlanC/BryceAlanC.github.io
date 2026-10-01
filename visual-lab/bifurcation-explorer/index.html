@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261001-7" />
-    <script type="module" src="./demo.js?v=20261001-7"></script>
+    <link rel="stylesheet" href="./style.css?v=20261001-8" />
+    <script type="module" src="./demo.js?v=20261001-8"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to visualizer</a>
@@ -101,7 +101,6 @@
                 <option value="saddle-node">Saddle-node</option>
                 <option value="transcritical">Transcritical</option>
                 <option value="pitchfork-unfolding">Pitchfork / universal unfolding</option>
-                <option value="four-fold">Four-fold branch crossing</option>
                 <option value="n-fold">Adjustable n-fold crossing</option>
                 <option value="hysteresis">Hysteresis / fold pair</option>
               </select>
@@ -203,13 +202,13 @@
                 <label for="pitchfork-alpha">Constant imperfection α</label>
                 <output id="pitchfork-alpha-value" for="pitchfork-alpha">0.000</output>
               </div>
-              <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" />
+              <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" aria-describedby="pitchfork-unfolding-help" />
 
               <div class="field-label field-label-spaced">
                 <label for="pitchfork-beta">Quadratic imperfection β</label>
                 <output id="pitchfork-beta-value" for="pitchfork-beta">0.000</output>
               </div>
-              <input id="pitchfork-beta" type="range" min="-1.5" max="1.5" value="0" step="0.01" />
+              <input id="pitchfork-beta" type="range" min="-1.5" max="1.5" value="0" step="0.01" aria-describedby="pitchfork-unfolding-help" />
               <p class="control-help" id="pitchfork-unfolding-help">
                 The local family is α + βx² + εrx + σx³. The case menu lands on
                 every special regime; moving either slider leaves the preset and explores
@@ -399,10 +398,12 @@
                     <div class="microscope-plot local-popover-plot">
                       <canvas
                         id="microscope-canvas"
-                        role="img"
-                        aria-label="Local comparison of the exact equilibrium branches, Taylor approximation, and canonical normal-form geometry near the selected bifurcation."
+                        tabindex="0"
+                        role="application"
+                        aria-label="Zoomable local comparison of the exact equilibrium branches, Taylor approximation, and canonical normal-form geometry near the selected bifurcation. Scroll to zoom around the pointer and drag to pan. Press 0 to restore the fitted local view."
                         aria-describedby="microscope-description"
                       ></canvas>
+                      <span class="microscope-nav-hint" aria-hidden="true">scroll: zoom · drag: pan</span>
                       <div class="microscope-legend" aria-hidden="true">
                         <span><i class="legend-exact"></i>Exact</span>
                         <span id="taylor-legend"><i class="legend-taylor"></i>Taylor</span>
@@ -507,9 +508,9 @@
                 structure and therefore remain deliberate presets rather than generic random output.
               </p>
               <p class="app-note">
-                <strong>What the many-fold examples mean.</strong> The four-fold and adjustable
-                n-fold families are genuine analytic scalar differential equations with several
-                equilibrium branches meeting at one parameter value. They are deliberately
+                <strong>What the many-fold example means.</strong> The adjustable n-fold family
+                (including n = 4) is a genuine analytic scalar differential equation with several
+                equilibrium branches meeting at one parameter value. It is deliberately
                 constructed, high-codimension events—not structurally stable one-parameter
                 bifurcations. A small generic perturbation separates the meeting into simpler
                 events. The pitchfork panel shows the complete local cubic unfolding

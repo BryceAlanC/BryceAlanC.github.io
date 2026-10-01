@@ -371,6 +371,28 @@
   touch-action: pan-y;
 }
 
+#microscope-canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+#microscope-canvas[data-dragging="pan"] {
+  cursor: grabbing;
+}
+
+.microscope-nav-hint {
+  position: absolute;
+  z-index: 2;
+  top: 0.65rem;
+  right: 0.7rem;
+  color: rgba(231, 240, 236, 0.7);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
 #bifurcation-canvas:focus-visible,
 #phase-canvas:focus-visible {
   z-index: 3;

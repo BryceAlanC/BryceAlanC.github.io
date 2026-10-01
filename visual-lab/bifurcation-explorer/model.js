@@ -363,10 +363,6 @@ function createPitchforkDefinition(id, options = {}) {
     }
     return { x, r, type, label };
   });
-  const maximumCandidateX = knownCandidates.reduce((maximum, point) => Math.max(maximum, Math.abs(point.x)), 0);
-  const maximumCandidateR = knownCandidates.reduce((maximum, point) => Math.max(maximum, Math.abs(point.r)), 0);
-  const xLimit = Math.max(2.2, maximumCandidateX + 0.8);
-  const rLimit = Math.max(2.2, maximumCandidateR + 0.8);
   const inner = formatUnfoldingExpression(alpha, beta, couplingSign, cubicSign);
   const formula = timeSign < 0 ? `ẋ = −(${inner})` : `ẋ = ${inner}`;
 
@@ -376,8 +372,11 @@ function createPitchforkDefinition(id, options = {}) {
     shortName: caseData.label,
     formula,
     description: `The cubic universal unfolding with independent constant and quadratic imperfections. Current slice: ${caseData.label.toLowerCase()}.`,
-    xRange: [-xLimit, xLimit],
-    rRange: [-rLimit, rLimit],
+    // Keep the camera fixed while alpha and beta move through the supported
+    // control ranges. Every fold in that rectangle lies inside this window,
+    // so the branches can morph without the axes "breathing" around them.
+    xRange: [-2.2, 2.2],
+    rRange: [-2.2, 2.2],
     defaultR: 0,
     supportsImperfection: true,
     supportsUnfolding: true,

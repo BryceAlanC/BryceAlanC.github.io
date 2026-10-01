@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-6";
+} from "./model.js?v=20261001-8";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -111,6 +111,9 @@ const state = {
   selectedCandidate: -1,
   taylor: null,
   microscope: null,
+  microscopeView: null,
+  microscopePlotBox: null,
+  microscopePointer: null,
   r: 0,
   pendingR: null,
   equilibria: [],
@@ -129,6 +132,7 @@ const state = {
   slopeCursorX: 0,
   phaseCursorX: 0,
   calculationToken: 0,
+  pitchforkMorph: null,
   pointerDragging: false,
   pointerStart: null,
   pointerMoved: false,
@@ -833,7 +837,8 @@ function drawLocalDiagram() {
     return;
   }
   const box = plotRectangle(width, height, true);
-  const ranges = state.microscope.ranges;
+  state.microscopePlotBox = box;
+  const ranges = state.microscopeView || state.microscope.ranges;
   drawAxes(context, box, [ranges.rMin, ranges.rMax], [ranges.xMin, ranges.xMax], {
     dark: true,
     xLabel: "μ = r − r*",
@@ -860,9 +865,11 @@ function drawLocalDiagram() {
   drawShifted(state.microscope.taylorDiagram, { color: COLORS.stableBright, dash: [7, 5], width: 2.2 });
   drawShifted(state.microscope.normalDiagram, { color: COLORS.normal, dash: [2, 5], width: 2.2 });
 
-  const centerX = mapHorizontal(0, ranges.rMin, ranges.rMax, box);
-  const centerY = mapVertical(0, ranges.xMin, ranges.xMax, box);
-  drawDiamond(context, centerX, centerY, 10, COLORS.currentBright);
+  if (ranges.rMin <= 0 && ranges.rMax >= 0 && ranges.xMin <= 0 && ranges.xMax >= 0) {
+    const centerX = mapHorizontal(0, ranges.rMin, ranges.rMax, box);
+    const centerY = mapVertical(0, ranges.xMin, ranges.xMax, box);
+    drawDiamond(context, centerX, centerY, 10, COLORS.currentBright);
+  }
 }
 
 function drawHysteresisPanel() {
@@ -1146,7 +1153,7 @@ function setParameter(value, options = {}) {
   if (options.announce) announce(`Parameter r is ${formatNumber(next, 3)}.`);
 }
 
-function updateCurrentSlice() {
+function updateCurrentSlice(options = {}) {
   if (!state.family || !state.view) return;
   state.equilibria = findEquilibria(
     state.family,
@@ -1155,7 +1162,7 @@ function updateCurrentSlice() {
     state.view.xMax,
     { samples: 420 }
   );
-  updateCurrentOutputs();
+  if (options.updateOutputs !== false) updateCurrentOutputs();
 }
 
 function stabilityLabel(equilibrium) {
@@ -1398,13 +1405,28 @@ function selectCandidate(index, options = {}) {
     : normalFamilyFromTaylor(state.taylor, localRanges);
   const taylorDiagram = branchCount > 4
     ? null
-    : sampleBifurcation(taylorFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false });
+    : sampleBifurcation(taylorFamily, {
+      ...absoluteRanges,
+      rSamples: 181,
+      xSamples: 260,
+      detectCandidates: false
+    });
   state.microscope = {
     center: { x: candidate.x, r: candidate.r },
     ranges: localRanges,
-    exact: sampleBifurcation(state.family, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false }),
+    exact: sampleBifurcation(state.family, {
+      ...absoluteRanges,
+      rSamples: 181,
+      xSamples: 260,
+      detectCandidates: false
+    }),
     taylorDiagram,
-    normalDiagram: sampleBifurcation(normalFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false })
+    normalDiagram: sampleBifurcation(normalFamily, {
+      ...absoluteRanges,
+      rSamples: 181,
+      xSamples: 260,
+      detectCandidates: false
+    })
   };
   state.localDirty = true;
   updateMicroscopeCopy(candidate);
@@ -1439,8 +1461,8 @@ function updateMicroscopeCopy(candidate) {
   elements.microscopeCanvas.setAttribute(
     "aria-label",
     taylorCurveOmitted
-      ? `Local comparison of the exact equilibrium branches and degree-${branchCount} branch-product normal form. The degree-4 Taylor jet is zero, so it has no separate curve.`
-      : `Local comparison of the exact equilibrium branches, degree-${state.taylor.degree} Taylor approximation, and normal-form geometry near the selected bifurcation.`
+      ? `Zoomable local comparison of the exact equilibrium branches and degree-${branchCount} branch-product normal form. The degree-4 Taylor jet is zero, so it has no separate curve. Scroll to zoom, drag to pan, or press 0 to reset.`
+      : `Zoomable local comparison of the exact equilibrium branches, degree-${state.taylor.degree} Taylor approximation, and normal-form geometry near the selected bifurcation. Scroll to zoom, drag to pan, or press 0 to reset.`
   );
   elements.microscopeDescription.textContent = taylorCurveOmitted
     ? `At this ${branchCount}-fold point, all derivatives through total degree 4 vanish. The exact local family is compared with its degree-${branchCount} branch-product normal form; there is no separate quartic Taylor curve.`
@@ -1549,8 +1571,35 @@ function positionLocalPopover() {
   return true;
 }
 
+function clearMicroscopePointer(event) {
+  const pointerId = state.microscopePointer?.pointerId;
+  state.microscopePointer = null;
+  delete elements.microscopeCanvas.dataset.dragging;
+  if (
+    pointerId != null
+    && event?.type !== "lostpointercapture"
+    && elements.microscopeCanvas.hasPointerCapture(pointerId)
+  ) {
+    elements.microscopeCanvas.releasePointerCapture(pointerId);
+  }
+}
+
+function resetMicroscopeView(options = {}) {
+  if (!state.microscope) return false;
+  clearMicroscopePointer();
+  state.microscopeView = { ...state.microscope.ranges };
+  state.localDirty = true;
+  if (options.draw && state.localPopoverOpen) {
+    drawLocalDiagram();
+    state.localDirty = false;
+  }
+  if (options.announce) announce("The local lens is fitted to the selected bifurcation again.");
+  return true;
+}
+
 function openLocalPopover(trigger = null) {
   if (!state.microscope || state.selectedCandidate < 0) return;
+  resetMicroscopeView();
   state.localPopoverOpen = true;
   state.localPopoverNeedsPosition = true;
   state.localPopoverTrigger = trigger || document.activeElement;
@@ -1576,9 +1625,12 @@ function openLocalPopover(trigger = null) {
 function dismissLocalPopover(options = {}) {
   if (!state.localPopoverOpen && elements.localPopover.hidden) return;
   const trigger = state.localPopoverTrigger;
+  clearMicroscopePointer();
   state.localPopoverOpen = false;
   state.localPopoverNeedsPosition = false;
   state.localPopoverTrigger = null;
+  state.microscopeView = null;
+  state.microscopePlotBox = null;
   elements.localPopover.hidden = true;
   elements.bifurcationCanvas.setAttribute("aria-expanded", "false");
   elements.focusCandidate.setAttribute("aria-expanded", "false");
@@ -1793,6 +1845,7 @@ function applyCustomFamily(options = {}) {
 
 function loadFamily(id, options = {}) {
   window.clearTimeout(reloadConfiguredFamily.timeout);
+  cancelPitchforkMorph();
   updateFamilySpecificControls(id);
   const seed = id === "random" ? state.seed : undefined;
   let nextFamily;
@@ -1851,12 +1904,15 @@ function loadFamily(id, options = {}) {
   state.diagram = null;
   state.candidates = [];
   state.microscope = null;
+  state.microscopeView = null;
+  state.microscopePlotBox = null;
   state.localDirty = true;
   state.hysteresisDirty = true;
   window.setTimeout(() => {
     if (token !== state.calculationToken) return;
     try {
-      const diagram = sampleBifurcation(state.family, state.fullView, {
+      const diagram = sampleBifurcation(state.family, {
+        ...state.fullView,
         rSamples: 221,
         xSamples: 420
       });
@@ -1924,6 +1980,273 @@ function scheduleConfiguredFamilyReload() {
   reloadConfiguredFamily.timeout = window.setTimeout(() => reloadConfiguredFamily(false), 130);
 }
 
+const PITCHFORK_MORPH_ALPHA_TOLERANCE = 0.00025;
+const PITCHFORK_MORPH_BETA_TOLERANCE = 0.0025;
+const PITCHFORK_MORPH_TIME_CONSTANT = 0.075;
+
+function pitchforkOptionsFromFamily(family) {
+  const unfolding = family?.unfolding;
+  if (!unfolding) return null;
+  return {
+    alpha: unfolding.alpha,
+    beta: unfolding.beta,
+    couplingSign: unfolding.couplingSign,
+    cubicSign: unfolding.cubicSign,
+    timeSign: unfolding.timeSign
+  };
+}
+
+function pitchforkOptionsMatch(left, right) {
+  if (!left || !right) return false;
+  return (
+    Math.abs(left.alpha - right.alpha) <= 1e-12
+    && Math.abs(left.beta - right.beta) <= 1e-12
+    && left.couplingSign === right.couplingSign
+    && left.cubicSign === right.cubicSign
+    && left.timeSign === right.timeSign
+  );
+}
+
+function cancelPitchforkMorph() {
+  window.clearTimeout(queuePitchforkMorph.idleTimer);
+  window.clearTimeout(schedulePitchforkRefinement.timer);
+  queuePitchforkMorph.idleTimer = null;
+  schedulePitchforkRefinement.timer = null;
+  schedulePitchforkRefinement.pending = null;
+  state.pitchforkMorph = null;
+}
+
+function nearestCandidateIndex(candidates, reference, fallback = 0) {
+  if (!candidates.length) return -1;
+  if (!reference) return clamp(fallback, 0, candidates.length - 1);
+  const rSpan = Math.max(1e-9, state.fullView.rMax - state.fullView.rMin);
+  const xSpan = Math.max(1e-9, state.fullView.xMax - state.fullView.xMin);
+  let result = 0;
+  let bestScore = Infinity;
+  candidates.forEach((candidate, index) => {
+    const typePenalty = candidate.type === reference.type ? 0 : 0.18;
+    const score = Math.hypot(
+      (candidate.r - reference.r) / rSpan,
+      (candidate.x - reference.x) / xSpan
+    ) + typePenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      result = index;
+    }
+  });
+  return result;
+}
+
+function applyPitchforkPreview(options) {
+  const nextFamily = createFamily("pitchfork-unfolding", undefined, options);
+  const bounds = state.fullView || {
+    rMin: nextFamily.rRange[0],
+    rMax: nextFamily.rRange[1],
+    xMin: nextFamily.xRange[0],
+    xMax: nextFamily.xRange[1]
+  };
+  const diagram = sampleBifurcation(nextFamily, {
+    ...bounds,
+    rSamples: 121,
+    xSamples: 220,
+    detectCandidates: false
+  });
+  const previousCandidate = state.candidates[state.selectedCandidate] || null;
+  const candidates = [...nextFamily.knownCandidates];
+  const selectedCandidate = nearestCandidateIndex(candidates, previousCandidate, state.selectedCandidate);
+
+  // All expensive work happens above. These assignments form one visible
+  // commit, so the animation loop can never observe a blank diagram.
+  state.family = nextFamily;
+  state.diagram = diagram;
+  state.candidates = candidates;
+  state.selectedCandidate = selectedCandidate;
+  state.taylor = null;
+  state.microscope = null;
+  state.microscopeView = null;
+  state.localDirty = true;
+  updateCurrentSlice({ updateOutputs: false });
+  updateFamilyCopy();
+  if (selectedCandidate >= 0) {
+    const candidate = candidates[selectedCandidate];
+    elements.telemetryEvent.textContent = `B${selectedCandidate + 1} · ${candidate.label}`;
+  } else {
+    elements.telemetryEvent.textContent = "None resolved";
+  }
+  elements.candidateSelect.disabled = true;
+  elements.focusCandidate.disabled = true;
+  elements.stageStatus.textContent = `Morphing continuously · α = ${formatNumber(options.alpha, 3)} · β = ${formatNumber(options.beta, 3)}`;
+  return diagram;
+}
+
+function schedulePitchforkRefinement(options, announceChange = false) {
+  window.clearTimeout(queuePitchforkMorph.idleTimer);
+  window.clearTimeout(schedulePitchforkRefinement.timer);
+  queuePitchforkMorph.idleTimer = null;
+  state.pitchforkMorph = null;
+  const token = ++state.calculationToken;
+  const pending = {
+    options: { ...options },
+    announce: Boolean(announceChange),
+    token
+  };
+  schedulePitchforkRefinement.pending = pending;
+  elements.stageStatus.textContent = "Refining the final unfolding…";
+  schedulePitchforkRefinement.timer = window.setTimeout(() => {
+    if (
+      schedulePitchforkRefinement.pending !== pending
+      || token !== state.calculationToken
+      || !familyIsPitchfork(elements.familySelect.value)
+    ) return;
+    try {
+      const nextFamily = createFamily("pitchfork-unfolding", undefined, pending.options);
+      const bounds = state.fullView || {
+        rMin: nextFamily.rRange[0],
+        rMax: nextFamily.rRange[1],
+        xMin: nextFamily.xRange[0],
+        xMax: nextFamily.xRange[1]
+      };
+      const diagram = sampleBifurcation(nextFamily, {
+        ...bounds,
+        rSamples: 221,
+        xSamples: 420
+      });
+      if (schedulePitchforkRefinement.pending !== pending || token !== state.calculationToken) return;
+      const previousCandidate = state.candidates[state.selectedCandidate] || null;
+      const candidates = diagram.candidates.length ? [...diagram.candidates] : [...nextFamily.knownCandidates];
+      state.family = nextFamily;
+      state.diagram = diagram;
+      state.candidates = candidates;
+      state.selectedCandidate = nearestCandidateIndex(candidates, previousCandidate, state.selectedCandidate);
+      state.taylor = null;
+      state.microscope = null;
+      state.microscopeView = null;
+      updateCurrentSlice();
+      updateFamilyCopy();
+      buildCandidateOptions();
+      const candidate = candidates[state.selectedCandidate];
+      elements.telemetryEvent.textContent = candidate
+        ? `B${state.selectedCandidate + 1} · ${candidate.label}`
+        : "None resolved";
+      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${candidates.length} highlighted ${candidates.length === 1 ? "event" : "events"} · smooth morph settled`;
+      if (pending.announce) {
+        announce(`Pitchfork unfolding settled at alpha ${formatNumber(pending.options.alpha, 3)} and beta ${formatNumber(pending.options.beta, 3)}.`);
+      }
+    } catch (error) {
+      console.error(error);
+      elements.stageStatus.textContent = "The final unfolding could not be refined; the smooth preview remains visible.";
+      buildCandidateOptions();
+    } finally {
+      if (schedulePitchforkRefinement.pending === pending) {
+        schedulePitchforkRefinement.pending = null;
+        schedulePitchforkRefinement.timer = null;
+      }
+    }
+  }, 24);
+}
+
+function requestPitchforkMorphFinish(announceChange = false) {
+  window.clearTimeout(queuePitchforkMorph.idleTimer);
+  queuePitchforkMorph.idleTimer = null;
+  if (schedulePitchforkRefinement.pending) {
+    schedulePitchforkRefinement.pending.announce ||= Boolean(announceChange);
+    return;
+  }
+  if (!state.pitchforkMorph) {
+    const target = familyCreationOptions(elements.familySelect.value);
+    const current = pitchforkOptionsFromFamily(state.family);
+    if (pitchforkOptionsMatch(current, target)) {
+      if (announceChange) {
+        announce(`Pitchfork unfolding is at alpha ${formatNumber(target.alpha, 3)} and beta ${formatNumber(target.beta, 3)}.`);
+      }
+      return;
+    }
+    queuePitchforkMorph({ finalize: true, announce: announceChange });
+    return;
+  }
+  state.pitchforkMorph.finalizeRequested = true;
+  state.pitchforkMorph.announce ||= Boolean(announceChange);
+  if (motionQuery.matches) updatePitchforkMorph(performance.now(), { force: true });
+}
+
+function queuePitchforkMorph(options = {}) {
+  window.clearTimeout(reloadConfiguredFamily.timeout);
+  window.clearTimeout(schedulePitchforkRefinement.timer);
+  if (schedulePitchforkRefinement.pending) schedulePitchforkRefinement.pending = null;
+  schedulePitchforkRefinement.timer = null;
+  const id = elements.familySelect.value;
+  if (!familyIsPitchfork(id) || !state.family?.supportsUnfolding || !state.diagram) {
+    reloadConfiguredFamily(Boolean(options.announce));
+    return false;
+  }
+  const target = familyCreationOptions(id);
+  if (!state.pitchforkMorph) {
+    const current = pitchforkOptionsFromFamily(state.family);
+    if (!current) return false;
+    ++state.calculationToken;
+    dismissLocalPopover();
+    state.taylor = null;
+    state.microscope = null;
+    state.microscopeView = null;
+    state.pitchforkMorph = {
+      current,
+      target,
+      lastSampleAt: Number.NEGATIVE_INFINITY,
+      finalizeRequested: Boolean(options.finalize),
+      announce: Boolean(options.announce)
+    };
+  } else {
+    state.pitchforkMorph.target = target;
+    state.pitchforkMorph.finalizeRequested ||= Boolean(options.finalize);
+    state.pitchforkMorph.announce ||= Boolean(options.announce);
+  }
+  window.clearTimeout(queuePitchforkMorph.idleTimer);
+  if (!options.finalize) {
+    queuePitchforkMorph.idleTimer = window.setTimeout(() => requestPitchforkMorphFinish(false), 180);
+  }
+  if (motionQuery.matches) updatePitchforkMorph(performance.now(), { force: true });
+  return true;
+}
+
+function updatePitchforkMorph(now, options = {}) {
+  const morph = state.pitchforkMorph;
+  if (!morph) return false;
+  if (!options.force && now - morph.lastSampleAt < 28) return false;
+  const elapsed = Number.isFinite(morph.lastSampleAt)
+    ? clamp((now - morph.lastSampleAt) / 1000, 0.016, 0.09)
+    : 0.016;
+  const amount = motionQuery.matches
+    ? 1
+    : 1 - Math.exp(-elapsed / PITCHFORK_MORPH_TIME_CONSTANT);
+  let alpha = lerp(morph.current.alpha, morph.target.alpha, amount);
+  let beta = lerp(morph.current.beta, morph.target.beta, amount);
+  const alphaDone = Math.abs(alpha - morph.target.alpha) <= PITCHFORK_MORPH_ALPHA_TOLERANCE;
+  const betaDone = Math.abs(beta - morph.target.beta) <= PITCHFORK_MORPH_BETA_TOLERANCE;
+  if (alphaDone) alpha = morph.target.alpha;
+  if (betaDone) beta = morph.target.beta;
+  const next = {
+    ...morph.target,
+    alpha,
+    beta
+  };
+  try {
+    applyPitchforkPreview(next);
+  } catch (error) {
+    console.error(error);
+    state.pitchforkMorph = null;
+    buildCandidateOptions();
+    elements.stageStatus.textContent = "The smooth unfolding preview could not be computed.";
+    return false;
+  }
+  morph.current = next;
+  morph.lastSampleAt = now;
+  const settled = alpha === morph.target.alpha && beta === morph.target.beta;
+  if (settled && morph.finalizeRequested) {
+    schedulePitchforkRefinement(morph.target, morph.announce);
+  }
+  return true;
+}
+
 function pointerPosition(canvas, event) {
   const rectangle = canvas.getBoundingClientRect();
   return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
@@ -1955,6 +2278,125 @@ function boundedRange(minimum, maximum, fullMinimum, fullMaximum) {
     nextMinimum = fullMaximum - span;
   }
   return [nextMinimum, nextMaximum];
+}
+
+function microscopeViewIsZoomed() {
+  if (!state.microscope || !state.microscopeView) return false;
+  const full = state.microscope.ranges;
+  const view = state.microscopeView;
+  return (
+    view.rMax - view.rMin < (full.rMax - full.rMin) * 0.9999
+    || view.xMax - view.xMin < (full.xMax - full.xMin) * 0.9999
+  );
+}
+
+function microscopeBoundsMessage(prefix = "Local view") {
+  const view = state.microscopeView;
+  if (!view) return prefix;
+  return `${prefix}: μ from ${formatNumber(view.rMin, 3)} to ${formatNumber(view.rMax, 3)}; y from ${formatNumber(view.xMin, 3)} to ${formatNumber(view.xMax, 3)}.`;
+}
+
+function zoomMicroscope(factor, anchorR, anchorX) {
+  if (!state.microscope || !state.microscopeView || !Number.isFinite(factor) || factor <= 0) return false;
+  const full = state.microscope.ranges;
+  const view = state.microscopeView;
+  const fullRSpan = full.rMax - full.rMin;
+  const fullXSpan = full.xMax - full.xMin;
+  const currentRSpan = view.rMax - view.rMin;
+  const currentXSpan = view.xMax - view.xMin;
+  const nextRSpan = clamp(currentRSpan * factor, fullRSpan * MIN_VIEW_FRACTION, fullRSpan);
+  const nextXSpan = clamp(currentXSpan * factor, fullXSpan * MIN_VIEW_FRACTION, fullXSpan);
+  const rFraction = clamp(inverseLerp(view.rMin, view.rMax, anchorR), 0, 1);
+  const xFraction = clamp(inverseLerp(view.xMin, view.xMax, anchorX), 0, 1);
+  const [rMin, rMax] = boundedRange(
+    anchorR - rFraction * nextRSpan,
+    anchorR + (1 - rFraction) * nextRSpan,
+    full.rMin,
+    full.rMax
+  );
+  const [xMin, xMax] = boundedRange(
+    anchorX - xFraction * nextXSpan,
+    anchorX + (1 - xFraction) * nextXSpan,
+    full.xMin,
+    full.xMax
+  );
+  const changed = (
+    Math.abs(rMin - view.rMin) > fullRSpan * 1e-9
+    || Math.abs(rMax - view.rMax) > fullRSpan * 1e-9
+    || Math.abs(xMin - view.xMin) > fullXSpan * 1e-9
+    || Math.abs(xMax - view.xMax) > fullXSpan * 1e-9
+  );
+  if (!changed) return false;
+  state.microscopeView = { rMin, rMax, xMin, xMax };
+  state.localDirty = true;
+  return true;
+}
+
+function panMicroscope(deltaR, deltaX) {
+  if (!microscopeViewIsZoomed()) return false;
+  const full = state.microscope.ranges;
+  const view = state.microscopeView;
+  const [rMin, rMax] = boundedRange(
+    view.rMin + deltaR,
+    view.rMax + deltaR,
+    full.rMin,
+    full.rMax
+  );
+  const [xMin, xMax] = boundedRange(
+    view.xMin + deltaX,
+    view.xMax + deltaX,
+    full.xMin,
+    full.xMax
+  );
+  if (rMin === view.rMin && rMax === view.rMax && xMin === view.xMin && xMax === view.xMax) return false;
+  state.microscopeView = { rMin, rMax, xMin, xMax };
+  state.localDirty = true;
+  return true;
+}
+
+function handleMicroscopeWheel(event) {
+  if (!state.localPopoverOpen || !state.microscopeView || !state.microscopePlotBox || state.microscopePointer) return;
+  const position = pointerPosition(elements.microscopeCanvas, event);
+  const box = state.microscopePlotBox;
+  if (position.x < box.left || position.x > box.right || position.y < box.top || position.y > box.bottom) return;
+  const modeScale = event.deltaMode === 1
+    ? 16
+    : event.deltaMode === 2
+      ? box.bottom - box.top
+      : 1;
+  const normalizedDelta = clamp(event.deltaY * modeScale, -240, 240);
+  if (!normalizedDelta) return;
+  const factor = clamp(Math.exp(normalizedDelta * 0.0015), 0.75, 1.35);
+  const anchorR = valueFromHorizontal(position.x, state.microscopeView.rMin, state.microscopeView.rMax, box);
+  const anchorX = valueFromVertical(position.y, state.microscopeView.xMin, state.microscopeView.xMax, box);
+  if (zoomMicroscope(factor, anchorR, anchorX)) {
+    event.preventDefault();
+    announce(microscopeBoundsMessage(factor < 1 ? "Zoomed into the local lens" : "Zoomed out of the local lens"));
+  }
+}
+
+function handleMicroscopeKey(event) {
+  if (!state.microscope || !state.microscopeView) return;
+  const view = state.microscopeView;
+  const centerR = (view.rMin + view.rMax) / 2;
+  const centerX = (view.xMin + view.xMax) / 2;
+  if (["+", "=", "-", "_"].includes(event.key)) {
+    event.preventDefault();
+    const zoomIn = event.key === "+" || event.key === "=";
+    if (zoomMicroscope(zoomIn ? 0.8 : 1.25, centerR, centerX)) {
+      announce(microscopeBoundsMessage(zoomIn ? "Zoomed into the local lens" : "Zoomed out of the local lens"));
+    }
+  } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const rStep = (view.rMax - view.rMin) * 0.08;
+    const xStep = (view.xMax - view.xMin) * 0.08;
+    const deltaR = event.key === "ArrowLeft" ? -rStep : event.key === "ArrowRight" ? rStep : 0;
+    const deltaX = event.key === "ArrowDown" ? -xStep : event.key === "ArrowUp" ? xStep : 0;
+    if (panMicroscope(deltaR, deltaX)) announce(microscopeBoundsMessage("Panned the local lens"));
+  } else if (event.key === "0" || event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    resetMicroscopeView({ announce: true });
+  }
 }
 
 function updateDiagramNavigationMode() {
@@ -2238,15 +2680,15 @@ elements.nFoldCount.addEventListener("input", () => {
 elements.nFoldCount.addEventListener("change", () => reloadConfiguredFamily(true));
 elements.pitchforkCase.addEventListener("change", () => {
   applyPitchforkCase(elements.pitchforkCase.value);
-  reloadConfiguredFamily(true);
+  queuePitchforkMorph({ finalize: true, announce: true });
 });
 for (const control of [elements.pitchforkAlpha, elements.pitchforkBeta]) {
   control.addEventListener("input", () => {
     elements.pitchforkCase.value = "custom";
     updatePitchforkReadouts();
-    scheduleConfiguredFamilyReload();
+    queuePitchforkMorph();
   });
-  control.addEventListener("change", () => reloadConfiguredFamily(true));
+  control.addEventListener("change", () => requestPitchforkMorphFinish(true));
 }
 elements.pitchforkSigns.addEventListener("change", () => reloadConfiguredFamily(true));
 elements.pitchforkTimeSign.addEventListener("change", () => reloadConfiguredFamily(true));
@@ -2306,6 +2748,59 @@ elements.closeLocalPopover.addEventListener("click", () => dismissLocalPopover({
   restoreFocus: true,
   announce: true
 }));
+
+elements.microscopeCanvas.addEventListener("pointerdown", (event) => {
+  if (
+    event.button !== 0
+    || event.isPrimary === false
+    || !state.localPopoverOpen
+    || !state.microscopeView
+    || !state.microscopePlotBox
+  ) return;
+  const position = pointerPosition(elements.microscopeCanvas, event);
+  const box = state.microscopePlotBox;
+  if (position.x < box.left || position.x > box.right || position.y < box.top || position.y > box.bottom) return;
+  event.preventDefault();
+  elements.microscopeCanvas.focus({ preventScroll: true });
+  state.microscopePointer = {
+    pointerId: event.pointerId,
+    x: position.x,
+    y: position.y,
+    moved: false,
+    view: { ...state.microscopeView }
+  };
+  elements.microscopeCanvas.setPointerCapture(event.pointerId);
+});
+elements.microscopeCanvas.addEventListener("pointermove", (event) => {
+  if (!state.microscopePointer || event.pointerId !== state.microscopePointer.pointerId) return;
+  const position = pointerPosition(elements.microscopeCanvas, event);
+  const deltaX = position.x - state.microscopePointer.x;
+  const deltaY = position.y - state.microscopePointer.y;
+  if (!state.microscopePointer.moved && Math.hypot(deltaX, deltaY) < 5) return;
+  event.preventDefault();
+  state.microscopePointer.moved = true;
+  elements.microscopeCanvas.dataset.dragging = "pan";
+  const startView = state.microscopePointer.view;
+  const box = state.microscopePlotBox;
+  const rSpan = startView.rMax - startView.rMin;
+  const xSpan = startView.xMax - startView.xMin;
+  state.microscopeView = { ...startView };
+  panMicroscope(
+    -deltaX / Math.max(1, box.right - box.left) * rSpan,
+    deltaY / Math.max(1, box.bottom - box.top) * xSpan
+  );
+});
+elements.microscopeCanvas.addEventListener("pointerup", (event) => {
+  if (!state.microscopePointer || event.pointerId !== state.microscopePointer.pointerId) return;
+  const moved = state.microscopePointer.moved;
+  clearMicroscopePointer(event);
+  if (moved) announce(microscopeBoundsMessage("Panned the local lens"));
+});
+elements.microscopeCanvas.addEventListener("pointercancel", clearMicroscopePointer);
+elements.microscopeCanvas.addEventListener("lostpointercapture", clearMicroscopePointer);
+elements.microscopeCanvas.addEventListener("wheel", handleMicroscopeWheel, { passive: false });
+elements.microscopeCanvas.addEventListener("dblclick", () => resetMicroscopeView({ announce: true }));
+elements.microscopeCanvas.addEventListener("keydown", handleMicroscopeKey);
 
 elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
   if ((event.button !== 0 && event.button !== 1) || event.isPrimary === false || !state.plotBox || !state.view) return;
@@ -2413,6 +2908,7 @@ function animate(now) {
   const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
   state.lastFrameTime = now;
   state.elapsed += delta;
+  updatePitchforkMorph(now);
   updateSweep(delta);
   updateHysteresis(delta, now);
   updateParticles(delta);
@@ -2462,6 +2958,10 @@ motionQuery.addEventListener?.("change", (event) => {
   if (event.matches) {
     stopSweep();
     stopHysteresis(false);
+    if (state.pitchforkMorph) {
+      state.pitchforkMorph.finalizeRequested = true;
+      updatePitchforkMorph(performance.now(), { force: true });
+    }
   }
 });
 

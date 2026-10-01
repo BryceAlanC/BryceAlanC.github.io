@@ -99,6 +99,8 @@ assert.deepEqual(model.PRESET_IDS, [
   assert.equal(exact.formula, "ẋ = rx − x³");
   assert.equal(exact.knownCandidates.length, 1);
   assert.equal(exact.knownCandidates[0].type, "supercritical-pitchfork");
+  assert.deepEqual(exact.xRange, [-2.2, 2.2]);
+  assert.deepEqual(exact.rRange, [-2.2, 2.2]);
 
   const legacy = model.createFamily("supercritical-pitchfork", "unused", { imperfection: 0.2 });
   assert.equal(legacy.unfolding.alpha, 0.2, "the former imperfection option maps to alpha");
@@ -133,6 +135,8 @@ assert.deepEqual(model.PRESET_IDS, [
   assert.equal(threeFolds.unfolding.caseId, "three-folds");
   assert.equal(threeFolds.knownCandidates.length, 3);
   assert.ok(threeFolds.knownCandidates.every((candidate) => candidate.type === "saddle-node"));
+  assert.deepEqual(threeFolds.xRange, exact.xRange, "the unfolding camera should not breathe as beta changes");
+  assert.deepEqual(threeFolds.rRange, exact.rRange, "the unfolding camera should not breathe as alpha changes");
   const expectedFoldParameters = [
     -3 * Math.sqrt(3) / 8,
     -9 / 16,
