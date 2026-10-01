@@ -1,0 +1,657 @@
+.bifurcation-app-layout {
+  grid-template-columns: minmax(285px, 315px) minmax(0, 1fr);
+}
+
+.bifurcation-app .control-panel {
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.bifurcation-app .control-panel select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.bifurcation-app .control-panel > p {
+  font-size: 0.88rem;
+}
+
+.bifurcation-app .control-group legend,
+.bifurcation-app .field-label {
+  font-size: 0.72rem;
+}
+
+.bifurcation-app .lab-button {
+  min-height: 44px;
+}
+
+.full-width-button {
+  width: 100%;
+  margin-top: 0.65rem;
+}
+
+.control-row-spaced,
+.field-label-spaced {
+  margin-top: 0.8rem;
+}
+
+.control-help,
+.keyboard-help {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.control-help {
+  margin: 0.65rem 0 0;
+}
+
+.keyboard-help {
+  margin: 1rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.equation-card {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(11, 87, 72, 0.22);
+  background: #f0eee5;
+}
+
+.equation-card > span,
+.equation-card > small {
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.equation-card code {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.equation-card > small {
+  color: var(--muted);
+}
+
+.bifurcation-stage-heading {
+  align-items: center;
+}
+
+.dynamics-workbench {
+  display: grid;
+  grid-template-columns: minmax(440px, 1.35fr) minmax(340px, 0.85fr);
+  background: #0c2621;
+}
+
+.dynamics-panel {
+  min-width: 0;
+  border-bottom: 1px solid rgba(235, 247, 243, 0.16);
+}
+
+.branches-panel {
+  border-right: 1px solid rgba(235, 247, 243, 0.16);
+  background: #e9e4d7;
+}
+
+.slope-panel {
+  background: #09211d;
+  color: var(--white);
+}
+
+.phase-panel {
+  grid-column: 1 / -1;
+  background: #f4f1e7;
+}
+
+.dynamics-heading {
+  display: flex;
+  min-height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.05rem;
+  border-bottom: 1px solid rgba(23, 33, 29, 0.16);
+}
+
+.dynamics-heading > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.dynamics-heading span {
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.dynamics-heading h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.dynamics-heading p {
+  max-width: 180px;
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.dynamics-heading-dark {
+  border-bottom-color: rgba(235, 247, 243, 0.16);
+  background: #0d2b25;
+}
+
+.dynamics-heading-dark span {
+  color: #79d8c5;
+}
+
+.dynamics-heading-dark p {
+  color: rgba(235, 247, 243, 0.7);
+}
+
+.canvas-frame {
+  position: relative;
+  overflow: hidden;
+}
+
+.canvas-frame-large {
+  min-height: 515px;
+  background: #f4f1e7;
+}
+
+.canvas-frame-dark {
+  background: #071c18;
+}
+
+.canvas-frame-phase {
+  min-height: 190px;
+  background: #f4f1e7;
+}
+
+.canvas-frame canvas,
+.microscope-plot canvas,
+.hysteresis-plot canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#bifurcation-canvas,
+#slope-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+#phase-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+#bifurcation-canvas:focus-visible,
+#phase-canvas:focus-visible {
+  z-index: 3;
+  outline: 3px solid #0b5748;
+  outline-offset: -5px;
+}
+
+#slope-canvas:focus-visible {
+  z-index: 3;
+  outline: 3px solid #f2c969;
+  outline-offset: -5px;
+}
+
+.plot-legend,
+.microscope-legend,
+.hysteresis-legend {
+  position: absolute;
+  z-index: 2;
+  right: 0.8rem;
+  bottom: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.85rem;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid rgba(23, 33, 29, 0.15);
+  background: rgba(244, 241, 231, 0.88);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+.plot-legend span,
+.microscope-legend span,
+.hysteresis-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.plot-legend i,
+.microscope-legend i,
+.hysteresis-legend i {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  background: #79d8c5;
+}
+
+.plot-legend .legend-unstable {
+  height: 0;
+  border-top: 3px dashed #9c4528;
+  background: transparent;
+}
+
+.plot-legend .legend-stable {
+  background: #0b6f60;
+}
+
+.plot-legend .legend-current {
+  background: #8a6200;
+}
+
+.phase-readout {
+  display: flex;
+  min-height: 38px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.42rem 1rem;
+  border-bottom: 1px solid rgba(23, 33, 29, 0.1);
+  background: #ece8dd;
+}
+
+.equilibrium-chip {
+  padding: 0.25rem 0.42rem;
+  border: 1px solid rgba(23, 33, 29, 0.14);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+}
+
+.equilibrium-chip[data-stability="stable"] {
+  border-left: 4px solid #188b76;
+}
+
+.equilibrium-chip[data-stability="unstable"] {
+  border-left: 4px dashed #9c4528;
+}
+
+.equilibrium-chip[data-stability="neutral"] {
+  border-left: 4px double #8a6200;
+}
+
+.bifurcation-telemetry .telemetry-item strong {
+  font-size: 1.06rem;
+}
+
+.microscope-panel,
+.hysteresis-panel {
+  overflow: hidden;
+}
+
+.microscope-grid,
+.hysteresis-grid {
+  display: grid;
+  grid-template-columns: minmax(440px, 1.25fr) minmax(300px, 0.75fr);
+  min-height: 360px;
+}
+
+.microscope-plot,
+.hysteresis-plot {
+  position: relative;
+  min-height: 360px;
+  border-right: 1px solid var(--hairline);
+  background: #071c18;
+}
+
+.microscope-copy,
+.hysteresis-copy {
+  padding: clamp(1rem, 2.2vw, 1.6rem);
+  background: #f4f1e7;
+}
+
+.classification-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+#classification-badge {
+  padding: 0.35rem 0.5rem;
+  background: var(--forest);
+  color: var(--white);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#candidate-coordinate {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.microscope-copy > p,
+.hysteresis-copy > p {
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.62;
+}
+
+.derivative-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0;
+  border-top: 1px solid var(--hairline);
+  border-left: 1px solid var(--hairline);
+}
+
+.derivative-grid > div {
+  min-width: 0;
+  padding: 0.65rem;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.derivative-grid dt {
+  color: var(--forest);
+  font-family: var(--serif);
+  font-style: italic;
+}
+
+.derivative-grid dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+
+.formula-block {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.72rem;
+  padding: 0.75rem;
+  border: 1px solid var(--hairline);
+  background: var(--white);
+}
+
+.formula-block > span {
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.formula-block code {
+  overflow-wrap: anywhere;
+  font-family: var(--serif);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.formula-block-accent {
+  border-left: 4px solid #d9a73f;
+}
+
+.local-caveat {
+  margin-bottom: 0;
+  font-size: 0.76rem !important;
+}
+
+.microscope-legend,
+.hysteresis-legend {
+  border-color: rgba(235, 247, 243, 0.16);
+  background: rgba(7, 28, 24, 0.82);
+  color: rgba(235, 247, 243, 0.76);
+}
+
+.microscope-legend .legend-exact {
+  background: #fffdf7;
+}
+
+.microscope-legend .legend-taylor {
+  background: #79d8c5;
+}
+
+.microscope-legend .legend-normal {
+  background: #b5a1df;
+}
+
+.hysteresis-legend .legend-forward {
+  background: #e5b95f;
+}
+
+.hysteresis-legend .legend-backward {
+  height: 0;
+  border-top: 3px dashed #b5a1df;
+  background: transparent;
+}
+
+.hysteresis-grid {
+  grid-template-columns: minmax(440px, 1.4fr) minmax(280px, 0.6fr);
+  min-height: 310px;
+}
+
+.hysteresis-plot {
+  min-height: 310px;
+}
+
+.hysteresis-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.memory-readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem;
+  align-items: baseline;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.memory-readout > span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.memory-readout > strong {
+  text-align: right;
+  font-family: var(--serif);
+  font-weight: 500;
+}
+
+.memory-readout-wide {
+  grid-template-columns: 1fr;
+}
+
+.memory-readout-wide > strong {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: left;
+}
+
+#hysteresis-panel-button {
+  width: 100%;
+  margin-top: auto;
+}
+
+@media (max-width: 1270px) {
+  .bifurcation-app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .bifurcation-app .control-panel {
+    position: static;
+    display: grid;
+    max-height: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 1.2rem;
+    overflow: visible;
+  }
+
+  .bifurcation-app .control-panel > h2,
+  .bifurcation-app .control-panel > p,
+  .keyboard-help {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .dynamics-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .branches-panel {
+    border-right: 0;
+  }
+
+  .phase-panel {
+    grid-column: auto;
+  }
+
+  .microscope-grid,
+  .hysteresis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .microscope-plot,
+  .hysteresis-plot {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+}
+
+@media (max-width: 760px) {
+  .bifurcation-app .control-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .bifurcation-app .control-panel > h2,
+  .bifurcation-app .control-panel > p,
+  .keyboard-help {
+    grid-column: auto;
+  }
+
+  .bifurcation-stage-heading {
+    align-items: flex-start;
+  }
+
+  .dynamics-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dynamics-heading p {
+    max-width: none;
+    text-align: left;
+  }
+
+  .canvas-frame-large {
+    min-height: 390px;
+  }
+
+  .plot-legend,
+  .microscope-legend,
+  .hysteresis-legend {
+    right: 0.45rem;
+    bottom: 0.45rem;
+    left: 0.45rem;
+  }
+
+  .derivative-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .canvas-frame-large {
+    min-height: 340px;
+  }
+
+  .canvas-frame-phase {
+    min-height: 220px;
+  }
+
+  .microscope-plot,
+  .hysteresis-plot {
+    min-height: 330px;
+  }
+
+  .classification-row,
+  .memory-readout {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  #candidate-coordinate,
+  .memory-readout > strong {
+    text-align: left;
+  }
+}
+
+@media (forced-colors: active) {
+  #bifurcation-canvas,
+  #slope-canvas,
+  #phase-canvas,
+  #microscope-canvas,
+  #hysteresis-canvas {
+    border: 2px solid CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bifurcation-canvas,
+  #slope-canvas,
+  #phase-canvas,
+  #hysteresis-canvas {
+    scroll-behavior: auto;
+  }
+}

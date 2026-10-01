@@ -156,7 +156,7 @@ select:focus-visible {
 
 @media (min-width: 981px) {
   .lab-card-grid-math {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .lab-card-grid-math .lab-card,
@@ -165,7 +165,7 @@ select:focus-visible {
     border-left: 0;
   }
 
-  .lab-card-grid-math .lab-card:nth-child(3n + 1) {
+  .lab-card-grid-math .lab-card:nth-child(2n + 1) {
     border-left: 1px solid var(--hairline);
   }
 

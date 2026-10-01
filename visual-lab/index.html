@@ -327,6 +327,133 @@
               </div>
             </a>
 
+            <a class="lab-card lab-card-bifurcation" href="bifurcation-explorer/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="bifurcation-bg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#071e19" />
+                      <stop offset="0.58" stop-color="#102b35" />
+                      <stop offset="1" stop-color="#191928" />
+                    </linearGradient>
+                    <pattern id="bifurcation-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+                      <path d="M28 0H0V28" fill="none" stroke="#e5f4ee" stroke-opacity="0.045" />
+                    </pattern>
+                    <filter id="bifurcation-glow" x="-100%" y="-100%" width="300%" height="300%">
+                      <feGaussianBlur stdDeviation="5" />
+                    </filter>
+                    <marker id="bifurcation-arrow" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0 0 8 4 0 8Z" fill="#dff8f0" />
+                    </marker>
+                    <clipPath id="bifurcation-field-clip">
+                      <rect x="410" y="22" width="206" height="262" />
+                    </clipPath>
+                  </defs>
+                  <rect width="640" height="390" fill="url(#bifurcation-bg)" />
+                  <rect width="640" height="390" fill="url(#bifurcation-grid)" />
+
+                  <rect x="24" y="22" width="366" height="262" fill="#071e19" fill-opacity="0.72" stroke="#dff8f0" stroke-opacity="0.18" />
+                  <g fill="none" stroke="#dff8f0" stroke-opacity="0.15">
+                    <path d="M64 68H362M64 135H362M64 202H362" />
+                    <path d="M126 48V238M190 48V238M254 48V238M318 48V238" />
+                  </g>
+                  <g fill="none" stroke="#dff8f0" stroke-opacity="0.54" stroke-width="1.2">
+                    <path d="M53 135H369" />
+                    <path d="m361 130 8 5-8 5" />
+                    <path d="M190 246V43" />
+                    <path d="m185 51 5-8 5 8" />
+                  </g>
+                  <g font-family="IBM Plex Mono, monospace" font-size="9" letter-spacing="1.05">
+                    <text x="38" y="42" fill="#dff8f0">BIFURCATION DIAGRAM</text>
+                    <text x="350" y="151" fill="#b9cbc4">r</text>
+                    <text x="179" y="58" fill="#b9cbc4">x</text>
+                    <text x="177" y="258" fill="#8fa49c">0</text>
+                  </g>
+
+                  <path d="M58 135H190" fill="none" stroke="#6bcdbf" stroke-width="4" stroke-linecap="round" />
+                  <path d="M190 135H363" fill="none" stroke="#f0b18b" stroke-width="2.4" stroke-dasharray="6 7" />
+                  <path d="M190 135C217 120 250 93 282 80S337 67 363 64" fill="none" stroke="#6bcdbf" stroke-width="4" stroke-linecap="round" />
+                  <path d="M190 135C217 150 250 177 282 190S337 203 363 206" fill="none" stroke="#6bcdbf" stroke-width="4" stroke-linecap="round" />
+
+                  <path d="M286 48V239" fill="none" stroke="#ffd166" stroke-opacity="0.88" stroke-width="1.5" stroke-dasharray="4 5" />
+                  <rect x="245" y="27" width="82" height="24" fill="#162b28" stroke="#ffd166" stroke-opacity="0.58" />
+                  <text x="286" y="43" fill="#ffe49a" font-family="IBM Plex Mono, monospace" font-size="9" letter-spacing="0.8" text-anchor="middle">r = +0.72</text>
+                  <g fill="#6bcdbf" stroke="#dffaf4" stroke-width="1.5">
+                    <circle cx="286" cy="78" r="5.5" />
+                    <circle cx="286" cy="192" r="5.5" />
+                  </g>
+                  <circle cx="286" cy="135" r="5.5" fill="#071e19" stroke="#f0b18b" stroke-width="2" />
+                  <g font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.7">
+                    <text x="74" y="124" fill="#79dfcd">STABLE</text>
+                    <text x="304" y="127" fill="#f0b18b">UNSTABLE</text>
+                  </g>
+
+                  <rect x="410" y="22" width="206" height="262" fill="#0b2222" fill-opacity="0.9" stroke="#dff8f0" stroke-opacity="0.18" />
+                  <g clip-path="url(#bifurcation-field-clip)">
+                    <g fill="none" stroke="#b9cbc4" stroke-opacity="0.34" stroke-width="1.25">
+                      <path d="M428 44l16 8m22-8 16 8m22-8 16 8m22-8 16 8m22-8 16 8M428 162l16 8m22-8 16 8m22-8 16 8m22-8 16 8m22-8 16 8M428 186l16 8m22-8 16 8m22-8 16 8m22-8 16 8m22-8 16 8" />
+                      <path d="M428 72h16m22 0h16m22 0h16m22 0h16m22 0h16M428 143h16m22 0h16m22 0h16m22 0h16m22 0h16M428 214h16m22 0h16m22 0h16m22 0h16m22 0h16" />
+                      <path d="M428 102l16-8m22 8 16-8m22 8 16-8m22 8 16-8m22 8 16-8M428 125l16-8m22 8 16-8m22 8 16-8m22 8 16-8m22 8 16-8M428 244l16-8m22 8 16-8m22 8 16-8m22 8 16-8m22 8 16-8" />
+                    </g>
+                    <g fill="none" stroke="#6bcdbf" stroke-width="2.2" stroke-linecap="round">
+                      <path d="M422 42C466 48 515 69 604 72" />
+                      <path d="M422 111C477 99 520 76 604 72" />
+                      <path d="M422 175C476 189 521 211 604 214" />
+                      <path d="M422 252C479 237 524 217 604 214" />
+                    </g>
+                    <path d="M422 142C473 142 525 143 604 143" fill="none" stroke="#f0b18b" stroke-width="2" stroke-dasharray="5 6" />
+                    <g fill="#6bcdbf" opacity="0.18" filter="url(#bifurcation-glow)">
+                      <circle cx="590" cy="72" r="13" />
+                      <circle cx="590" cy="214" r="13" />
+                    </g>
+                  </g>
+                  <g font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.8">
+                    <text x="424" y="42" fill="#dff8f0">SLOPE FIELD · CURRENT r</text>
+                    <text x="594" y="274" fill="#8fa49c">t →</text>
+                  </g>
+
+                  <g font-family="IBM Plex Mono, monospace">
+                    <text x="24" y="310" fill="#dff8f0" font-size="9" letter-spacing="1.05">PHASE LINE · ẋ = x(r − x²)</text>
+                    <path d="M60 334H586" fill="none" stroke="#dff8f0" stroke-opacity="0.26" />
+                    <g fill="none" stroke="#dff8f0" stroke-width="1.8" marker-end="url(#bifurcation-arrow)">
+                      <path d="M72 334H151" />
+                      <path d="M294 334H207" />
+                      <path d="M346 334H433" />
+                      <path d="M568 334H489" />
+                    </g>
+                    <g fill="#6bcdbf" stroke="#dffaf4" stroke-width="1.8">
+                      <circle cx="180" cy="334" r="7" />
+                      <circle cx="460" cy="334" r="7" />
+                    </g>
+                    <circle cx="320" cy="334" r="7" fill="#102b35" stroke="#f0b18b" stroke-width="2" />
+                    <g fill="#b9cbc4" font-size="9" text-anchor="middle">
+                      <text x="180" y="360">−√r</text>
+                      <text x="320" y="360">0</text>
+                      <text x="460" y="360">+√r</text>
+                    </g>
+                    <g font-size="8" letter-spacing="0.7">
+                      <text x="506" y="309" fill="#6bcdbf">● STABLE</text>
+                      <text x="506" y="322" fill="#f0b18b">○ UNSTABLE</text>
+                    </g>
+                  </g>
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>04 · Nonlinear dynamics</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Bifurcations in motion</h3>
+              <p class="lab-card-copy">
+                Move a parameter through classical and generated one-dimensional
+                systems. Read the bifurcation diagram, slope field, and phase line
+                together; zoom into critical points for local normal forms, or sweep
+                a fold back and forth to make hysteresis visible.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · Numerical</span>
+                <strong>Explore the branches <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+
           </div>
         </div>
       </section>

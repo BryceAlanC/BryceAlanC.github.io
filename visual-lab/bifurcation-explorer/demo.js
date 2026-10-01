@@ -1,0 +1,1610 @@
+import {
+  createFamily,
+  findEquilibria,
+  sampleBifurcation,
+  taylorData,
+  taylorEvaluate,
+  rk4Step
+} from "./model.js";
+
+const COLORS = Object.freeze({
+  ink: "#17211d",
+  muted: "#53615c",
+  paper: "#f4f1e7",
+  paperDeep: "#e9e4d7",
+  forest: "#0b5748",
+  plot: "#071c18",
+  plotSoft: "#09251f",
+  grid: "rgba(231, 246, 241, 0.09)",
+  gridLight: "rgba(23, 33, 29, 0.10)",
+  light: "#e7f0ec",
+  ivory: "#fffdf7",
+  stable: "#0b6f60",
+  stableBright: "#79d8c5",
+  unstable: "#9c4528",
+  unstableBright: "#f0b18b",
+  current: "#8a6200",
+  currentBright: "#f2c969",
+  normal: "#b5a1df",
+  backward: "#b5a1df",
+  backwardLight: "#694e9a"
+});
+
+const elements = {
+  familySelect: document.getElementById("family-select"),
+  generateFamily: document.getElementById("generate-family"),
+  familyKind: document.getElementById("family-kind"),
+  familyEquation: document.getElementById("family-equation"),
+  familySeed: document.getElementById("family-seed"),
+  parameter: document.getElementById("parameter-r"),
+  parameterValue: document.getElementById("parameter-r-value"),
+  toggleSweep: document.getElementById("toggle-sweep"),
+  centerParameter: document.getElementById("center-parameter"),
+  sweepSpeed: document.getElementById("sweep-speed"),
+  sweepSpeedValue: document.getElementById("sweep-speed-value"),
+  candidateSelect: document.getElementById("candidate-select"),
+  focusCandidate: document.getElementById("focus-candidate"),
+  fitBranches: document.getElementById("fit-branches"),
+  resetParticles: document.getElementById("reset-particles"),
+  toggleParticles: document.getElementById("toggle-particles"),
+  runHysteresis: document.getElementById("run-hysteresis"),
+  hysteresisPanelButton: document.getElementById("hysteresis-panel-button"),
+  stageStatus: document.getElementById("stage-status"),
+  slopeParameter: document.getElementById("slope-parameter-label"),
+  equilibriumSummary: document.getElementById("equilibrium-summary"),
+  phaseReadout: document.getElementById("phase-readout"),
+  telemetryFamily: document.getElementById("telemetry-family"),
+  telemetryR: document.getElementById("telemetry-r"),
+  telemetryEquilibria: document.getElementById("telemetry-equilibria"),
+  telemetryEvent: document.getElementById("telemetry-event"),
+  microscopeStatus: document.getElementById("microscope-status"),
+  classificationBadge: document.getElementById("classification-badge"),
+  candidateCoordinate: document.getElementById("candidate-coordinate"),
+  derivativeGrid: document.getElementById("derivative-grid"),
+  taylorFormula: document.getElementById("taylor-formula"),
+  normalFormula: document.getElementById("normal-formula"),
+  classificationNote: document.getElementById("classification-note"),
+  hysteresisStatus: document.getElementById("hysteresis-status"),
+  hysteresisDirection: document.getElementById("hysteresis-direction"),
+  hysteresisState: document.getElementById("hysteresis-state"),
+  hysteresisMemory: document.getElementById("hysteresis-memory"),
+  announcer: document.getElementById("bifurcation-announcer"),
+  bifurcationCanvas: document.getElementById("bifurcation-canvas"),
+  slopeCanvas: document.getElementById("slope-canvas"),
+  phaseCanvas: document.getElementById("phase-canvas"),
+  microscopeCanvas: document.getElementById("microscope-canvas"),
+  hysteresisCanvas: document.getElementById("hysteresis-canvas")
+};
+
+const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+const state = {
+  seedCounter: 0,
+  seed: makeSeed(),
+  family: null,
+  diagram: null,
+  candidates: [],
+  selectedCandidate: -1,
+  taylor: null,
+  microscope: null,
+  r: 0,
+  pendingR: null,
+  equilibria: [],
+  fullView: null,
+  view: null,
+  sweepRunning: false,
+  sweepDirection: 1,
+  sweepSpeed: Number(elements.sweepSpeed.value),
+  particlesPaused: motionQuery.matches,
+  particles: [],
+  particleCursor: 0,
+  extraSlopeInitials: [],
+  slopeCursorX: 0,
+  phaseCursorX: 0,
+  calculationToken: 0,
+  pointerDragging: false,
+  plotBox: null,
+  candidateScreens: [],
+  lastSliceUpdate: 0,
+  lastFrameTime: performance.now(),
+  lastRenderTime: 0,
+  elapsed: 0,
+  localDirty: true,
+  hysteresisDirty: true,
+  hysteresis: {
+    running: false,
+    direction: 1,
+    x: 0,
+    increasing: [],
+    decreasing: [],
+    cycles: 0,
+    lastRecordedAt: 0
+  }
+};
+
+function makeSeed() {
+  const time = Date.now().toString(36).toUpperCase();
+  const salt = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0").toUpperCase();
+  return `${time.slice(-5)}-${salt}`;
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function lerp(start, end, amount) {
+  return start + (end - start) * amount;
+}
+
+function inverseLerp(start, end, value) {
+  return end === start ? 0 : (value - start) / (end - start);
+}
+
+function formatNumber(value, digits = 3) {
+  if (!Number.isFinite(value)) return "—";
+  const threshold = 10 ** (-(digits + 1));
+  const clean = Math.abs(value) < threshold ? 0 : value;
+  if (Math.abs(clean) >= 1000 || (Math.abs(clean) > 0 && Math.abs(clean) < 0.001)) {
+    return clean.toExponential(2).replace("e+", "e");
+  }
+  const formatted = clean.toFixed(digits);
+  return Number(formatted) === 0 ? formatted.replace(/^-/, "") : formatted;
+}
+
+function titleCase(text) {
+  return String(text)
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function announce(message) {
+  window.clearTimeout(announce.timeout);
+  announce.timeout = window.setTimeout(() => {
+    elements.announcer.textContent = message;
+  }, 120);
+}
+
+function canvasSurface(canvas) {
+  const rectangle = canvas.getBoundingClientRect();
+  const width = Math.max(1, rectangle.width);
+  const height = Math.max(1, rectangle.height);
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const pixelWidth = Math.round(width * ratio);
+  const pixelHeight = Math.round(height * ratio);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const context = canvas.getContext("2d");
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return { context, width, height, ratio };
+}
+
+function plotRectangle(width, height, compact = false) {
+  return {
+    left: compact ? 43 : 52,
+    right: width - (compact ? 16 : 22),
+    top: compact ? 20 : 24,
+    bottom: height - (compact ? 36 : 43)
+  };
+}
+
+function mapHorizontal(value, minimum, maximum, box) {
+  return lerp(box.left, box.right, inverseLerp(minimum, maximum, value));
+}
+
+function mapVertical(value, minimum, maximum, box) {
+  return lerp(box.bottom, box.top, inverseLerp(minimum, maximum, value));
+}
+
+function valueFromHorizontal(pixel, minimum, maximum, box) {
+  return lerp(minimum, maximum, inverseLerp(box.left, box.right, pixel));
+}
+
+function valueFromVertical(pixel, minimum, maximum, box) {
+  return lerp(minimum, maximum, inverseLerp(box.bottom, box.top, pixel));
+}
+
+function niceTicks(minimum, maximum, desired = 6) {
+  const span = Math.max(1e-12, maximum - minimum);
+  const raw = span / desired;
+  const exponent = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / exponent;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = factor * exponent;
+  const first = Math.ceil(minimum / step) * step;
+  const ticks = [];
+  for (let value = first; value <= maximum + step * 0.25; value += step) ticks.push(value);
+  return ticks;
+}
+
+function drawAxes(context, box, xRange, yRange, options = {}) {
+  const dark = Boolean(options.dark);
+  const gridColor = dark ? COLORS.grid : COLORS.gridLight;
+  const axisColor = dark ? "rgba(231, 246, 241, 0.42)" : "rgba(23, 33, 29, 0.42)";
+  const labelColor = dark ? "rgba(231, 246, 241, 0.68)" : COLORS.muted;
+  context.save();
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.textBaseline = "top";
+  for (const value of niceTicks(xRange[0], xRange[1], 6)) {
+    const x = mapHorizontal(value, xRange[0], xRange[1], box);
+    context.strokeStyle = gridColor;
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(x, box.top);
+    context.lineTo(x, box.bottom);
+    context.stroke();
+    context.fillStyle = labelColor;
+    context.textAlign = "center";
+    context.fillText(formatNumber(value, Math.abs(value) < 10 ? 1 : 0), x, box.bottom + 9);
+  }
+  context.textBaseline = "middle";
+  for (const value of niceTicks(yRange[0], yRange[1], 6)) {
+    const y = mapVertical(value, yRange[0], yRange[1], box);
+    context.strokeStyle = gridColor;
+    context.beginPath();
+    context.moveTo(box.left, y);
+    context.lineTo(box.right, y);
+    context.stroke();
+    context.fillStyle = labelColor;
+    context.textAlign = "right";
+    context.fillText(formatNumber(value, Math.abs(value) < 10 ? 1 : 0), box.left - 8, y);
+  }
+  context.strokeStyle = axisColor;
+  context.lineWidth = 1;
+  context.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  if (xRange[0] <= 0 && xRange[1] >= 0) {
+    const x = mapHorizontal(0, xRange[0], xRange[1], box);
+    context.beginPath();
+    context.moveTo(x, box.top);
+    context.lineTo(x, box.bottom);
+    context.stroke();
+  }
+  if (yRange[0] <= 0 && yRange[1] >= 0) {
+    const y = mapVertical(0, yRange[0], yRange[1], box);
+    context.beginPath();
+    context.moveTo(box.left, y);
+    context.lineTo(box.right, y);
+    context.stroke();
+  }
+  context.fillStyle = labelColor;
+  context.textAlign = "right";
+  context.textBaseline = "bottom";
+  context.fillText(options.xLabel || "r", box.right, box.bottom - 7);
+  context.save();
+  context.translate(box.left + 10, box.top + 4);
+  context.rotate(-Math.PI / 2);
+  context.textAlign = "right";
+  context.fillText(options.yLabel || "x", 0, 0);
+  context.restore();
+  context.restore();
+}
+
+function branchStyle(stability, onDark = false) {
+  if (String(stability).startsWith("stable")) {
+    return { color: onDark ? COLORS.stableBright : COLORS.stable, dash: [], width: 2.5 };
+  }
+  if (String(stability).startsWith("unstable")) {
+    return { color: onDark ? COLORS.unstableBright : COLORS.unstable, dash: [7, 5], width: 2.2 };
+  }
+  return { color: onDark ? COLORS.currentBright : COLORS.current, dash: [2, 5], width: 2.2 };
+}
+
+function drawBranchCollection(context, branches, ranges, box, options = {}) {
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  for (const branch of branches || []) {
+    const points = branch.points || [];
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      if (
+        previous.r < ranges.rMin || previous.r > ranges.rMax ||
+        current.r < ranges.rMin || current.r > ranges.rMax ||
+        previous.x < ranges.xMin || previous.x > ranges.xMax ||
+        current.x < ranges.xMin || current.x > ranges.xMax
+      ) continue;
+      const style = options.fixedStyle || branchStyle(current.stability, options.onDark);
+      context.strokeStyle = style.color;
+      context.lineWidth = style.width || 2;
+      context.setLineDash(style.dash || []);
+      context.globalAlpha = options.alpha ?? 1;
+      context.beginPath();
+      context.moveTo(
+        mapHorizontal(previous.r, ranges.rMin, ranges.rMax, box),
+        mapVertical(previous.x, ranges.xMin, ranges.xMax, box)
+      );
+      context.lineTo(
+        mapHorizontal(current.r, ranges.rMin, ranges.rMax, box),
+        mapVertical(current.x, ranges.xMin, ranges.xMax, box)
+      );
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function drawDiamond(context, x, y, size, fill, stroke = COLORS.ivory) {
+  context.save();
+  context.translate(x, y);
+  context.rotate(Math.PI / 4);
+  context.fillStyle = fill;
+  context.strokeStyle = stroke;
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.rect(-size / 2, -size / 2, size, size);
+  context.fill();
+  context.stroke();
+  context.restore();
+}
+
+function drawEquilibriumMarker(context, x, y, equilibrium, radius = 5, dark = false) {
+  const stable = String(equilibrium.stability).startsWith("stable");
+  const unstable = String(equilibrium.stability).startsWith("unstable");
+  context.save();
+  context.lineWidth = 2;
+  context.strokeStyle = stable ? COLORS.stable : unstable ? COLORS.unstable : COLORS.current;
+  context.fillStyle = stable ? COLORS.stable : dark ? COLORS.plot : COLORS.paper;
+  context.beginPath();
+  context.arc(x, y, radius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  if (!stable && !unstable) {
+    context.beginPath();
+    context.moveTo(x - radius, y);
+    context.lineTo(x + radius, y);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawHysteresisTrail(context, trail, ranges, box, color, width = 2.8, dash = []) {
+  if (!trail || trail.length < 2) return;
+  context.save();
+  context.strokeStyle = color;
+  context.lineWidth = width;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.setLineDash(dash);
+  context.beginPath();
+  let drawing = false;
+  for (const point of trail) {
+    if (
+      point.r < ranges.rMin || point.r > ranges.rMax ||
+      point.x < ranges.xMin || point.x > ranges.xMax
+    ) {
+      drawing = false;
+      continue;
+    }
+    const x = mapHorizontal(point.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(point.x, ranges.xMin, ranges.xMax, box);
+    if (!drawing) context.moveTo(x, y);
+    else context.lineTo(x, y);
+    drawing = true;
+  }
+  context.stroke();
+  context.restore();
+}
+
+function drawBifurcationDiagram() {
+  const { context, width, height } = canvasSurface(elements.bifurcationCanvas);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = COLORS.paper;
+  context.fillRect(0, 0, width, height);
+  if (!state.diagram || !state.view) return;
+  const box = plotRectangle(width, height);
+  state.plotBox = box;
+  const ranges = state.view;
+  drawAxes(context, box, [ranges.rMin, ranges.rMax], [ranges.xMin, ranges.xMax], {
+    xLabel: "parameter r",
+    yLabel: "equilibrium x"
+  });
+  drawBranchCollection(context, state.diagram.branches, ranges, box);
+
+  drawHysteresisTrail(context, state.hysteresis.increasing, ranges, box, COLORS.current, 3.2);
+  drawHysteresisTrail(context, state.hysteresis.decreasing, ranges, box, COLORS.backwardLight, 3.2, [7, 5]);
+
+  state.candidateScreens = [];
+  state.candidates.forEach((candidate, index) => {
+    if (
+      candidate.r < ranges.rMin || candidate.r > ranges.rMax ||
+      candidate.x < ranges.xMin || candidate.x > ranges.xMax
+    ) return;
+    const x = mapHorizontal(candidate.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(candidate.x, ranges.xMin, ranges.xMax, box);
+    state.candidateScreens.push({ index, x, y });
+    if (index === state.selectedCandidate) {
+      context.fillStyle = "rgba(217, 167, 63, 0.18)";
+      context.beginPath();
+      context.arc(x, y, 18, 0, Math.PI * 2);
+      context.fill();
+    }
+    drawDiamond(context, x, y, index === state.selectedCandidate ? 12 : 9, COLORS.current);
+    context.fillStyle = COLORS.ink;
+    context.font = "600 10px 'IBM Plex Mono', monospace";
+    context.textAlign = "left";
+    context.textBaseline = "bottom";
+    context.fillText(`B${index + 1}`, x + 9, y - 7);
+  });
+
+  if (state.r >= ranges.rMin && state.r <= ranges.rMax) {
+    const currentX = mapHorizontal(state.r, ranges.rMin, ranges.rMax, box);
+    context.save();
+    context.strokeStyle = COLORS.current;
+    context.lineWidth = 1.6;
+    context.setLineDash([3, 4]);
+    context.beginPath();
+    context.moveTo(currentX, box.top);
+    context.lineTo(currentX, box.bottom);
+    context.stroke();
+    context.setLineDash([]);
+    context.fillStyle = COLORS.current;
+    context.beginPath();
+    context.moveTo(currentX - 6, box.top);
+    context.lineTo(currentX + 6, box.top);
+    context.lineTo(currentX, box.top + 8);
+    context.closePath();
+    context.fill();
+    context.restore();
+    for (const equilibrium of state.equilibria) {
+      if (equilibrium.x < ranges.xMin || equilibrium.x > ranges.xMax) continue;
+      drawEquilibriumMarker(
+        context,
+        currentX,
+        mapVertical(equilibrium.x, ranges.xMin, ranges.xMax, box),
+        equilibrium,
+        6,
+        false
+      );
+    }
+  }
+
+  if (state.hysteresis.running && Number.isFinite(state.hysteresis.x)) {
+    const x = mapHorizontal(state.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(state.hysteresis.x, ranges.xMin, ranges.xMax, box);
+    context.fillStyle = state.hysteresis.direction > 0 ? COLORS.currentBright : COLORS.backward;
+    context.strokeStyle = COLORS.ivory;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(x, y, 6.5, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+}
+
+function trajectoryPoints(x0, r, duration = 6, step = 0.035) {
+  const points = [{ t: 0, x: x0 }];
+  let x = x0;
+  for (let t = step; t <= duration + 1e-9; t += step) {
+    x = rk4Step(state.family, x, r, step);
+    if (!Number.isFinite(x) || x < state.view.xMin - 0.2 || x > state.view.xMax + 0.2) break;
+    points.push({ t, x });
+  }
+  return points;
+}
+
+function drawSlopeField() {
+  const { context, width, height } = canvasSurface(elements.slopeCanvas);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = COLORS.plot;
+  context.fillRect(0, 0, width, height);
+  if (!state.family || !state.view) return;
+  const box = plotRectangle(width, height);
+  const timeRange = [0, 6];
+  const xRange = [state.view.xMin, state.view.xMax];
+  drawAxes(context, box, timeRange, xRange, { dark: true, xLabel: "time t", yLabel: "state x" });
+
+  const columns = Math.max(10, Math.floor((box.right - box.left) / 38));
+  const rows = Math.max(11, Math.floor((box.bottom - box.top) / 29));
+  const segmentLength = 10;
+  context.save();
+  context.lineCap = "round";
+  for (let column = 0; column <= columns; column += 1) {
+    const t = lerp(timeRange[0], timeRange[1], column / columns);
+    const centerX = mapHorizontal(t, timeRange[0], timeRange[1], box);
+    for (let row = 0; row <= rows; row += 1) {
+      const xValue = lerp(xRange[0], xRange[1], row / rows);
+      const centerY = mapVertical(xValue, xRange[0], xRange[1], box);
+      const slope = state.family.eval(xValue, state.r);
+      const screenDx = (box.right - box.left) / (timeRange[1] - timeRange[0]);
+      const screenDy = -slope * (box.bottom - box.top) / (xRange[1] - xRange[0]);
+      const norm = Math.max(1e-9, Math.hypot(screenDx, screenDy));
+      const dx = segmentLength * screenDx / norm;
+      const dy = segmentLength * screenDy / norm;
+      context.strokeStyle = slope >= 0 ? "rgba(121, 216, 197, 0.52)" : "rgba(240, 177, 139, 0.52)";
+      context.lineWidth = 1.2;
+      context.beginPath();
+      context.moveTo(centerX - dx, centerY - dy);
+      context.lineTo(centerX + dx, centerY + dy);
+      context.stroke();
+    }
+  }
+  context.restore();
+
+  for (const equilibrium of state.equilibria) {
+    if (equilibrium.x < xRange[0] || equilibrium.x > xRange[1]) continue;
+    const y = mapVertical(equilibrium.x, xRange[0], xRange[1], box);
+    const style = branchStyle(equilibrium.stability, true);
+    context.save();
+    context.strokeStyle = style.color;
+    context.lineWidth = 1.4;
+    context.setLineDash(style.dash);
+    context.globalAlpha = 0.75;
+    context.beginPath();
+    context.moveTo(box.left, y);
+    context.lineTo(box.right, y);
+    context.stroke();
+    context.restore();
+  }
+
+  const starts = [];
+  for (let index = 1; index <= 9; index += 1) {
+    starts.push(lerp(xRange[0], xRange[1], index / 10));
+  }
+  starts.push(...state.extraSlopeInitials.slice(-4));
+  for (let index = 0; index < starts.length; index += 1) {
+    const points = trajectoryPoints(starts[index], state.r);
+    if (points.length < 2) continue;
+    context.save();
+    context.strokeStyle = "rgba(255, 253, 247, 0.50)";
+    context.lineWidth = 1.35;
+    context.beginPath();
+    points.forEach((point, pointIndex) => {
+      const x = mapHorizontal(point.t, timeRange[0], timeRange[1], box);
+      const y = mapVertical(point.x, xRange[0], xRange[1], box);
+      if (!pointIndex) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.stroke();
+    const tracerClock = motionQuery.matches ? 0 : state.elapsed;
+    const tracer = points[Math.min(points.length - 1, Math.floor((tracerClock * 34 + index * 13) % points.length))];
+    context.fillStyle = COLORS.ivory;
+    context.beginPath();
+    context.arc(
+      mapHorizontal(tracer.t, timeRange[0], timeRange[1], box),
+      mapVertical(tracer.x, xRange[0], xRange[1], box),
+      2.7,
+      0,
+      Math.PI * 2
+    );
+    context.fill();
+    context.restore();
+  }
+
+  if (Number.isFinite(state.slopeCursorX)) {
+    const cursorY = mapVertical(state.slopeCursorX, xRange[0], xRange[1], box);
+    context.save();
+    context.fillStyle = COLORS.currentBright;
+    context.strokeStyle = COLORS.currentBright;
+    context.lineWidth = 1.4;
+    context.setLineDash([3, 4]);
+    context.beginPath();
+    context.moveTo(box.left, cursorY);
+    context.lineTo(box.right, cursorY);
+    context.stroke();
+    context.setLineDash([]);
+    context.beginPath();
+    context.moveTo(box.left, cursorY);
+    context.lineTo(box.left + 9, cursorY - 5);
+    context.lineTo(box.left + 9, cursorY + 5);
+    context.closePath();
+    context.fill();
+    context.restore();
+  }
+}
+
+function phaseX(value, width) {
+  const left = 42;
+  const right = width - 42;
+  return lerp(left, right, inverseLerp(state.view.xMin, state.view.xMax, value));
+}
+
+function drawArrow(context, x, y, direction, length = 26) {
+  const half = length / 2;
+  const start = x - direction * half;
+  const end = x + direction * half;
+  context.beginPath();
+  context.moveTo(start, y);
+  context.lineTo(end, y);
+  context.lineTo(end - direction * 6, y - 4);
+  context.moveTo(end, y);
+  context.lineTo(end - direction * 6, y + 4);
+  context.stroke();
+}
+
+function drawPhaseLine() {
+  const { context, width, height } = canvasSurface(elements.phaseCanvas);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = COLORS.paper;
+  context.fillRect(0, 0, width, height);
+  if (!state.family || !state.view) return;
+  const lineY = Math.round(height * 0.48);
+  const left = 42;
+  const right = width - 42;
+  context.strokeStyle = "rgba(23, 33, 29, 0.55)";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.moveTo(left, lineY);
+  context.lineTo(right, lineY);
+  context.stroke();
+
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.textAlign = "center";
+  context.fillStyle = COLORS.muted;
+  for (const tick of niceTicks(state.view.xMin, state.view.xMax, 8)) {
+    const x = phaseX(tick, width);
+    context.beginPath();
+    context.moveTo(x, lineY - 5);
+    context.lineTo(x, lineY + 5);
+    context.stroke();
+    context.fillText(formatNumber(tick, 1), x, lineY + 17);
+  }
+
+  const boundaries = [state.view.xMin, ...state.equilibria.map((equilibrium) => equilibrium.x), state.view.xMax];
+  context.strokeStyle = COLORS.forest;
+  context.lineWidth = 1.5;
+  for (let index = 1; index < boundaries.length; index += 1) {
+    const minimum = boundaries[index - 1];
+    const maximum = boundaries[index];
+    if (maximum - minimum < (state.view.xMax - state.view.xMin) * 0.015) continue;
+    const midpoint = (minimum + maximum) / 2;
+    const direction = Math.sign(state.family.eval(midpoint, state.r));
+    if (!direction) continue;
+    const available = phaseX(maximum, width) - phaseX(minimum, width);
+    const count = Math.max(1, Math.min(4, Math.floor(available / 85)));
+    for (let arrow = 0; arrow < count; arrow += 1) {
+      const fraction = (arrow + 1) / (count + 1);
+      drawArrow(context, phaseX(lerp(minimum, maximum, fraction), width), lineY, direction, Math.min(30, available * 0.34));
+    }
+  }
+
+  for (const equilibrium of state.equilibria) {
+    const x = phaseX(equilibrium.x, width);
+    drawEquilibriumMarker(context, x, lineY, equilibrium, 7, false);
+    context.fillStyle = String(equilibrium.stability).startsWith("stable") ? COLORS.forest : COLORS.unstable;
+    context.font = "600 9px 'IBM Plex Mono', monospace";
+    context.fillText(
+      String(equilibrium.stability).startsWith("stable") ? "ATTRACT" : String(equilibrium.stability).startsWith("unstable") ? "REPEL" : "NONHYP",
+      x,
+      lineY - 18
+    );
+  }
+
+  for (const particle of state.particles) {
+    if (!Number.isFinite(particle.x) || particle.x < state.view.xMin || particle.x > state.view.xMax) continue;
+    for (let index = 1; index < particle.trail.length; index += 1) {
+      const alpha = index / particle.trail.length;
+      context.strokeStyle = `rgba(217, 167, 63, ${alpha * 0.24})`;
+      context.lineWidth = 1.8;
+      context.beginPath();
+      context.moveTo(phaseX(particle.trail[index - 1], width), lineY + particle.lane);
+      context.lineTo(phaseX(particle.trail[index], width), lineY + particle.lane);
+      context.stroke();
+    }
+    context.fillStyle = COLORS.current;
+    context.strokeStyle = COLORS.ivory;
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.arc(phaseX(particle.x, width), lineY + particle.lane, 4.5, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+
+  if (Number.isFinite(state.phaseCursorX)) {
+    const cursorX = phaseX(state.phaseCursorX, width);
+    context.save();
+    context.fillStyle = COLORS.current;
+    context.beginPath();
+    context.moveTo(cursorX, lineY + 30);
+    context.lineTo(cursorX - 6, lineY + 40);
+    context.lineTo(cursorX + 6, lineY + 40);
+    context.closePath();
+    context.fill();
+    context.restore();
+  }
+}
+
+function drawLocalDiagram() {
+  const { context, width, height } = canvasSurface(elements.microscopeCanvas);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = COLORS.plot;
+  context.fillRect(0, 0, width, height);
+  if (!state.microscope) {
+    context.fillStyle = "rgba(231, 240, 236, 0.7)";
+    context.font = "13px 'IBM Plex Mono', monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("SELECT A NUMBERED BIFURCATION POINT", width / 2, height / 2);
+    return;
+  }
+  const box = plotRectangle(width, height, true);
+  const ranges = state.microscope.ranges;
+  drawAxes(context, box, [ranges.rMin, ranges.rMax], [ranges.xMin, ranges.xMax], {
+    dark: true,
+    xLabel: "μ = r − r*",
+    yLabel: "y = x − x*"
+  });
+
+  const shiftedRanges = {
+    rMin: ranges.rMin + state.microscope.center.r,
+    rMax: ranges.rMax + state.microscope.center.r,
+    xMin: ranges.xMin + state.microscope.center.x,
+    xMax: ranges.xMax + state.microscope.center.x
+  };
+  function drawShifted(diagram, style) {
+    const shiftedBoxRanges = {
+      rMin: shiftedRanges.rMin,
+      rMax: shiftedRanges.rMax,
+      xMin: shiftedRanges.xMin,
+      xMax: shiftedRanges.xMax
+    };
+    drawBranchCollection(context, diagram.branches, shiftedBoxRanges, box, { fixedStyle: style });
+  }
+  drawShifted(state.microscope.exact, { color: COLORS.ivory, dash: [], width: 3 });
+  drawShifted(state.microscope.taylorDiagram, { color: COLORS.stableBright, dash: [7, 5], width: 2.2 });
+  drawShifted(state.microscope.normalDiagram, { color: COLORS.normal, dash: [2, 5], width: 2.2 });
+
+  const centerX = mapHorizontal(0, ranges.rMin, ranges.rMax, box);
+  const centerY = mapVertical(0, ranges.xMin, ranges.xMax, box);
+  drawDiamond(context, centerX, centerY, 10, COLORS.currentBright);
+}
+
+function drawHysteresisPanel() {
+  const { context, width, height } = canvasSurface(elements.hysteresisCanvas);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = COLORS.plot;
+  context.fillRect(0, 0, width, height);
+  const box = plotRectangle(width, height, true);
+  const familyIsHysteresis = state.family?.supportsHysteresis;
+  if (!familyIsHysteresis || !state.diagram) {
+    context.fillStyle = "rgba(231, 240, 236, 0.7)";
+    context.font = "13px 'IBM Plex Mono', monospace";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("LOAD THE FOLD-PAIR PRESET TO RECORD A LOOP", width / 2, height / 2);
+    return;
+  }
+  const ranges = state.fullView;
+  drawAxes(context, box, [ranges.rMin, ranges.rMax], [ranges.xMin, ranges.xMax], {
+    dark: true,
+    xLabel: "parameter r",
+    yLabel: "tracked state x"
+  });
+  drawBranchCollection(context, state.diagram.branches, ranges, box, { alpha: 0.52, onDark: true });
+  drawHysteresisTrail(context, state.hysteresis.increasing, ranges, box, COLORS.currentBright, 3.3);
+  drawHysteresisTrail(context, state.hysteresis.decreasing, ranges, box, COLORS.backward, 3.3, [7, 5]);
+
+  state.candidates.forEach((candidate, index) => {
+    if (
+      candidate.r < ranges.rMin || candidate.r > ranges.rMax ||
+      candidate.x < ranges.xMin || candidate.x > ranges.xMax
+    ) return;
+    const x = mapHorizontal(candidate.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(candidate.x, ranges.xMin, ranges.xMax, box);
+    drawDiamond(context, x, y, 8, COLORS.currentBright, COLORS.ivory);
+    context.fillStyle = "rgba(231, 240, 236, 0.82)";
+    context.font = "9px 'IBM Plex Mono', monospace";
+    context.textAlign = "left";
+    context.textBaseline = "bottom";
+    context.fillText(`F${index + 1}`, x + 7, y - 5);
+  });
+  const markerPoints = [];
+  if (!state.hysteresis.running && state.hysteresis.cycles > 0) {
+    const increasing = nearestTracePoint(state.hysteresis.increasing, state.r);
+    const decreasing = nearestTracePoint(state.hysteresis.decreasing, state.r);
+    if (increasing) markerPoints.push({ x: increasing.x, color: COLORS.currentBright });
+    if (decreasing) markerPoints.push({ x: decreasing.x, color: COLORS.backward });
+  } else if (Number.isFinite(state.hysteresis.x) && (
+    state.hysteresis.running ||
+    state.hysteresis.increasing.length ||
+    state.hysteresis.decreasing.length
+  )) {
+    markerPoints.push({
+      x: state.hysteresis.x,
+      color: state.hysteresis.direction > 0 ? COLORS.currentBright : COLORS.backward
+    });
+  }
+  for (const marker of markerPoints) {
+    const x = mapHorizontal(state.r, ranges.rMin, ranges.rMax, box);
+    const y = mapVertical(marker.x, ranges.xMin, ranges.xMax, box);
+    context.fillStyle = marker.color;
+    context.strokeStyle = COLORS.ivory;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(x, y, 6, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+}
+
+function randomParticleStart() {
+  const count = 13;
+  const index = state.particleCursor % count;
+  state.particleCursor += 1;
+  return lerp(state.view.xMin, state.view.xMax, (index + 1) / (count + 1));
+}
+
+function resetParticles() {
+  state.particleCursor = 0;
+  state.particles = Array.from({ length: 11 }, (_, index) => {
+    const x = lerp(state.view.xMin, state.view.xMax, (index + 1) / 12);
+    return { x, age: index * 0.28, lane: ((index % 3) - 1) * 9, trail: [x] };
+  });
+  state.extraSlopeInitials = [];
+}
+
+function respawnParticle(particle) {
+  const x = randomParticleStart();
+  particle.x = x;
+  particle.age = 0;
+  particle.trail = [x];
+}
+
+function updateParticles(delta) {
+  if (state.particlesPaused || !state.family || !state.view) return;
+  const stepTotal = Math.min(0.05, delta) * 1.45;
+  const substeps = 2;
+  const step = stepTotal / substeps;
+  const span = state.view.xMax - state.view.xMin;
+  for (const particle of state.particles) {
+    for (let index = 0; index < substeps; index += 1) {
+      particle.x = rk4Step(state.family, particle.x, state.r, step);
+    }
+    particle.age += delta;
+    if (Number.isFinite(particle.x)) {
+      particle.trail.push(particle.x);
+      if (particle.trail.length > 20) particle.trail.shift();
+    }
+    const flow = Number.isFinite(particle.x) ? Math.abs(state.family.eval(particle.x, state.r)) : Infinity;
+    if (
+      !Number.isFinite(particle.x) ||
+      particle.x < state.view.xMin - span * 0.03 ||
+      particle.x > state.view.xMax + span * 0.03 ||
+      (flow < span * 0.0006 && particle.age > 5.2) ||
+      particle.age > 12
+    ) respawnParticle(particle);
+  }
+}
+
+function nearestTracePoint(trace, r) {
+  let result = null;
+  for (const point of trace) {
+    const distance = Math.abs(point.r - r);
+    if (!result || distance < result.distance) result = { ...point, distance };
+  }
+  return result;
+}
+
+function updateHysteresis(delta, now) {
+  if (!state.hysteresis.running || !state.family?.supportsHysteresis) return;
+  state.hysteresisDirty = true;
+  const rMin = state.family.rRange[0] + (state.family.rRange[1] - state.family.rRange[0]) * 0.035;
+  const rMax = state.family.rRange[1] - (state.family.rRange[1] - state.family.rRange[0]) * 0.035;
+  const span = rMax - rMin;
+  const duration = 6.5 / Math.max(0.12, state.sweepSpeed);
+  let completedLoop = false;
+  state.r += state.hysteresis.direction * span * delta / duration;
+  if (state.r >= rMax) {
+    state.r = rMax;
+    state.hysteresis.direction = -1;
+    announce("The parameter reached the right side of the loop and is now decreasing. The tracked state retains its branch history.");
+  } else if (state.r <= rMin) {
+    state.r = rMin;
+    if (state.hysteresis.direction < 0) {
+      state.hysteresis.cycles += 1;
+      completedLoop = true;
+    }
+  }
+
+  // Relax the state much faster than the display clock so the default loop is
+  // close to the quasi-static hysteresis curve. Increasing the sweep-speed
+  // control still reveals a small, genuine delayed-tipping effect.
+  const dynamicStep = Math.min(delta, 0.04) * 40;
+  const substeps = Math.max(12, Math.ceil(dynamicStep / 0.03));
+  for (let index = 0; index < substeps; index += 1) {
+    state.hysteresis.x = rk4Step(
+      state.family,
+      state.hysteresis.x,
+      state.r,
+      dynamicStep / substeps
+    );
+  }
+  if (!Number.isFinite(state.hysteresis.x) || Math.abs(state.hysteresis.x) > state.family.xRange[1] * 4) {
+    const stable = findEquilibria(state.family, state.r, { samples: 360 })
+      .filter((equilibrium) => String(equilibrium.stability).startsWith("stable"));
+    state.hysteresis.x = stable.length ? stable[0].x : 0;
+  }
+  if (now - state.hysteresis.lastRecordedAt > 28) {
+    const target = state.hysteresis.direction > 0
+      ? state.hysteresis.increasing
+      : state.hysteresis.decreasing;
+    target.push({ r: state.r, x: state.hysteresis.x });
+    if (target.length > 2200) target.shift();
+    state.hysteresis.lastRecordedAt = now;
+  }
+  if (completedLoop) {
+    state.hysteresis.running = false;
+    const comparisonR = (rMin + rMax) / 2;
+    const increasingAtCenter = nearestTracePoint(state.hysteresis.increasing, comparisonR);
+    state.r = comparisonR;
+    if (increasingAtCenter) state.hysteresis.x = increasingAtCenter.x;
+    elements.runHysteresis.textContent = "Run hysteresis loop again";
+    elements.hysteresisPanelButton.textContent = "Run the loop again";
+    elements.hysteresisStatus.textContent = "Loop complete · comparing both histories at r = 0";
+    updateCurrentSlice();
+    announce("The hysteresis loop is complete. The display now compares the increasing and decreasing histories at the same parameter.");
+  }
+  applyParameterReadout(false);
+  updateHysteresisReadout();
+}
+
+function updateSweep(delta) {
+  if (!state.sweepRunning || state.hysteresis.running || !state.family) return;
+  const [minimum, maximum] = state.family.rRange;
+  const span = maximum - minimum;
+  state.r += state.sweepDirection * span * delta * state.sweepSpeed / 8;
+  if (state.r >= maximum) {
+    state.r = maximum;
+    state.sweepDirection = -1;
+  } else if (state.r <= minimum) {
+    state.r = minimum;
+    state.sweepDirection = 1;
+  }
+  applyParameterReadout(false);
+}
+
+function applyParameterReadout(recompute = true) {
+  elements.parameter.value = String(state.r);
+  elements.parameterValue.value = formatNumber(state.r, 3);
+  elements.parameterValue.textContent = formatNumber(state.r, 3);
+  elements.slopeParameter.textContent = `r = ${formatNumber(state.r, 3)}`;
+  elements.telemetryR.textContent = formatNumber(state.r, 3);
+  if (recompute) updateCurrentSlice();
+}
+
+function setParameter(value, options = {}) {
+  if (!state.family) return;
+  const [minimum, maximum] = state.family.rRange;
+  const next = clamp(Number(value), minimum, maximum);
+  const previous = state.r;
+  state.r = next;
+  state.hysteresisDirty = true;
+  if (options.manual) {
+    stopSweep();
+    stopHysteresis(false);
+    if (Math.abs(previous - next) > (maximum - minimum) * 0.04) resetParticles();
+  }
+  applyParameterReadout(true);
+  if (options.announce) announce(`Parameter r is ${formatNumber(next, 3)}.`);
+}
+
+function updateCurrentSlice() {
+  if (!state.family || !state.view) return;
+  state.equilibria = findEquilibria(
+    state.family,
+    state.r,
+    state.view.xMin,
+    state.view.xMax,
+    { samples: 420 }
+  );
+  updateCurrentOutputs();
+}
+
+function stabilityLabel(equilibrium) {
+  if (String(equilibrium.stability).startsWith("stable")) return "stable";
+  if (String(equilibrium.stability).startsWith("unstable")) return "unstable";
+  if (equilibrium.stability === "semistable") return "semistable";
+  return "nonhyperbolic";
+}
+
+function updateCurrentOutputs() {
+  const count = state.equilibria.length;
+  elements.equilibriumSummary.textContent = `${count} ${count === 1 ? "equilibrium" : "equilibria"} at this r`;
+  elements.telemetryEquilibria.textContent = String(count);
+  elements.phaseReadout.replaceChildren();
+  if (!count) {
+    const chip = document.createElement("span");
+    chip.className = "equilibrium-chip";
+    chip.setAttribute("role", "listitem");
+    chip.textContent = "No equilibrium in the visible window";
+    elements.phaseReadout.append(chip);
+  } else {
+    for (const equilibrium of state.equilibria) {
+      const chip = document.createElement("span");
+      chip.className = "equilibrium-chip";
+      chip.setAttribute("role", "listitem");
+      const label = stabilityLabel(equilibrium);
+      chip.dataset.stability = label === "stable" || label === "unstable" ? label : "neutral";
+      chip.textContent = `x = ${formatNumber(equilibrium.x, 3)} · ${label}`;
+      elements.phaseReadout.append(chip);
+    }
+  }
+}
+
+function stopSweep() {
+  state.sweepRunning = false;
+  elements.toggleSweep.textContent = "Play sweep";
+  elements.toggleSweep.classList.add("lab-button-primary");
+}
+
+function toggleSweep() {
+  if (state.hysteresis.running) stopHysteresis(false);
+  state.sweepRunning = !state.sweepRunning;
+  elements.toggleSweep.textContent = state.sweepRunning ? "Pause sweep" : "Play sweep";
+  elements.toggleSweep.classList.toggle("lab-button-primary", !state.sweepRunning);
+  announce(state.sweepRunning ? "Parameter sweep playing." : "Parameter sweep paused.");
+}
+
+function startHysteresis() {
+  if (!state.family?.supportsHysteresis || !state.diagram) return;
+  stopSweep();
+  const [rMinimum, rMaximum] = state.family.rRange;
+  const span = rMaximum - rMinimum;
+  state.r = rMinimum + span * 0.035;
+  const stable = findEquilibria(state.family, state.r, { samples: 520 })
+    .filter((equilibrium) => String(equilibrium.stability).startsWith("stable"))
+    .sort((left, right) => left.x - right.x);
+  state.hysteresis.running = true;
+  state.hysteresis.direction = 1;
+  state.hysteresis.x = stable.length ? stable[0].x : state.family.xRange[0] * 0.5;
+  state.hysteresis.increasing = [];
+  state.hysteresis.decreasing = [];
+  state.hysteresis.cycles = 0;
+  state.hysteresis.lastRecordedAt = 0;
+  state.hysteresisDirty = true;
+  elements.runHysteresis.textContent = "Pause hysteresis loop";
+  elements.hysteresisPanelButton.textContent = "Pause the loop";
+  elements.hysteresisStatus.textContent = "Recording the increasing-r path";
+  applyParameterReadout(true);
+  announce("Hysteresis loop started. The parameter is increasing from the left.");
+}
+
+function stopHysteresis(announceChange = true) {
+  if (!state.hysteresis.running) return;
+  state.hysteresis.running = false;
+  state.hysteresisDirty = true;
+  elements.runHysteresis.textContent = "Restart hysteresis loop";
+  elements.hysteresisPanelButton.textContent = "Restart the loop";
+  elements.hysteresisStatus.textContent = "Loop paused; the recorded path remains visible";
+  if (announceChange) announce("Hysteresis loop paused.");
+}
+
+function requestHysteresis() {
+  if (!state.family?.supportsHysteresis) {
+    elements.familySelect.value = "hysteresis";
+    loadFamily("hysteresis", { afterReady: startHysteresis, announce: true });
+  } else if (state.hysteresis.running) stopHysteresis();
+  else startHysteresis();
+}
+
+function updateHysteresisReadout() {
+  if (!state.family?.supportsHysteresis) {
+    elements.hysteresisStatus.textContent = "Load the hysteresis preset to begin";
+    elements.hysteresisDirection.textContent = "—";
+    elements.hysteresisState.textContent = "x = —";
+    elements.hysteresisMemory.textContent = "Run one full loop to compare both histories.";
+    return;
+  }
+  const hasTrace = Boolean(state.hysteresis.increasing.length || state.hysteresis.decreasing.length);
+  const direction = state.hysteresis.direction > 0 ? "Increasing r →" : "← Decreasing r";
+  elements.hysteresisDirection.textContent = state.hysteresis.running
+    ? direction
+    : state.hysteresis.cycles > 0 ? "Loop complete" : hasTrace ? "Paused" : "Ready";
+  elements.hysteresisState.textContent = `x = ${formatNumber(state.hysteresis.x, 3)}`;
+  if (state.hysteresis.running) {
+    elements.hysteresisStatus.textContent = state.hysteresis.direction > 0
+      ? "Recording the increasing-r path"
+      : "Recording the decreasing-r path";
+  } else if (!hasTrace) {
+    elements.hysteresisStatus.textContent = "Ready to record an increasing and decreasing sweep";
+  }
+  const increasing = nearestTracePoint(state.hysteresis.increasing, state.r);
+  const decreasing = nearestTracePoint(state.hysteresis.decreasing, state.r);
+  const tolerance = (state.family.rRange[1] - state.family.rRange[0]) * 0.035;
+  if (increasing && decreasing && increasing.distance < tolerance && decreasing.distance < tolerance) {
+    elements.hysteresisMemory.textContent =
+      `Near r = ${formatNumber(state.r, 3)}, the increasing sweep recorded x ≈ ${formatNumber(increasing.x, 3)}, while the decreasing sweep recorded x ≈ ${formatNumber(decreasing.x, 3)}.`;
+  } else {
+    elements.hysteresisMemory.textContent = "Run one full loop to compare both histories at the same parameter.";
+  }
+}
+
+function buildCandidateOptions() {
+  elements.candidateSelect.replaceChildren();
+  if (!state.candidates.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No resolved candidate";
+    elements.candidateSelect.append(option);
+    elements.candidateSelect.disabled = true;
+    elements.focusCandidate.disabled = true;
+    return;
+  }
+  elements.candidateSelect.disabled = false;
+  elements.focusCandidate.disabled = false;
+  state.candidates.forEach((candidate, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `B${index + 1} · ${candidate.label} · r=${formatNumber(candidate.r, 3)}`;
+    elements.candidateSelect.append(option);
+  });
+  elements.candidateSelect.value = String(Math.max(0, state.selectedCandidate));
+}
+
+function exponentLabel(variable, power) {
+  if (power === 0) return "";
+  if (power === 1) return variable;
+  return `${variable}${["", "", "²", "³", "⁴"][power] || `^${power}`}`;
+}
+
+function formatTaylor(data) {
+  const terms = data.coefficients
+    .filter((coefficient) => coefficient.xOrder + coefficient.rOrder > 0 && Math.abs(coefficient.value) > 1e-7)
+    .map((coefficient) => ({
+      coefficient: coefficient.value,
+      monomial: `${exponentLabel("y", coefficient.xOrder)}${exponentLabel("μ", coefficient.rOrder)}`
+    }));
+  if (!terms.length) return "T₃(y, μ) = 0";
+  let expression = "";
+  terms.forEach((term, index) => {
+    const magnitude = Math.abs(term.coefficient);
+    const coefficientText = Math.abs(magnitude - 1) < 5e-4 && term.monomial
+      ? ""
+      : formatNumber(magnitude, 3);
+    const piece = `${coefficientText}${term.monomial}` || "0";
+    if (!index) expression += term.coefficient < 0 ? `−${piece}` : piece;
+    else expression += term.coefficient < 0 ? ` − ${piece}` : ` + ${piece}`;
+  });
+  return `T₃(y, μ) = ${expression}`;
+}
+
+function normalFamilyFromTaylor(data, ranges) {
+  const terms = data.coefficients.filter((coefficient) => coefficient.normalFormTerm);
+  return {
+    id: `${data.familyId}-normal`,
+    xRange: [ranges.xMin + data.center.x, ranges.xMax + data.center.x],
+    rRange: [ranges.rMin + data.center.r, ranges.rMax + data.center.r],
+    eval(x, r) {
+      if (!terms.length) return 1;
+      const y = x - data.center.x;
+      const mu = r - data.center.r;
+      return terms.reduce(
+        (total, coefficient) => total + coefficient.value * y ** coefficient.xOrder * mu ** coefficient.rOrder,
+        0
+      );
+    }
+  };
+}
+
+function selectCandidate(index, options = {}) {
+  if (!state.candidates.length) return;
+  const next = clamp(Number(index) || 0, 0, state.candidates.length - 1);
+  state.selectedCandidate = next;
+  elements.candidateSelect.value = String(next);
+  const candidate = state.candidates[next];
+  state.taylor = taylorData(state.family, candidate, { degree: 3 });
+  const rRadius = (state.fullView.rMax - state.fullView.rMin) * 0.13;
+  const xRadius = (state.fullView.xMax - state.fullView.xMin) * 0.15;
+  const localRanges = { rMin: -rRadius, rMax: rRadius, xMin: -xRadius, xMax: xRadius };
+  const absoluteRanges = {
+    rMin: candidate.r - rRadius,
+    rMax: candidate.r + rRadius,
+    xMin: candidate.x - xRadius,
+    xMax: candidate.x + xRadius
+  };
+  const taylorFamily = {
+    id: `${state.family.id}-taylor`,
+    xRange: [absoluteRanges.xMin, absoluteRanges.xMax],
+    rRange: [absoluteRanges.rMin, absoluteRanges.rMax],
+    eval(x, r) {
+      return taylorEvaluate(state.taylor, x, r);
+    }
+  };
+  const normalFamily = normalFamilyFromTaylor(state.taylor, localRanges);
+  state.microscope = {
+    center: { x: candidate.x, r: candidate.r },
+    ranges: localRanges,
+    exact: sampleBifurcation(state.family, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false }),
+    taylorDiagram: sampleBifurcation(taylorFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false }),
+    normalDiagram: sampleBifurcation(normalFamily, absoluteRanges, { rSamples: 121, xSamples: 260, detectCandidates: false })
+  };
+  state.localDirty = true;
+  updateMicroscopeCopy(candidate);
+  elements.telemetryEvent.textContent = `B${next + 1} · ${candidate.label}`;
+  if (options.focus) focusSelectedCandidate();
+  if (options.announce !== false) {
+    announce(`Selected B${next + 1}, ${candidate.label}, at r ${formatNumber(candidate.r, 3)} and x ${formatNumber(candidate.x, 3)}.`);
+  }
+}
+
+function updateMicroscopeCopy(candidate) {
+  const classification = state.taylor.classification;
+  elements.microscopeStatus.textContent = `B${state.selectedCandidate + 1} · local cubic comparison`;
+  elements.classificationBadge.textContent = classification.label;
+  elements.candidateCoordinate.textContent = `r* = ${formatNumber(candidate.r, 4)} · x* = ${formatNumber(candidate.x, 4)}`;
+  const derivativeKeys = ["f", "fx", "fr", "fxx", "fxr", "fxxx"];
+  const values = elements.derivativeGrid.querySelectorAll("dd");
+  derivativeKeys.forEach((key, index) => {
+    values[index].textContent = formatNumber(classification.derivatives[key], 4);
+  });
+  elements.taylorFormula.textContent = formatTaylor(state.taylor);
+  elements.normalFormula.textContent = classification.normalForm;
+  if (classification.type === "saddle-node") {
+    elements.classificationNote.textContent =
+      "The parameter term and quadratic state term are both nonzero. Two nearby equilibria meet at a fold; one attracts and one repels.";
+  } else if (classification.type === "transcritical") {
+    elements.classificationNote.textContent =
+      "The quadratic Taylor form factors into two transverse branches. They persist through the crossing and exchange stability.";
+  } else if (classification.type.includes("pitchfork")) {
+    elements.classificationNote.textContent =
+      "The quadratic state term vanishes, leaving the mixed μy term and cubic y³ term to determine the symmetry-breaking geometry.";
+  } else {
+    elements.classificationNote.textContent =
+      "The numerical derivative tests do not cleanly isolate a classical generic type. The local Taylor curve is shown without forcing a label.";
+  }
+}
+
+function focusSelectedCandidate() {
+  const candidate = state.candidates[state.selectedCandidate];
+  if (!candidate) return;
+  const rRadius = (state.fullView.rMax - state.fullView.rMin) * 0.18;
+  const xRadius = (state.fullView.xMax - state.fullView.xMin) * 0.22;
+  state.view = {
+    rMin: clamp(candidate.r - rRadius, state.fullView.rMin, state.fullView.rMax),
+    rMax: clamp(candidate.r + rRadius, state.fullView.rMin, state.fullView.rMax),
+    xMin: clamp(candidate.x - xRadius, state.fullView.xMin, state.fullView.xMax),
+    xMax: clamp(candidate.x + xRadius, state.fullView.xMin, state.fullView.xMax)
+  };
+  if (state.view.rMax - state.view.rMin < rRadius * 1.5) {
+    if (state.view.rMin === state.fullView.rMin) state.view.rMax = Math.min(state.fullView.rMax, state.view.rMin + 2 * rRadius);
+    else state.view.rMin = Math.max(state.fullView.rMin, state.view.rMax - 2 * rRadius);
+  }
+  if (state.view.xMax - state.view.xMin < xRadius * 1.5) {
+    if (state.view.xMin === state.fullView.xMin) state.view.xMax = Math.min(state.fullView.xMax, state.view.xMin + 2 * xRadius);
+    else state.view.xMin = Math.max(state.fullView.xMin, state.view.xMax - 2 * xRadius);
+  }
+  state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
+  state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
+  setParameter(candidate.r, { manual: true });
+  resetParticles();
+}
+
+function fitAllBranches() {
+  state.view = { ...state.fullView };
+  state.slopeCursorX = clamp(state.slopeCursorX, state.view.xMin, state.view.xMax);
+  state.phaseCursorX = clamp(state.phaseCursorX, state.view.xMin, state.view.xMax);
+  updateCurrentSlice();
+  resetParticles();
+  announce("The full branch diagram is visible.");
+}
+
+function updateFamilyCopy() {
+  elements.familyKind.textContent = state.family.sourceType === "random"
+    ? state.family.shortName
+    : state.family.name;
+  elements.familyEquation.textContent = state.family.formula;
+  elements.familySeed.textContent = state.family.seed ? `Seed ${state.family.seed}` : "Classical preset";
+  elements.telemetryFamily.textContent = state.family.shortName;
+  elements.generateFamily.disabled = state.family.sourceType !== "random";
+  elements.generateFamily.textContent = state.family.sourceType === "random"
+    ? "Generate a new family"
+    : "Random generator unavailable for preset";
+}
+
+function chooseInitialParameter(family) {
+  if (family.sourceType !== "random" || !family.knownCandidates.length) return family.defaultR;
+  const candidate = family.knownCandidates[0];
+  const span = family.rRange[1] - family.rRange[0];
+  const offset = span * 0.18;
+  const choices = [
+    clamp(candidate.r - offset, family.rRange[0], family.rRange[1]),
+    clamp(candidate.r + offset, family.rRange[0], family.rRange[1])
+  ];
+  let best = { r: family.defaultR, count: -1 };
+  for (const r of choices) {
+    const count = findEquilibria(family, r, { samples: 360 }).length;
+    if (count > best.count) best = { r, count };
+  }
+  return best.r;
+}
+
+function loadFamily(id, options = {}) {
+  const token = ++state.calculationToken;
+  stopSweep();
+  stopHysteresis(false);
+  elements.stageStatus.textContent = "Computing equilibrium branches…";
+  elements.generateFamily.disabled = true;
+  const seed = id === "random" ? state.seed : undefined;
+  state.family = createFamily(id, seed);
+  state.fullView = {
+    rMin: state.family.rRange[0],
+    rMax: state.family.rRange[1],
+    xMin: state.family.xRange[0],
+    xMax: state.family.xRange[1]
+  };
+  state.view = { ...state.fullView };
+  state.r = chooseInitialParameter(state.family);
+  state.slopeCursorX = (state.view.xMin + state.view.xMax) / 2;
+  state.phaseCursorX = (state.view.xMin + state.view.xMax) / 2;
+  elements.parameter.min = String(state.family.rRange[0]);
+  elements.parameter.max = String(state.family.rRange[1]);
+  elements.parameter.step = String((state.family.rRange[1] - state.family.rRange[0]) / 1400);
+  updateFamilyCopy();
+  applyParameterReadout(false);
+  state.diagram = null;
+  state.candidates = [];
+  state.microscope = null;
+  state.localDirty = true;
+  state.hysteresisDirty = true;
+  window.setTimeout(() => {
+    if (token !== state.calculationToken) return;
+    try {
+      const diagram = sampleBifurcation(state.family, state.fullView, {
+        rSamples: 221,
+        xSamples: 420
+      });
+      if (token !== state.calculationToken) return;
+      state.diagram = diagram;
+      state.candidates = diagram.candidates;
+      state.selectedCandidate = state.candidates.length ? 0 : -1;
+      buildCandidateOptions();
+      if (state.candidates.length) selectCandidate(0, { announce: false });
+      else {
+        state.taylor = null;
+        elements.telemetryEvent.textContent = "None resolved";
+      }
+      state.hysteresis.increasing = [];
+      state.hysteresis.decreasing = [];
+      state.hysteresis.x = Number.NaN;
+      state.hysteresis.direction = 1;
+      state.hysteresis.cycles = 0;
+      state.hysteresis.lastRecordedAt = 0;
+      elements.runHysteresis.textContent = "Run hysteresis loop";
+      elements.hysteresisPanelButton.textContent = "Run the loop";
+      state.hysteresisDirty = true;
+      updateCurrentSlice();
+      resetParticles();
+      updateHysteresisReadout();
+      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${state.candidates.length} highlighted ${state.candidates.length === 1 ? "event" : "events"}`;
+      updateFamilyCopy();
+      if (options.announce) announce(`${state.family.name} loaded with ${state.candidates.length} highlighted bifurcation points.`);
+      if (typeof options.afterReady === "function") options.afterReady();
+    } catch (error) {
+      console.error(error);
+      elements.stageStatus.textContent = "The numerical analysis could not be completed.";
+      announce("The selected family could not be analyzed.");
+    }
+  }, 24);
+}
+
+function generateFamily() {
+  state.seedCounter += 1;
+  state.seed = makeSeed();
+  elements.familySelect.value = "random";
+  loadFamily("random", { announce: true });
+}
+
+function pointerPosition(canvas, event) {
+  const rectangle = canvas.getBoundingClientRect();
+  return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
+}
+
+function updateParameterFromDiagram(event, announceChange = false) {
+  if (!state.plotBox || !state.view) return false;
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  const marker = state.candidateScreens.find((candidate) => Math.hypot(candidate.x - position.x, candidate.y - position.y) < 15);
+  if (marker && event.type === "pointerdown") {
+    selectCandidate(marker.index, { focus: false });
+    return true;
+  }
+  const value = valueFromHorizontal(position.x, state.view.rMin, state.view.rMax, state.plotBox);
+  setParameter(value, { manual: true, announce: announceChange });
+  return false;
+}
+
+function addSlopeInitialValue(value) {
+  const x = clamp(value, state.view.xMin, state.view.xMax);
+  state.slopeCursorX = x;
+  state.extraSlopeInitials.push(x);
+  if (state.extraSlopeInitials.length > 8) state.extraSlopeInitials.shift();
+  announce(`Added a slope-field trajectory from x ${formatNumber(x, 2)}.`);
+}
+
+function addSlopeInitial(event) {
+  const { height, width } = elements.slopeCanvas.getBoundingClientRect();
+  const box = plotRectangle(width, height);
+  const position = pointerPosition(elements.slopeCanvas, event);
+  addSlopeInitialValue(valueFromVertical(position.y, state.view.xMin, state.view.xMax, box));
+}
+
+function addPhaseParticleValue(value) {
+  const x = clamp(value, state.view.xMin, state.view.xMax);
+  state.phaseCursorX = x;
+  const particle = {
+    x,
+    age: 0,
+    lane: ((state.particles.length % 3) - 1) * 9,
+    trail: []
+  };
+  particle.trail = [particle.x];
+  state.particles.push(particle);
+  if (state.particles.length > 17) state.particles.shift();
+  announce(`Added a phase-line point at x ${formatNumber(particle.x, 2)}.`);
+}
+
+function addPhaseParticle(event) {
+  const rectangle = elements.phaseCanvas.getBoundingClientRect();
+  const position = pointerPosition(elements.phaseCanvas, event);
+  const left = 42;
+  const right = rectangle.width - 42;
+  addPhaseParticleValue(
+    lerp(state.view.xMin, state.view.xMax, inverseLerp(left, right, position.x))
+  );
+}
+
+function handleInitialConditionKey(kind, event) {
+  if (!state.view) return;
+  const isSlope = kind === "slope";
+  const current = isSlope ? state.slopeCursorX : state.phaseCursorX;
+  const span = state.view.xMax - state.view.xMin;
+  const step = span * (event.shiftKey ? 0.1 : 0.02);
+  let next = current;
+  if (event.key === "ArrowRight" || event.key === "ArrowUp") next += step;
+  else if (event.key === "ArrowLeft" || event.key === "ArrowDown") next -= step;
+  else if (event.key === "Home") next = state.view.xMin;
+  else if (event.key === "End") next = state.view.xMax;
+  else if (event.key === "Enter" || event.key === " " || event.code === "Space") {
+    event.preventDefault();
+    if (isSlope) addSlopeInitialValue(current);
+    else addPhaseParticleValue(current);
+    return;
+  } else return;
+  event.preventDefault();
+  next = clamp(next, state.view.xMin, state.view.xMax);
+  if (isSlope) state.slopeCursorX = next;
+  else state.phaseCursorX = next;
+  announce(`${isSlope ? "Slope-field" : "Phase-line"} initial state x ${formatNumber(next, 2)}. Press Enter to add it.`);
+}
+
+function handleDiagramKey(event) {
+  if (!state.family) return;
+  const span = state.family.rRange[1] - state.family.rRange[0];
+  const step = span * (event.shiftKey ? 0.025 : 0.005);
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    setParameter(state.r + (event.key === "ArrowRight" ? step : -step), { manual: true, announce: true });
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    setParameter(state.family.rRange[0], { manual: true, announce: true });
+  } else if (event.key === "End") {
+    event.preventDefault();
+    setParameter(state.family.rRange[1], { manual: true, announce: true });
+  } else if (event.key === " " || event.code === "Space") {
+    event.preventDefault();
+    toggleSweep();
+  } else if (event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    fitAllBranches();
+  } else if (event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    generateFamily();
+  }
+}
+
+elements.familySelect.addEventListener("change", () => {
+  if (elements.familySelect.value === "random") {
+    state.seed = makeSeed();
+  }
+  loadFamily(elements.familySelect.value, { announce: true });
+});
+elements.generateFamily.addEventListener("click", generateFamily);
+elements.parameter.addEventListener("input", () => setParameter(elements.parameter.value, { manual: true }));
+elements.parameter.addEventListener("change", () => announce(`Parameter r is ${formatNumber(state.r, 3)}.`));
+elements.toggleSweep.addEventListener("click", toggleSweep);
+elements.centerParameter.addEventListener("click", () => {
+  const center = (state.family.rRange[0] + state.family.rRange[1]) / 2;
+  setParameter(center, { manual: true, announce: true });
+});
+elements.sweepSpeed.addEventListener("input", () => {
+  state.sweepSpeed = Number(elements.sweepSpeed.value);
+  elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
+  elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
+});
+elements.candidateSelect.addEventListener("change", () => selectCandidate(elements.candidateSelect.value));
+elements.focusCandidate.addEventListener("click", focusSelectedCandidate);
+elements.fitBranches.addEventListener("click", fitAllBranches);
+elements.resetParticles.addEventListener("click", () => {
+  resetParticles();
+  announce("Trajectory points restarted on an even grid.");
+});
+elements.toggleParticles.addEventListener("click", () => {
+  state.particlesPaused = !state.particlesPaused;
+  elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" : "Pause motion";
+  announce(state.particlesPaused ? "Trajectory motion paused." : "Trajectory motion resumed.");
+});
+elements.runHysteresis.addEventListener("click", requestHysteresis);
+elements.hysteresisPanelButton.addEventListener("click", requestHysteresis);
+
+elements.bifurcationCanvas.addEventListener("pointerdown", (event) => {
+  const selectedMarker = updateParameterFromDiagram(event);
+  state.pointerDragging = !selectedMarker;
+  if (!selectedMarker) elements.bifurcationCanvas.setPointerCapture(event.pointerId);
+});
+elements.bifurcationCanvas.addEventListener("pointermove", (event) => {
+  if (state.pointerDragging) updateParameterFromDiagram(event);
+});
+elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
+  state.pointerDragging = false;
+  if (elements.bifurcationCanvas.hasPointerCapture(event.pointerId)) {
+    elements.bifurcationCanvas.releasePointerCapture(event.pointerId);
+  }
+  announce(`Parameter r is ${formatNumber(state.r, 3)}.`);
+});
+elements.bifurcationCanvas.addEventListener("pointercancel", () => {
+  state.pointerDragging = false;
+});
+elements.bifurcationCanvas.addEventListener("keydown", handleDiagramKey);
+elements.slopeCanvas.addEventListener("click", addSlopeInitial);
+elements.slopeCanvas.addEventListener("keydown", (event) => handleInitialConditionKey("slope", event));
+elements.phaseCanvas.addEventListener("click", addPhaseParticle);
+elements.phaseCanvas.addEventListener("keydown", (event) => handleInitialConditionKey("phase", event));
+
+function animate(now) {
+  const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
+  state.lastFrameTime = now;
+  state.elapsed += delta;
+  updateSweep(delta);
+  updateHysteresis(delta, now);
+  updateParticles(delta);
+  if ((state.sweepRunning || state.hysteresis.running) && now - state.lastSliceUpdate > 55) {
+    updateCurrentSlice();
+    state.lastSliceUpdate = now;
+  }
+  if (!document.hidden && now - state.lastRenderTime >= 30) {
+    drawBifurcationDiagram();
+    drawSlopeField();
+    drawPhaseLine();
+    if (state.localDirty) {
+      drawLocalDiagram();
+      state.localDirty = false;
+    }
+    if (state.hysteresis.running || state.hysteresisDirty) {
+      drawHysteresisPanel();
+      state.hysteresisDirty = false;
+    }
+    state.lastRenderTime = now;
+  }
+  window.requestAnimationFrame(animate);
+}
+
+if (typeof ResizeObserver === "function") {
+  const observer = new ResizeObserver(() => {
+    drawBifurcationDiagram();
+    drawSlopeField();
+    drawPhaseLine();
+    drawLocalDiagram();
+    drawHysteresisPanel();
+  });
+  [
+    elements.bifurcationCanvas,
+    elements.slopeCanvas,
+    elements.phaseCanvas,
+    elements.microscopeCanvas,
+    elements.hysteresisCanvas
+  ].forEach((canvas) => observer.observe(canvas));
+}
+
+motionQuery.addEventListener?.("change", (event) => {
+  if (event.matches) {
+    stopSweep();
+    stopHysteresis(false);
+    state.particlesPaused = true;
+    elements.toggleParticles.textContent = "Resume motion";
+  }
+});
+
+elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" : "Pause motion";
+elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
+elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
+loadFamily("random");
+window.requestAnimationFrame(animate);
