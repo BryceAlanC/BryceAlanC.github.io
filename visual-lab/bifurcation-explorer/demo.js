@@ -101,12 +101,15 @@ const elements = {
   hysteresisControls: document.getElementById("hysteresis-controls"),
   hysteresisPanel: document.getElementById("hysteresis-panel"),
   announcer: document.getElementById("bifurcation-announcer"),
+  branchesPanel: document.getElementById("branches-panel"),
   bifurcationCanvas: document.getElementById("bifurcation-canvas"),
   pitchforkSurfacePanel: document.getElementById("pitchfork-surface-minimap"),
   pitchforkSurfaceCanvas: document.getElementById("pitchfork-surface-canvas"),
   pitchforkSurfaceAlpha: document.getElementById("pitchfork-surface-alpha"),
   pitchforkSurfaceBeta: document.getElementById("pitchfork-surface-beta"),
   pitchforkSurfaceDescription: document.getElementById("pitchfork-surface-description"),
+  pitchforkSurfaceExpand: document.getElementById("pitchfork-surface-expand"),
+  pitchforkSurfaceReset: document.getElementById("pitchfork-surface-reset"),
   slopeCanvas: document.getElementById("slope-canvas"),
   phaseCanvas: document.getElementById("phase-canvas"),
   microscopeCanvas: document.getElementById("microscope-canvas"),
@@ -114,6 +117,11 @@ const elements = {
 };
 
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+const DEFAULT_PITCHFORK_SURFACE_CAMERA = Object.freeze({
+  yaw: 0.615,
+  pitch: 0.45,
+  zoom: 1
+});
 const state = {
   seedCounter: 0,
   seed: makeSeed(),
@@ -165,6 +173,9 @@ const state = {
   localPopoverNeedsPosition: false,
   localPopoverTrigger: null,
   pitchforkSurfaceDirty: true,
+  pitchforkSurfaceCamera: { ...DEFAULT_PITCHFORK_SURFACE_CAMERA },
+  pitchforkSurfacePointers: new Map(),
+  pitchforkSurfacePinch: null,
   fullscreenActive: false,
   fullscreenInitialized: false,
   hysteresisDirty: true,
@@ -673,7 +684,13 @@ function clipSurfaceSegment(start, end, bounds = PITCHFORK_SURFACE_BOUNDS) {
   ];
 }
 
-function projectPitchforkSurface(point, width, height, bounds = PITCHFORK_SURFACE_BOUNDS) {
+function projectPitchforkSurface(
+  point,
+  width,
+  height,
+  bounds = PITCHFORK_SURFACE_BOUNDS,
+  camera = DEFAULT_PITCHFORK_SURFACE_CAMERA
+) {
   const xCenter = (bounds.xMin + bounds.xMax) / 2;
   const rCenter = (bounds.rMin + bounds.rMax) / 2;
   const alphaCenter = (bounds.alphaMin + bounds.alphaMax) / 2;
@@ -683,11 +700,26 @@ function projectPitchforkSurface(point, width, height, bounds = PITCHFORK_SURFAC
   const x = (point.x - xCenter) / xHalf;
   const r = (point.r - rCenter) / rHalf;
   const alpha = (point.alpha - alphaCenter) / alphaHalf;
+  const yaw = Number.isFinite(camera?.yaw) ? camera.yaw : DEFAULT_PITCHFORK_SURFACE_CAMERA.yaw;
+  const pitch = Number.isFinite(camera?.pitch) ? camera.pitch : DEFAULT_PITCHFORK_SURFACE_CAMERA.pitch;
+  const zoom = clamp(
+    Number.isFinite(camera?.zoom) ? camera.zoom : DEFAULT_PITCHFORK_SURFACE_CAMERA.zoom,
+    0.65,
+    2.8
+  );
+  const cosYaw = Math.cos(yaw);
+  const sinYaw = Math.sin(yaw);
+  const cosPitch = Math.cos(pitch);
+  const sinPitch = Math.sin(pitch);
+  const horizontal = r * cosYaw - x * sinYaw;
+  const baseDepth = r * sinYaw + x * cosYaw;
+  const vertical = alpha * cosPitch - baseDepth * sinPitch;
+  const depth = alpha * sinPitch + baseDepth * cosPitch;
   const scale = Math.min(width / 3.05, height / 3.05);
   return {
-    x: width * 0.5 + scale * (0.88 * r - 0.62 * x),
-    y: height * 0.5 + scale * (0.26 * r + 0.34 * x - 0.88 * alpha),
-    depth: 0.62 * r + 0.72 * x + 0.1 * alpha
+    x: width * 0.5 + scale * zoom * horizontal,
+    y: height * 0.5 - scale * zoom * vertical,
+    depth
   };
 }
 
@@ -703,7 +735,9 @@ function traceProjectedPolygon(context, points, project) {
   context.closePath();
 }
 
-function drawPitchforkSlicePlane(context, alpha, bounds, project) {
+function drawPitchforkSlicePlane(context, alpha, bounds, project, options = {}) {
+  const drawFill = options.fill !== false;
+  const drawDetails = options.details !== false;
   const corners = [
     { x: bounds.xMin, r: bounds.rMin, alpha },
     { x: bounds.xMin, r: bounds.rMax, alpha },
@@ -712,29 +746,33 @@ function drawPitchforkSlicePlane(context, alpha, bounds, project) {
   ];
   context.save();
   traceProjectedPolygon(context, corners, project);
-  context.fillStyle = "rgba(242, 201, 105, 0.13)";
-  context.fill();
-  context.strokeStyle = "rgba(242, 201, 105, 0.52)";
-  context.lineWidth = 1;
-  context.setLineDash([4, 4]);
-  context.stroke();
-  context.setLineDash([]);
-  context.strokeStyle = "rgba(242, 201, 105, 0.16)";
-  context.lineWidth = 0.7;
-  for (const amount of [0.25, 0.5, 0.75]) {
-    for (const alongR of [true, false]) {
-      const start = alongR
-        ? { x: lerp(bounds.xMin, bounds.xMax, amount), r: bounds.rMin, alpha }
-        : { x: bounds.xMin, r: lerp(bounds.rMin, bounds.rMax, amount), alpha };
-      const end = alongR
-        ? { x: start.x, r: bounds.rMax, alpha }
-        : { x: bounds.xMax, r: start.r, alpha };
-      const projectedStart = project(start);
-      const projectedEnd = project(end);
-      context.beginPath();
-      context.moveTo(projectedStart.x, projectedStart.y);
-      context.lineTo(projectedEnd.x, projectedEnd.y);
-      context.stroke();
+  if (drawFill) {
+    context.fillStyle = "rgba(242, 201, 105, 0.13)";
+    context.fill();
+  }
+  if (drawDetails) {
+    context.strokeStyle = "rgba(242, 201, 105, 0.52)";
+    context.lineWidth = 1;
+    context.setLineDash([4, 4]);
+    context.stroke();
+    context.setLineDash([]);
+    context.strokeStyle = "rgba(242, 201, 105, 0.16)";
+    context.lineWidth = 0.7;
+    for (const amount of [0.25, 0.5, 0.75]) {
+      for (const alongR of [true, false]) {
+        const start = alongR
+          ? { x: lerp(bounds.xMin, bounds.xMax, amount), r: bounds.rMin, alpha }
+          : { x: bounds.xMin, r: lerp(bounds.rMin, bounds.rMax, amount), alpha };
+        const end = alongR
+          ? { x: start.x, r: bounds.rMax, alpha }
+          : { x: bounds.xMax, r: start.r, alpha };
+        const projectedStart = project(start);
+        const projectedEnd = project(end);
+        context.beginPath();
+        context.moveTo(projectedStart.x, projectedStart.y);
+        context.lineTo(projectedEnd.x, projectedEnd.y);
+        context.stroke();
+      }
     }
   }
   context.restore();
@@ -903,7 +941,13 @@ function drawPitchforkSurface(options = {}) {
   if (!options.force && !state.pitchforkSurfaceDirty) return;
   const { context, width, height } = canvasSurface(elements.pitchforkSurfaceCanvas);
   const bounds = PITCHFORK_SURFACE_BOUNDS;
-  const project = (point) => projectPitchforkSurface(point, width, height, bounds);
+  const project = (point) => projectPitchforkSurface(
+    point,
+    width,
+    height,
+    bounds,
+    state.pitchforkSurfaceCamera
+  );
   const alpha = unfolding.alpha;
   const beta = unfolding.beta;
   context.clearRect(0, 0, width, height);
@@ -916,8 +960,9 @@ function drawPitchforkSurface(options = {}) {
   }
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
-  drawPitchforkSlicePlane(context, alpha, bounds, project);
+  drawPitchforkSlicePlane(context, alpha, bounds, project, { details: false });
   drawPitchforkSurfaceMesh(context, unfolding, bounds, project);
+  drawPitchforkSlicePlane(context, alpha, bounds, project, { fill: false });
   drawPitchforkSliceIntersection(context, state.diagram?.branches, alpha, bounds, project);
   for (const candidate of state.candidates || []) {
     if (
@@ -935,8 +980,169 @@ function drawPitchforkSurface(options = {}) {
     `Three-dimensional equilibrium surface at beta ${formatNumber(beta, 3)}. `
     + `The gold plane alpha equals ${formatNumber(alpha, 3)} intersects it in `
     + `${branchCount} ${branchCount === 1 ? "branch" : "branches"} shown in Diagram 01. `
-    + "Changing alpha moves the plane; changing beta deforms the surface.";
+    + "Changing alpha moves the plane; changing beta deforms the surface. "
+    + "Drag to rotate, scroll or use plus and minus to zoom, use the arrow keys to rotate, and press 0 to reset the view.";
   state.pitchforkSurfaceDirty = false;
+}
+
+function normalizePitchforkSurfaceYaw(value) {
+  const fullTurn = 2 * Math.PI;
+  return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+}
+
+function updatePitchforkSurfaceCamera(next = {}) {
+  const camera = state.pitchforkSurfaceCamera;
+  if (Number.isFinite(next.yaw)) camera.yaw = normalizePitchforkSurfaceYaw(next.yaw);
+  if (Number.isFinite(next.pitch)) camera.pitch = clamp(next.pitch, -1.15, 1.15);
+  if (Number.isFinite(next.zoom)) camera.zoom = clamp(next.zoom, 0.65, 2.8);
+  state.pitchforkSurfaceDirty = true;
+}
+
+function resetPitchforkSurfaceCamera(options = {}) {
+  Object.assign(state.pitchforkSurfaceCamera, DEFAULT_PITCHFORK_SURFACE_CAMERA);
+  state.pitchforkSurfaceDirty = true;
+  if (options.announce) announce("The 3D unfolding surface view was reset.");
+}
+
+function setPitchforkSurfaceExpanded(expanded, options = {}) {
+  const pinned = Boolean(expanded);
+  elements.pitchforkSurfacePanel.dataset.expanded = String(pinned);
+  elements.pitchforkSurfaceExpand.setAttribute("aria-pressed", String(pinned));
+  elements.pitchforkSurfaceExpand.setAttribute("aria-label", "Pin the 3D surface open");
+  const glyph = elements.pitchforkSurfaceExpand.querySelector("span");
+  if (glyph) glyph.textContent = pinned ? "⤡" : "⤢";
+  state.pitchforkSurfaceDirty = true;
+  if (options.announce) {
+    announce(pinned ? "The 3D unfolding surface is expanded." : "The 3D unfolding surface is compact.");
+  }
+}
+
+function pitchforkSurfacePointerDistance() {
+  const points = [...state.pitchforkSurfacePointers.values()];
+  if (points.length < 2) return 0;
+  return Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+}
+
+function beginPitchforkSurfacePointer(event) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  elements.pitchforkSurfaceCanvas.focus({ preventScroll: true });
+  state.pitchforkSurfacePointers.set(event.pointerId, {
+    x: event.clientX,
+    y: event.clientY,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false
+  });
+  elements.pitchforkSurfaceCanvas.setPointerCapture(event.pointerId);
+  elements.pitchforkSurfaceCanvas.dataset.dragging = "rotate";
+  elements.pitchforkSurfacePanel.classList.add("is-interacting");
+  if (state.pitchforkSurfacePointers.size >= 2) {
+    state.pitchforkSurfacePinch = {
+      distance: pitchforkSurfacePointerDistance(),
+      zoom: state.pitchforkSurfaceCamera.zoom
+    };
+  }
+}
+
+function movePitchforkSurfacePointer(event) {
+  const pointer = state.pitchforkSurfacePointers.get(event.pointerId);
+  if (!pointer) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const previousX = pointer.x;
+  const previousY = pointer.y;
+  pointer.x = event.clientX;
+  pointer.y = event.clientY;
+  if (state.pitchforkSurfacePointers.size >= 2) {
+    const distance = pitchforkSurfacePointerDistance();
+    if (!state.pitchforkSurfacePinch || state.pitchforkSurfacePinch.distance <= 0) {
+      state.pitchforkSurfacePinch = { distance, zoom: state.pitchforkSurfaceCamera.zoom };
+    } else if (distance > 0) {
+      for (const activePointer of state.pitchforkSurfacePointers.values()) activePointer.moved = true;
+      updatePitchforkSurfaceCamera({
+        zoom: state.pitchforkSurfacePinch.zoom * distance / state.pitchforkSurfacePinch.distance
+      });
+    }
+    return;
+  }
+  const deltaX = event.clientX - previousX;
+  const deltaY = event.clientY - previousY;
+  if (!pointer.moved) {
+    const totalDeltaX = event.clientX - pointer.startX;
+    const totalDeltaY = event.clientY - pointer.startY;
+    if (Math.hypot(totalDeltaX, totalDeltaY) < 1.5) return;
+    pointer.moved = true;
+    updatePitchforkSurfaceCamera({
+      yaw: state.pitchforkSurfaceCamera.yaw + totalDeltaX * 0.009,
+      pitch: state.pitchforkSurfaceCamera.pitch - totalDeltaY * 0.009
+    });
+    return;
+  }
+  updatePitchforkSurfaceCamera({
+    yaw: state.pitchforkSurfaceCamera.yaw + deltaX * 0.009,
+    pitch: state.pitchforkSurfaceCamera.pitch - deltaY * 0.009
+  });
+}
+
+function endPitchforkSurfacePointer(event) {
+  const pointer = state.pitchforkSurfacePointers.get(event.pointerId);
+  if (!pointer) return;
+  const moved = pointer.moved;
+  state.pitchforkSurfacePointers.delete(event.pointerId);
+  if (
+    event.type !== "lostpointercapture"
+    && elements.pitchforkSurfaceCanvas.hasPointerCapture?.(event.pointerId)
+  ) {
+    elements.pitchforkSurfaceCanvas.releasePointerCapture(event.pointerId);
+  }
+  if (state.pitchforkSurfacePointers.size < 2) state.pitchforkSurfacePinch = null;
+  if (state.pitchforkSurfacePointers.size === 0) {
+    delete elements.pitchforkSurfaceCanvas.dataset.dragging;
+    elements.pitchforkSurfacePanel.classList.remove("is-interacting");
+    if (moved && event.type === "pointerup") announce("The 3D unfolding surface view was rotated.");
+  }
+}
+
+function handlePitchforkSurfaceWheel(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const surfaceHeight = Math.max(1, elements.pitchforkSurfaceCanvas.getBoundingClientRect().height);
+  const modeScale = event.deltaMode === 1
+    ? 16
+    : event.deltaMode === 2
+      ? surfaceHeight
+      : 1;
+  const normalizedDelta = clamp(event.deltaY * modeScale, -240, 240);
+  if (!normalizedDelta) return;
+  const amount = Math.exp(-normalizedDelta * 0.0015);
+  updatePitchforkSurfaceCamera({ zoom: state.pitchforkSurfaceCamera.zoom * amount });
+}
+
+function handlePitchforkSurfaceKey(event) {
+  let handled = true;
+  const rotationStep = event.shiftKey ? 0.18 : 0.09;
+  if (event.key === "ArrowLeft") {
+    updatePitchforkSurfaceCamera({ yaw: state.pitchforkSurfaceCamera.yaw - rotationStep });
+  } else if (event.key === "ArrowRight") {
+    updatePitchforkSurfaceCamera({ yaw: state.pitchforkSurfaceCamera.yaw + rotationStep });
+  } else if (event.key === "ArrowUp") {
+    updatePitchforkSurfaceCamera({ pitch: state.pitchforkSurfaceCamera.pitch + rotationStep });
+  } else if (event.key === "ArrowDown") {
+    updatePitchforkSurfaceCamera({ pitch: state.pitchforkSurfaceCamera.pitch - rotationStep });
+  } else if (event.key === "+" || event.key === "=") {
+    updatePitchforkSurfaceCamera({ zoom: state.pitchforkSurfaceCamera.zoom * 1.12 });
+  } else if (event.key === "-" || event.key === "_") {
+    updatePitchforkSurfaceCamera({ zoom: state.pitchforkSurfaceCamera.zoom / 1.12 });
+  } else if (event.key === "0") {
+    resetPitchforkSurfaceCamera({ announce: true });
+  } else {
+    handled = false;
+  }
+  if (!handled) return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function drawBifurcationDiagram() {
@@ -2189,6 +2395,10 @@ function updateFamilyCopy() {
     && elements.familySelect.value === "pitchfork-unfolding"
   );
   elements.pitchforkSurfacePanel.hidden = !showPitchforkSurface;
+  elements.branchesPanel.classList.toggle("has-pitchfork-surface", showPitchforkSurface);
+  if (!showPitchforkSurface && elements.pitchforkSurfacePanel.dataset.expanded === "true") {
+    setPitchforkSurfaceExpanded(false);
+  }
   if (showPitchforkSurface) state.pitchforkSurfaceDirty = true;
 }
 
@@ -2339,6 +2549,10 @@ function updateFamilySpecificControls(id) {
   elements.hysteresisControls.hidden = id !== "hysteresis";
   elements.hysteresisPanel.hidden = id !== "hysteresis";
   elements.pitchforkSurfacePanel.hidden = id !== "pitchfork-unfolding";
+  elements.branchesPanel.classList.toggle("has-pitchfork-surface", id === "pitchfork-unfolding");
+  if (id !== "pitchfork-unfolding" && elements.pitchforkSurfacePanel.dataset.expanded === "true") {
+    setPitchforkSurfaceExpanded(false);
+  }
   if (id === "pitchfork-unfolding") state.pitchforkSurfaceDirty = true;
   elements.workspace.classList.toggle("is-hysteresis", id === "hysteresis");
   if (id !== "hysteresis") stopHysteresis(false);
@@ -3372,6 +3586,25 @@ document.addEventListener("webkitfullscreenerror", () => {
   reportFullscreenError();
 });
 
+elements.pitchforkSurfaceExpand.addEventListener("click", () => {
+  setPitchforkSurfaceExpanded(elements.pitchforkSurfacePanel.dataset.expanded !== "true", {
+    announce: true
+  });
+});
+elements.pitchforkSurfaceReset.addEventListener("click", () => {
+  resetPitchforkSurfaceCamera({ announce: true });
+});
+elements.pitchforkSurfaceCanvas.addEventListener("pointerdown", beginPitchforkSurfacePointer);
+elements.pitchforkSurfaceCanvas.addEventListener("pointermove", movePitchforkSurfacePointer);
+elements.pitchforkSurfaceCanvas.addEventListener("pointerup", endPitchforkSurfacePointer);
+elements.pitchforkSurfaceCanvas.addEventListener("pointercancel", endPitchforkSurfacePointer);
+elements.pitchforkSurfaceCanvas.addEventListener("lostpointercapture", endPitchforkSurfacePointer);
+elements.pitchforkSurfaceCanvas.addEventListener("wheel", handlePitchforkSurfaceWheel, { passive: false });
+elements.pitchforkSurfaceCanvas.addEventListener("dblclick", () => {
+  resetPitchforkSurfaceCamera({ announce: true });
+});
+elements.pitchforkSurfaceCanvas.addEventListener("keydown", handlePitchforkSurfaceKey);
+
 elements.microscopeCanvas.addEventListener("pointerdown", (event) => {
   if (
     event.button !== 0
@@ -3559,10 +3792,8 @@ function animate(now) {
 }
 
 if (typeof ResizeObserver === "function") {
-  const observer = new ResizeObserver(() => {
+  const diagramObserver = new ResizeObserver(() => {
     drawBifurcationDiagram();
-    state.pitchforkSurfaceDirty = true;
-    drawPitchforkSurface({ force: true });
     drawSlopeField();
     drawPhaseLine();
     if (state.localPopoverOpen) {
@@ -3574,12 +3805,17 @@ if (typeof ResizeObserver === "function") {
   });
   [
     elements.bifurcationCanvas,
-    elements.pitchforkSurfaceCanvas,
     elements.slopeCanvas,
     elements.phaseCanvas,
     elements.microscopeCanvas,
     elements.hysteresisCanvas
-  ].forEach((canvas) => observer.observe(canvas));
+  ].forEach((canvas) => diagramObserver.observe(canvas));
+
+  const surfaceObserver = new ResizeObserver(() => {
+    state.pitchforkSurfaceDirty = true;
+    drawPitchforkSurface({ force: true });
+  });
+  surfaceObserver.observe(elements.pitchforkSurfaceCanvas);
 }
 
 motionQuery.addEventListener?.("change", (event) => {
