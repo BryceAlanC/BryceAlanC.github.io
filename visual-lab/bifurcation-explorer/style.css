@@ -541,6 +541,10 @@
   font-size: 0.58rem;
 }
 
+#pitchfork-surface-beta {
+  display: none;
+}
+
 .pitchfork-surface-expand,
 .pitchfork-surface-reset {
   display: inline-flex;
@@ -623,6 +627,12 @@
   display: grid;
 }
 
+.pitchfork-surface-minimap:is([data-expanded="true"], .is-interacting) #pitchfork-surface-beta,
+.pitchfork-surface-minimap:has(#pitchfork-surface-canvas:focus) #pitchfork-surface-beta,
+.pitchfork-surface-minimap:has(.pitchfork-surface-reset:focus) #pitchfork-surface-beta {
+  display: inline;
+}
+
 .pitchfork-surface-minimap:is([data-expanded="true"], .is-interacting) .pitchfork-surface-nav-hint,
 .pitchfork-surface-minimap:has(#pitchfork-surface-canvas:focus) .pitchfork-surface-nav-hint,
 .pitchfork-surface-minimap:has(.pitchfork-surface-reset:focus) .pitchfork-surface-nav-hint {
@@ -630,6 +640,10 @@
 }
 
 @media (hover: hover) {
+  .pitchfork-surface-minimap:hover #pitchfork-surface-beta {
+    display: inline;
+  }
+
   .pitchfork-surface-minimap:hover .pitchfork-surface-caption {
     display: grid;
   }
