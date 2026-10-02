@@ -704,18 +704,34 @@ function createRandomMixedFamily(seed = "bifurcation", options = {}) {
   const laneCenters = count === 2 ? [-1.05, 1.05] : [-1.32, 0, 1.32];
   const rRange = options.rRange || [-1.8, 1.8];
   const xRange = options.xRange || [-2.25, 2.25];
-  const blocks = recipe.map((kind, index) => ({
-    kind,
-    x0: laneCenters[index] + randomBetween(random, -0.07, 0.07),
-    r0: randomBetween(random, -0.62, 0.62),
-    xScale: count === 2
+  const blocks = recipe.map((kind, index) => {
+    const x0 = laneCenters[index] + randomBetween(random, -0.07, 0.07);
+    const r0 = randomBetween(random, -0.62, 0.62);
+    const xScale = count === 2
       ? randomBetween(random, 0.34, 0.41)
-      : randomBetween(random, 0.25, 0.3),
-    rScale: randomBetween(random, 0.9, 1.15),
-    drift: randomBetween(random, -0.09, 0.09),
-    orientation: randomSign(random),
-    slope: randomSign(random) * randomBetween(random, 0.3, 0.48)
-  }));
+      : randomBetween(random, 0.25, 0.3);
+    const rScale = randomBetween(random, 0.9, 1.15);
+    const rawDrift = randomBetween(random, -0.09, 0.09);
+    const orientation = randomSign(random);
+    const slope = randomSign(random) * randomBetween(random, 0.3, 0.48);
+    // A parameter-dependent state shear is harmless, but for a transcritical
+    // block it can nearly cancel the mixed xy coefficient used by the local
+    // classifier. Keep its shear aligned with the second branch so the
+    // crossing remains numerically well conditioned as well as exact.
+    const drift = kind === "transcritical"
+      ? Math.sign(slope) * (0.015 + 0.45 * Math.abs(rawDrift))
+      : rawDrift;
+    return {
+      kind,
+      x0,
+      r0,
+      xScale,
+      rScale,
+      drift,
+      orientation,
+      slope
+    };
+  });
   const timeSign = randomSign(random);
   const gain = randomBetween(random, 0.8, 1.3);
   const sineWeight = randomBetween(random, 0.08, 0.2);

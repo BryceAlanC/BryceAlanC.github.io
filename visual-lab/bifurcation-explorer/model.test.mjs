@@ -392,7 +392,8 @@ assert.deepEqual(model.PRESET_IDS, [
     ["c", ["transcritical", "subcritical-pitchfork", "saddle-node"]],
     ["e", ["saddle-node", "transcritical"]],
     ["a", ["supercritical-pitchfork", "transcritical"]],
-    ["d", ["transcritical", "supercritical-pitchfork", "saddle-node"]]
+    ["d", ["transcritical", "supercritical-pitchfork", "saddle-node"]],
+    ["4OO6Y-8145", ["supercritical-pitchfork", "transcritical"]]
   ]);
 
   for (const [seed, expectedTypes] of expectedTypesBySeed) {
