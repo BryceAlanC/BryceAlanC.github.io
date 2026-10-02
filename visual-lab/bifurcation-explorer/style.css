@@ -521,6 +521,7 @@
 }
 
 .pitchfork-surface-heading {
+  gap: 0.3rem;
   padding-bottom: 0.2rem;
   color: #e7f0ec;
   font-size: 0.62rem;
@@ -589,7 +590,7 @@
 }
 
 .pitchfork-surface-caption {
-  display: grid;
+  display: none;
   grid-template-columns: auto minmax(0, 1fr) auto;
   padding-top: 0.16rem;
   color: rgba(231, 240, 236, 0.76);
@@ -616,6 +617,12 @@
   display: inline-flex;
 }
 
+.pitchfork-surface-minimap:is([data-expanded="true"], .is-interacting) .pitchfork-surface-caption,
+.pitchfork-surface-minimap:has(#pitchfork-surface-canvas:focus) .pitchfork-surface-caption,
+.pitchfork-surface-minimap:has(.pitchfork-surface-reset:focus) .pitchfork-surface-caption {
+  display: grid;
+}
+
 .pitchfork-surface-minimap:is([data-expanded="true"], .is-interacting) .pitchfork-surface-nav-hint,
 .pitchfork-surface-minimap:has(#pitchfork-surface-canvas:focus) .pitchfork-surface-nav-hint,
 .pitchfork-surface-minimap:has(.pitchfork-surface-reset:focus) .pitchfork-surface-nav-hint {
@@ -623,6 +630,10 @@
 }
 
 @media (hover: hover) {
+  .pitchfork-surface-minimap:hover .pitchfork-surface-caption {
+    display: grid;
+  }
+
   .pitchfork-surface-minimap:hover .pitchfork-surface-reset {
     display: inline-flex;
   }
