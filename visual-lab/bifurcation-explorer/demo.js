@@ -128,7 +128,9 @@ const state = {
   sweepRunning: false,
   sweepDirection: 1,
   sweepSpeed: Number(elements.sweepSpeed.value),
-  particlesPaused: motionQuery.matches,
+  // Trajectory motion is the mathematical content of these panels, so begin it
+  // immediately even when the browser requests fewer decorative animations.
+  particlesPaused: false,
   particles: [],
   particleCursor: 0,
   particleEmitterElapsed: 0,
