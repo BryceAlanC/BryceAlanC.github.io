@@ -2,10 +2,11 @@ import {
   createFamily,
   findEquilibria,
   sampleBifurcation,
+  sampleZeroContour,
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-10";
+} from "./model.js?v=20261002-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -56,8 +57,10 @@ const elements = {
   pitchforkTimeSign: document.getElementById("pitchfork-time-sign"),
   pitchforkAlpha: document.getElementById("pitchfork-alpha"),
   pitchforkAlphaValue: document.getElementById("pitchfork-alpha-value"),
+  playPitchforkAlpha: document.getElementById("play-pitchfork-alpha"),
   pitchforkBeta: document.getElementById("pitchfork-beta"),
   pitchforkBetaValue: document.getElementById("pitchfork-beta-value"),
+  playPitchforkBeta: document.getElementById("play-pitchfork-beta"),
   parameter: document.getElementById("parameter-r"),
   parameterValue: document.getElementById("parameter-r-value"),
   toggleSweep: document.getElementById("toggle-sweep"),
@@ -136,6 +139,10 @@ const state = {
   phaseCursorX: 0,
   calculationToken: 0,
   pitchforkMorph: null,
+  pitchforkPlayers: {
+    alpha: { playing: false, direction: 1, lastAt: 0 },
+    beta: { playing: false, direction: 1, lastAt: 0 }
+  },
   pointerDragging: false,
   pointerStart: null,
   pointerMoved: false,
@@ -804,22 +811,41 @@ function drawSlopeField() {
     context.restore();
   }
 
+  // Constant solutions deserve their own visible trajectories. New markers
+  // enter periodically at t = 0 and move horizontally because x(t) never
+  // changes when the initial state is exactly an equilibrium.
+  const equilibriumTravelTime = 4.8;
+  const equilibriumSpawnInterval = 1.35;
+  const equilibriumSlots = 4;
+  const equilibriumCycle = equilibriumSpawnInterval * equilibriumSlots;
+  state.equilibria.forEach((equilibrium, equilibriumIndex) => {
+    if (equilibrium.x < xRange[0] || equilibrium.x > xRange[1]) return;
+    const y = mapVertical(equilibrium.x, xRange[0], xRange[1], box);
+    for (let slot = 0; slot < equilibriumSlots; slot += 1) {
+      const rawAge = state.particleClock + equilibriumIndex * 0.17 - slot * equilibriumSpawnInterval;
+      const age = ((rawAge % equilibriumCycle) + equilibriumCycle) % equilibriumCycle;
+      if (age > equilibriumTravelTime) continue;
+      const t = timeRange[1] * age / equilibriumTravelTime;
+      context.save();
+      context.fillStyle = COLORS.currentBright;
+      context.strokeStyle = COLORS.ivory;
+      context.lineWidth = 1.2;
+      context.beginPath();
+      context.arc(mapHorizontal(t, timeRange[0], timeRange[1], box), y, 3.6, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.restore();
+    }
+  });
+
   if (Number.isFinite(state.slopeCursorX)) {
     const cursorY = mapVertical(state.slopeCursorX, xRange[0], xRange[1], box);
     context.save();
     context.fillStyle = COLORS.currentBright;
-    context.strokeStyle = COLORS.currentBright;
-    context.lineWidth = 1.4;
-    context.setLineDash([3, 4]);
     context.beginPath();
-    context.moveTo(box.left, cursorY);
-    context.lineTo(box.right, cursorY);
-    context.stroke();
-    context.setLineDash([]);
-    context.beginPath();
-    context.moveTo(box.left, cursorY);
-    context.lineTo(box.left + 9, cursorY - 5);
-    context.lineTo(box.left + 9, cursorY + 5);
+    context.moveTo(box.left - 2, cursorY);
+    context.lineTo(box.left - 12, cursorY - 6);
+    context.lineTo(box.left - 12, cursorY + 6);
     context.closePath();
     context.fill();
     context.restore();
@@ -945,25 +971,48 @@ function drawLocalDiagram() {
     yLabel: "y = x − x*"
   });
 
-  const shiftedRanges = {
-    rMin: ranges.rMin + state.microscope.center.r,
-    rMax: ranges.rMax + state.microscope.center.r,
-    xMin: ranges.xMin + state.microscope.center.x,
-    xMax: ranges.xMax + state.microscope.center.x
-  };
-  function drawShifted(diagram, style) {
-    if (!diagram) return;
-    const shiftedBoxRanges = {
-      rMin: shiftedRanges.rMin,
-      rMax: shiftedRanges.rMax,
-      xMin: shiftedRanges.xMin,
-      xMax: shiftedRanges.xMax
-    };
-    drawBranchCollection(context, diagram.branches, shiftedBoxRanges, box, { fixedStyle: style });
+  function drawImplicitModel(family, style) {
+    if (!family) return;
+    const plotWidth = Math.max(1, box.right - box.left);
+    const plotHeight = Math.max(1, box.bottom - box.top);
+    const singularVisible = ranges.rMin <= 0 && ranges.rMax >= 0 && ranges.xMin <= 0 && ranges.xMax >= 0;
+    const contour = sampleZeroContour(
+      (y, mu) => family.eval(y + state.microscope.center.x, mu + state.microscope.center.r),
+      ranges,
+      {
+        rCells: clamp(Math.ceil(plotWidth / 2.35), 72, 260),
+        xCells: clamp(Math.ceil(plotHeight / 2.35), 56, 180),
+        rAnchors: singularVisible ? [0] : [],
+        xAnchors: singularVisible ? [0] : [],
+        singularPoints: singularVisible ? [{ r: 0, x: 0 }] : []
+      }
+    );
+    context.save();
+    context.beginPath();
+    context.rect(box.left, box.top, plotWidth, plotHeight);
+    context.clip();
+    context.strokeStyle = style.color;
+    context.lineWidth = style.width;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.setLineDash(style.dash || []);
+    context.beginPath();
+    for (const segment of contour.segments) {
+      context.moveTo(
+        mapHorizontal(segment[0].r, ranges.rMin, ranges.rMax, box),
+        mapVertical(segment[0].x, ranges.xMin, ranges.xMax, box)
+      );
+      context.lineTo(
+        mapHorizontal(segment[1].r, ranges.rMin, ranges.rMax, box),
+        mapVertical(segment[1].x, ranges.xMin, ranges.xMax, box)
+      );
+    }
+    context.stroke();
+    context.restore();
   }
-  drawShifted(state.microscope.exact, { color: COLORS.ivory, dash: [], width: 3 });
-  drawShifted(state.microscope.taylorDiagram, { color: COLORS.stableBright, dash: [7, 5], width: 2.2 });
-  drawShifted(state.microscope.normalDiagram, { color: COLORS.normal, dash: [2, 5], width: 2.2 });
+  drawImplicitModel(state.microscope.exactFamily, { color: COLORS.ivory, dash: [], width: 3 });
+  drawImplicitModel(state.microscope.taylorFamily, { color: COLORS.stableBright, dash: [7, 5], width: 2.2 });
+  drawImplicitModel(state.microscope.normalFamily, { color: COLORS.normal, dash: [2, 5], width: 2.2 });
 
   if (ranges.rMin <= 0 && ranges.rMax >= 0 && ranges.xMin <= 0 && ranges.xMax >= 0) {
     const centerX = mapHorizontal(0, ranges.rMin, ranges.rMax, box);
@@ -1503,30 +1552,12 @@ function selectCandidate(index, options = {}) {
   const normalFamily = isManyFold && (candidate.branchSlopes || state.family.branchSlopes)
     ? branchProductFamily(candidate, localRanges)
     : normalFamilyFromTaylor(state.taylor, localRanges);
-  const taylorDiagram = branchCount > 4
-    ? null
-    : sampleBifurcation(taylorFamily, {
-      ...absoluteRanges,
-      rSamples: 181,
-      xSamples: 260,
-      detectCandidates: false
-    });
   state.microscope = {
     center: { x: candidate.x, r: candidate.r },
     ranges: localRanges,
-    exact: sampleBifurcation(state.family, {
-      ...absoluteRanges,
-      rSamples: 181,
-      xSamples: 260,
-      detectCandidates: false
-    }),
-    taylorDiagram,
-    normalDiagram: sampleBifurcation(normalFamily, {
-      ...absoluteRanges,
-      rSamples: 181,
-      xSamples: 260,
-      detectCandidates: false
-    })
+    exactFamily: state.family,
+    taylorFamily: branchCount > 4 ? null : taylorFamily,
+    normalFamily
   };
   state.localDirty = true;
   updateMicroscopeCopy(candidate);
@@ -1804,6 +1835,7 @@ function updateFamilyCopy() {
   const showHysteresis = Boolean(state.family.supportsHysteresis);
   elements.hysteresisControls.hidden = !showHysteresis;
   elements.hysteresisPanel.hidden = !showHysteresis;
+  elements.workspace.classList.toggle("is-hysteresis", showHysteresis);
   if (showHysteresis) state.hysteresisDirty = true;
 }
 
@@ -1835,6 +1867,107 @@ function updatePitchforkReadouts() {
   elements.pitchforkBeta.setAttribute("aria-valuetext", `beta equals ${formatNumber(beta, 3)}`);
 }
 
+const PITCHFORK_PLAYER_CONFIG = Object.freeze({
+  alpha: Object.freeze({
+    control: elements.pitchforkAlpha,
+    button: elements.playPitchforkAlpha,
+    spokenName: "alpha",
+    rate: 0.105
+  }),
+  beta: Object.freeze({
+    control: elements.pitchforkBeta,
+    button: elements.playPitchforkBeta,
+    spokenName: "beta",
+    rate: 0.38
+  })
+});
+
+function syncPitchforkPlayerButton(name) {
+  const config = PITCHFORK_PLAYER_CONFIG[name];
+  const player = state.pitchforkPlayers[name];
+  if (!config?.button || !player) return;
+  config.button.setAttribute("aria-pressed", String(player.playing));
+  config.button.setAttribute(
+    "aria-label",
+    `${player.playing ? "Pause" : "Play"} ${config.spokenName} imperfection animation`
+  );
+  const icon = config.button.querySelector("[aria-hidden='true']");
+  if (icon) icon.textContent = player.playing ? "Ⅱ" : "▶";
+}
+
+function pitchforkPlayerIsRunning() {
+  return Object.values(state.pitchforkPlayers).some((player) => player.playing);
+}
+
+function setPitchforkPlayer(name, playing, options = {}) {
+  const config = PITCHFORK_PLAYER_CONFIG[name];
+  const player = state.pitchforkPlayers[name];
+  if (!config || !player || player.playing === playing) return false;
+  player.playing = playing;
+  player.lastAt = performance.now();
+  if (playing) {
+    const value = Number(config.control.value);
+    const maximum = Number(config.control.max);
+    const minimum = Number(config.control.min);
+    if (value >= maximum - (maximum - minimum) * 0.01) player.direction = -1;
+    else if (value <= minimum + (maximum - minimum) * 0.01) player.direction = 1;
+  }
+  syncPitchforkPlayerButton(name);
+  if (options.announce) {
+    announce(`${config.spokenName === "alpha" ? "Alpha" : "Beta"} imperfection animation ${playing ? "started" : "paused"}.`);
+  }
+  if (!playing && options.finalize !== false && !pitchforkPlayerIsRunning()) {
+    requestPitchforkMorphFinish(Boolean(options.announce));
+  }
+  return true;
+}
+
+function stopPitchforkPlayers(options = {}) {
+  let changed = false;
+  for (const name of Object.keys(PITCHFORK_PLAYER_CONFIG)) {
+    changed = setPitchforkPlayer(name, false, { announce: false, finalize: false }) || changed;
+  }
+  if (changed && options.finalize !== false && familyIsPitchfork(elements.familySelect.value)) {
+    requestPitchforkMorphFinish(Boolean(options.announce));
+  }
+  return changed;
+}
+
+function togglePitchforkPlayer(name) {
+  const player = state.pitchforkPlayers[name];
+  if (!player || !familyIsPitchfork(elements.familySelect.value)) return;
+  setPitchforkPlayer(name, !player.playing, { announce: true, finalize: true });
+}
+
+function updatePitchforkPlayers(now) {
+  if (!familyIsPitchfork(elements.familySelect.value) || !pitchforkPlayerIsRunning()) return false;
+  let changed = false;
+  for (const [name, config] of Object.entries(PITCHFORK_PLAYER_CONFIG)) {
+    const player = state.pitchforkPlayers[name];
+    if (!player.playing) continue;
+    const elapsed = clamp((now - player.lastAt) / 1000, 0, 0.08);
+    player.lastAt = now;
+    if (elapsed <= 0) continue;
+    const minimum = Number(config.control.min);
+    const maximum = Number(config.control.max);
+    let value = Number(config.control.value) + player.direction * config.rate * elapsed;
+    if (value > maximum) {
+      value = maximum - (value - maximum);
+      player.direction = -1;
+    } else if (value < minimum) {
+      value = minimum + (minimum - value);
+      player.direction = 1;
+    }
+    config.control.value = String(clamp(value, minimum, maximum));
+    changed = true;
+  }
+  if (!changed) return false;
+  elements.pitchforkCase.value = "custom";
+  updatePitchforkReadouts();
+  queuePitchforkMorph();
+  return true;
+}
+
 function applyPitchforkCase(caseId) {
   const preset = PITCHFORK_CASE_PRESETS[caseId];
   if (!preset) return;
@@ -1852,6 +1985,7 @@ function updateFamilySpecificControls(id) {
   elements.customEquationControls.hidden = !showCustom;
   elements.hysteresisControls.hidden = id !== "hysteresis";
   elements.hysteresisPanel.hidden = id !== "hysteresis";
+  elements.workspace.classList.toggle("is-hysteresis", id === "hysteresis");
   if (id !== "hysteresis") stopHysteresis(false);
   elements.generateFamily.hidden = id !== "random";
   const branchCount = clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9);
@@ -2776,6 +2910,7 @@ function handleDiagramKey(event) {
 
 elements.familySelect.addEventListener("change", () => {
   const id = elements.familySelect.value;
+  stopPitchforkPlayers({ finalize: false });
   updateFamilySpecificControls(id);
   if (id === "random") {
     state.seed = makeSeed();
@@ -2790,19 +2925,29 @@ elements.nFoldCount.addEventListener("input", () => {
 });
 elements.nFoldCount.addEventListener("change", () => reloadConfiguredFamily(true));
 elements.pitchforkCase.addEventListener("change", () => {
+  stopPitchforkPlayers({ finalize: false });
   applyPitchforkCase(elements.pitchforkCase.value);
   queuePitchforkMorph({ finalize: true, announce: true });
 });
-for (const control of [elements.pitchforkAlpha, elements.pitchforkBeta]) {
+for (const [name, control] of [["alpha", elements.pitchforkAlpha], ["beta", elements.pitchforkBeta]]) {
   control.addEventListener("input", () => {
+    setPitchforkPlayer(name, false, { announce: false, finalize: false });
     elements.pitchforkCase.value = "custom";
     updatePitchforkReadouts();
     queuePitchforkMorph();
   });
   control.addEventListener("change", () => requestPitchforkMorphFinish(true));
 }
-elements.pitchforkSigns.addEventListener("change", () => reloadConfiguredFamily(true));
-elements.pitchforkTimeSign.addEventListener("change", () => reloadConfiguredFamily(true));
+elements.playPitchforkAlpha.addEventListener("click", () => togglePitchforkPlayer("alpha"));
+elements.playPitchforkBeta.addEventListener("click", () => togglePitchforkPlayer("beta"));
+elements.pitchforkSigns.addEventListener("change", () => {
+  stopPitchforkPlayers({ finalize: false });
+  reloadConfiguredFamily(true);
+});
+elements.pitchforkTimeSign.addEventListener("change", () => {
+  stopPitchforkPlayers({ finalize: false });
+  reloadConfiguredFamily(true);
+});
 elements.applyCustomEquation.addEventListener("click", () => applyCustomFamily({ announce: true }));
 elements.customEquation.addEventListener("input", clearCustomEquationError);
 for (const control of [
@@ -3031,6 +3176,7 @@ function animate(now) {
   const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
   state.lastFrameTime = now;
   state.elapsed += delta;
+  updatePitchforkPlayers(now);
   updatePitchforkMorph(now);
   updateSweep(delta);
   updateHysteresis(delta, now);
@@ -3081,6 +3227,7 @@ motionQuery.addEventListener?.("change", (event) => {
   if (event.matches) {
     stopSweep();
     stopHysteresis(false);
+    stopPitchforkPlayers({ finalize: true });
     state.particlesPaused = true;
     elements.toggleParticles.textContent = "Resume trajectories";
     if (state.pitchforkMorph) {
@@ -3094,6 +3241,8 @@ elements.toggleParticles.textContent = state.particlesPaused ? "Resume trajector
 elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeed.setAttribute("aria-valuetext", `${state.sweepSpeed.toFixed(2)} times`);
+syncPitchforkPlayerButton("alpha");
+syncPitchforkPlayerButton("beta");
 loadFamily("random", { announce: true });
 initializeFullscreenControl();
 window.requestAnimationFrame(animate);

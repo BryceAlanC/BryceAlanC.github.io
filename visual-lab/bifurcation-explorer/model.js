@@ -647,6 +647,131 @@ function createLocalRandomFamily(seed = "bifurcation", options = {}) {
   });
 }
 
+const MIXED_RANDOM_RECIPES = Object.freeze([
+  Object.freeze(["saddle-node", "transcritical"]),
+  Object.freeze(["saddle-node", "pitchfork"]),
+  Object.freeze(["transcritical", "pitchfork"]),
+  Object.freeze(["saddle-node", "transcritical", "pitchfork"])
+]);
+
+function shuffleWithRng(values, random) {
+  const result = values.slice();
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function mixedBlockValue(block, x, r) {
+  const parameterOffset = r - block.r0;
+  const mu = parameterOffset / block.rScale;
+  const y = (x - block.x0 - block.drift * parameterOffset) / block.xScale;
+  if (block.kind === "saddle-node") return y * y - block.orientation * mu;
+  if (block.kind === "transcritical") return y * (y - block.slope * mu);
+  return y * (block.orientation * mu - y * y);
+}
+
+function mixedBlockFormula(block, index) {
+  const subscripts = ["₁", "₂", "₃", "₄"];
+  const subscript = subscripts[index] || String(index + 1);
+  if (block.kind === "saddle-node") {
+    return `B${subscript}=y${subscript}² ${block.orientation > 0 ? "−" : "+"} μ${subscript}`;
+  }
+  if (block.kind === "transcritical") {
+    const slope = compactNumber(block.slope, 2);
+    return `B${subscript}=y${subscript}(y${subscript} ${block.slope > 0 ? "−" : "+"} ${slope.replace("−", "")}μ${subscript})`;
+  }
+  return `B${subscript}=y${subscript}(${block.orientation > 0 ? "μ" : "−μ"}${subscript}−y${subscript}²)`;
+}
+
+/**
+ * Build a structured but still seeded analytic family containing several
+ * different local bifurcation types.  The tanh factors are real analytic,
+ * have exactly the same zero sets as their event blocks, and keep products of
+ * several blocks numerically well scaled across the displayed window.
+ */
+function createRandomMixedFamily(seed = "bifurcation", options = {}) {
+  const random = createRng(`${seed}|mixed`);
+  const requestedRecipe = Array.isArray(options.recipe)
+    ? options.recipe.filter((kind) => ["saddle-node", "transcritical", "pitchfork"].includes(kind))
+    : null;
+  const baseRecipe = requestedRecipe?.length >= 2
+    ? requestedRecipe.slice(0, 3)
+    : MIXED_RANDOM_RECIPES[Math.floor(random() * MIXED_RANDOM_RECIPES.length)];
+  const recipe = shuffleWithRng(baseRecipe, random);
+  const count = recipe.length;
+  const laneCenters = count === 2 ? [-1.05, 1.05] : [-1.32, 0, 1.32];
+  const rRange = options.rRange || [-1.8, 1.8];
+  const xRange = options.xRange || [-2.25, 2.25];
+  const blocks = recipe.map((kind, index) => ({
+    kind,
+    x0: laneCenters[index] + randomBetween(random, -0.07, 0.07),
+    r0: randomBetween(random, -0.62, 0.62),
+    xScale: count === 2
+      ? randomBetween(random, 0.34, 0.41)
+      : randomBetween(random, 0.25, 0.3),
+    rScale: randomBetween(random, 0.9, 1.15),
+    drift: randomBetween(random, -0.09, 0.09),
+    orientation: randomSign(random),
+    slope: randomSign(random) * randomBetween(random, 0.3, 0.48)
+  }));
+  const timeSign = randomSign(random);
+  const gain = randomBetween(random, 0.8, 1.3);
+  const sineWeight = randomBetween(random, 0.08, 0.2);
+  const sineFrequency = randomBetween(random, 0.72, 1.2);
+  const sinePhase = randomBetween(random, -Math.PI, Math.PI);
+  const logWeight = randomBetween(random, 0.04, 0.1);
+  const logRate = randomBetween(random, 0.24, 0.48);
+  const speedFactor = (x, r) => Math.exp(sineWeight * Math.sin(sineFrequency * x + sinePhase))
+    * (1 + logWeight * Math.log1p(logRate * r * r));
+  const evaluate = (x, r) => timeSign * gain * speedFactor(x, r)
+    * blocks.reduce((product, block) => product * Math.tanh(mixedBlockValue(block, x, r)), 1);
+
+  const baseDefinition = {
+    id: `random-${hashSeed(`${seed}|mixed|${recipe.join("|")}`).toString(16).padStart(8, "0")}`,
+    name: "Random analytic family · mixed events",
+    shortName: "Random · mixed events",
+    description: "A seeded structured analytic family containing several separated local bifurcation types.",
+    formula: "",
+    xRange,
+    rRange,
+    defaultR: blocks.reduce((sum, block) => sum + block.r0, 0) / blocks.length,
+    seed,
+    sourceType: "random",
+    knownCandidates: [],
+    eval: evaluate
+  };
+  const provisional = makeFamily(baseDefinition);
+  const knownCandidates = blocks.map((block) => {
+    const classification = classifyCandidate(provisional, { x: block.x0, r: block.r0 });
+    return {
+      x: block.x0,
+      r: block.r0,
+      type: classification.type,
+      label: classification.label
+    };
+  });
+  const eventLabels = knownCandidates.map((candidate) => candidate.label.toLowerCase());
+  const centerList = blocks
+    .map((block, index) => `${index + 1}:(${compactNumber(block.x0, 2)},${compactNumber(block.r0, 2)})`)
+    .join(", ");
+  const blockList = blocks.map(mixedBlockFormula).join(", ");
+  const speedFormula = `M=exp(${sineWeight.toFixed(2)}sin(${sineFrequency.toFixed(2)}x ${sinePhase < 0 ? "−" : "+"} ${Math.abs(sinePhase).toFixed(2)}))`
+    + `(1+${logWeight.toFixed(2)}ln(1+${logRate.toFixed(2)}r²))>0`;
+  const formula = `ẋ = ${timeSign < 0 ? "−" : ""}${gain.toFixed(2)}M(x,r)∏tanh(Bⱼ); ${blockList}; `
+    + `yⱼ=(x−xⱼ−dⱼ(r−rⱼ))/wⱼ, μⱼ=(r−rⱼ)/hⱼ; ${speedFormula}; centers ${centerList}`;
+  const displayTypes = eventLabels.join(" + ");
+  return makeFamily({
+    ...baseDefinition,
+    name: `Random analytic family · ${displayTypes}`,
+    shortName: `Random · ${displayTypes}`,
+    description: `A seeded structured analytic family with ${displayTypes}.`,
+    formula,
+    knownCandidates
+  });
+}
+
 /**
  * Build a globally richer generic family. Its equilibrium set is one analytic
  * snake r = g(x) with three to six planted ordinary folds. The positive speed
@@ -722,7 +847,10 @@ export function createRandomFamily(seed = "bifurcation", options = {}) {
   if (options.mode === "local" || options.kind || options.kinds) {
     return createLocalRandomFamily(seed, options);
   }
-  return createRandomLandscapeFamily(seed, options);
+  if (options.mode === "landscape" || Number.isFinite(Number(options.foldCount))) {
+    return createRandomLandscapeFamily(seed, options);
+  }
+  return createRandomMixedFamily(seed, options);
 }
 
 const EXPRESSION_FUNCTIONS = Object.freeze({
@@ -1746,6 +1874,321 @@ export function sampleBifurcation(
   });
 }
 
+function contourAxis(minimum, maximum, cells, anchors = []) {
+  const span = maximum - minimum;
+  const anchor = anchors.find((value) => Number.isFinite(value) && value > minimum && value < maximum);
+  if (Number.isFinite(anchor)) {
+    // Put the singular point at the center of a cell rather than on a grid
+    // edge. This prevents an entire equilibrium branch that happens to equal
+    // zero on a grid line from masking the other arms of a crossing.
+    const step = span / cells;
+    const values = [minimum];
+    const firstIndex = Math.ceil((minimum - anchor) / step - 0.5);
+    const lastIndex = Math.floor((maximum - anchor) / step - 0.5);
+    for (let index = firstIndex; index <= lastIndex; index += 1) {
+      const value = anchor + (index + 0.5) * step;
+      if (value > minimum + span * 1e-13 && value < maximum - span * 1e-13) values.push(value);
+    }
+    values.push(maximum);
+    return values;
+  }
+  return Array.from(
+    { length: cells + 1 },
+    (_, index) => minimum + span * index / cells
+  );
+}
+
+function contourSegmentKey(segment, bounds) {
+  const rSpan = bounds.rMax - bounds.rMin;
+  const xSpan = bounds.xMax - bounds.xMin;
+  const pointKey = (point) => {
+    const r = Math.round((point.r - bounds.rMin) / rSpan * 1e9);
+    const x = Math.round((point.x - bounds.xMin) / xSpan * 1e9);
+    return `${r}:${x}`;
+  };
+  const left = pointKey(segment[0]);
+  const right = pointKey(segment[1]);
+  return left < right ? `${left}|${right}` : `${right}|${left}`;
+}
+
+/**
+ * Sample the implicit zero set evaluate(x, r) = 0 with viewport-adaptive
+ * marching squares.  Unlike equilibrium branch tracking, this representation
+ * naturally retains folds, crossings, and several branches meeting at one
+ * singular point, so it is well suited to the zoomable local microscope.
+ */
+export function sampleZeroContour(evaluate, bounds, options = {}) {
+  if (typeof evaluate !== "function") throw new TypeError("A zero contour requires an evaluator");
+  const rMin = assertFinite(Number(bounds?.rMin), "rMin");
+  const rMax = assertFinite(Number(bounds?.rMax), "rMax");
+  const xMin = assertFinite(Number(bounds?.xMin), "xMin");
+  const xMax = assertFinite(Number(bounds?.xMax), "xMax");
+  if (!(rMax > rMin) || !(xMax > xMin)) throw new RangeError("Contour bounds must have positive width");
+  const rCells = clamp(Math.floor(options.rCells || 180), 8, 320);
+  const xCells = clamp(Math.floor(options.xCells || 120), 8, 240);
+  const rValues = contourAxis(rMin, rMax, rCells, options.rAnchors || []);
+  const xValues = contourAxis(xMin, xMax, xCells, options.xAnchors || []);
+  const values = xValues.map((x) => rValues.map((r) => {
+    const value = Number(evaluate(x, r));
+    return Number.isFinite(value) ? value : Number.NaN;
+  }));
+  const magnitudes = values.flat().filter(Number.isFinite).map(Math.abs).sort((left, right) => left - right);
+  const robustMagnitude = magnitudes[Math.floor(0.85 * Math.max(0, magnitudes.length - 1))] || 1;
+  const zeroTolerance = options.zeroTolerance ?? Math.max(64 * Number.EPSILON, robustMagnitude * 1e-10);
+  const rawSegments = [];
+  const addSegment = (left, right) => {
+    if (!left || !right) return;
+    if (!Number.isFinite(left.r) || !Number.isFinite(left.x) || !Number.isFinite(right.r) || !Number.isFinite(right.x)) return;
+    if (Math.hypot(
+      (left.r - right.r) / (rMax - rMin),
+      (left.x - right.x) / (xMax - xMin)
+    ) <= 1e-13) return;
+    rawSegments.push([left, right]);
+  };
+  const isZero = (value) => Number.isFinite(value) && Math.abs(value) <= zeroTolerance;
+  const edgeIntersection = (left, right) => {
+    const leftZero = isZero(left.value);
+    const rightZero = isZero(right.value);
+    if (leftZero && rightZero) return { full: true, left, right };
+    if (leftZero) return { point: { r: left.r, x: left.x, exact: true } };
+    if (rightZero) return { point: { r: right.r, x: right.x, exact: true } };
+    if (!Number.isFinite(left.value) || !Number.isFinite(right.value) || Math.sign(left.value) === Math.sign(right.value)) return null;
+    const fraction = clamp(left.value / (left.value - right.value), 0, 1);
+    return {
+      point: {
+        r: left.r + (right.r - left.r) * fraction,
+        x: left.x + (right.x - left.x) * fraction,
+        exact: false
+      }
+    };
+  };
+  for (let xIndex = 0; xIndex < xValues.length - 1; xIndex += 1) {
+    for (let rIndex = 0; rIndex < rValues.length - 1; rIndex += 1) {
+      const corners = [
+        { r: rValues[rIndex], x: xValues[xIndex], value: values[xIndex][rIndex] },
+        { r: rValues[rIndex + 1], x: xValues[xIndex], value: values[xIndex][rIndex + 1] },
+        { r: rValues[rIndex + 1], x: xValues[xIndex + 1], value: values[xIndex + 1][rIndex + 1] },
+        { r: rValues[rIndex], x: xValues[xIndex + 1], value: values[xIndex + 1][rIndex] }
+      ];
+      if (corners.every((corner) => !Number.isFinite(corner.value))) continue;
+      const edgePairs = [[0, 1], [1, 2], [2, 3], [3, 0]];
+      const edgePoints = Array(4).fill(null);
+      for (let edgeIndex = 0; edgeIndex < edgePairs.length; edgeIndex += 1) {
+        const [leftIndex, rightIndex] = edgePairs[edgeIndex];
+        const intersection = edgeIntersection(corners[leftIndex], corners[rightIndex]);
+        if (intersection?.full) {
+          addSegment(
+            { r: intersection.left.r, x: intersection.left.x },
+            { r: intersection.right.r, x: intersection.right.x }
+          );
+        } else if (intersection?.point) edgePoints[edgeIndex] = intersection.point;
+      }
+      const uniquePoints = [];
+      for (const point of edgePoints.filter(Boolean)) {
+        if (!uniquePoints.some((other) =>
+          Math.abs(other.r - point.r) <= (rMax - rMin) * 1e-11
+          && Math.abs(other.x - point.x) <= (xMax - xMin) * 1e-11
+        )) uniquePoints.push(point);
+      }
+      if (uniquePoints.length === 2) {
+        addSegment(uniquePoints[0], uniquePoints[1]);
+      } else if (uniquePoints.length === 3) {
+        const junction = uniquePoints.find((point) => point.exact) || {
+          r: uniquePoints.reduce((sum, point) => sum + point.r, 0) / 3,
+          x: uniquePoints.reduce((sum, point) => sum + point.x, 0) / 3
+        };
+        uniquePoints.forEach((point) => {
+          if (point !== junction) addSegment(junction, point);
+        });
+      } else if (uniquePoints.length === 4) {
+        const center = {
+          r: (corners[0].r + corners[2].r) / 2,
+          x: (corners[0].x + corners[2].x) / 2
+        };
+        const centerValue = Number(evaluate(center.x, center.r));
+        if (!Number.isFinite(centerValue) || Math.abs(centerValue) <= zeroTolerance) {
+          uniquePoints.forEach((point) => addSegment(center, point));
+        } else {
+          const centerSign = Math.sign(centerValue);
+          const adjacentEdges = [[3, 0], [0, 1], [1, 2], [2, 3]];
+          let paired = 0;
+          corners.forEach((corner, cornerIndex) => {
+            if (!Number.isFinite(corner.value) || Math.sign(corner.value) === centerSign) return;
+            const [firstEdge, secondEdge] = adjacentEdges[cornerIndex];
+            if (edgePoints[firstEdge] && edgePoints[secondEdge]) {
+              addSegment(edgePoints[firstEdge], edgePoints[secondEdge]);
+              paired += 1;
+            }
+          });
+          if (paired < 2) {
+            addSegment(uniquePoints[0], uniquePoints[1]);
+            addSegment(uniquePoints[2], uniquePoints[3]);
+          }
+        }
+      } else if (uniquePoints.length > 1) {
+        const center = {
+          r: uniquePoints.reduce((sum, point) => sum + point.r, 0) / uniquePoints.length,
+          x: uniquePoints.reduce((sum, point) => sum + point.x, 0) / uniquePoints.length
+        };
+        uniquePoints.forEach((point) => addSegment(center, point));
+      }
+    }
+  }
+  const boundsRecord = { rMin, rMax, xMin, xMax };
+  const seen = new Set();
+  const dedupedSegments = rawSegments.filter((segment) => {
+    const key = contourSegmentKey(segment, boundsRecord);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const pointKey = (point) => {
+    const r = Math.round((point.r - rMin) / (rMax - rMin) * 1e9);
+    const x = Math.round((point.x - xMin) / (xMax - xMin) * 1e9);
+    return `${r}:${x}`;
+  };
+  for (const singular of options.singularPoints || []) {
+    if (
+      !Number.isFinite(singular?.r) || !Number.isFinite(singular?.x)
+      || singular.r < rMin || singular.r > rMax
+      || singular.x < xMin || singular.x > xMax
+    ) continue;
+    const singularValue = Number(evaluate(singular.x, singular.r));
+    if (!Number.isFinite(singularValue) || Math.abs(singularValue) > zeroTolerance * 8) continue;
+    const rStep = (rMax - rMin) / rCells;
+    const xStep = (xMax - xMin) / xCells;
+    const rRadius = Math.min(2.6 * rStep, singular.r - rMin, rMax - singular.r);
+    const xRadius = Math.min(2.6 * xStep, singular.x - xMin, xMax - singular.x);
+    const ringRoots = [];
+    if (rRadius > 0 && xRadius > 0) {
+      const ringSamples = 160;
+      const ringPoint = (angle) => ({
+        r: singular.r + rRadius * Math.cos(angle),
+        x: singular.x + xRadius * Math.sin(angle)
+      });
+      const ringValue = (angle) => {
+        const point = ringPoint(angle);
+        return Number(evaluate(point.x, point.r));
+      };
+      for (let index = 0; index < ringSamples; index += 1) {
+        let leftAngle = 2 * Math.PI * index / ringSamples;
+        let rightAngle = 2 * Math.PI * (index + 1) / ringSamples;
+        let leftValue = ringValue(leftAngle);
+        let rightValue = ringValue(rightAngle);
+        if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) continue;
+        let rootAngle = null;
+        if (Math.abs(leftValue) <= zeroTolerance) rootAngle = leftAngle;
+        else if (Math.sign(leftValue) !== Math.sign(rightValue)) {
+          for (let iteration = 0; iteration < 28; iteration += 1) {
+            const middleAngle = (leftAngle + rightAngle) / 2;
+            const middleValue = ringValue(middleAngle);
+            if (!Number.isFinite(middleValue)) break;
+            if (Math.abs(middleValue) <= zeroTolerance * 0.05) {
+              leftAngle = middleAngle;
+              rightAngle = middleAngle;
+              break;
+            }
+            if (Math.sign(leftValue) === Math.sign(middleValue)) {
+              leftAngle = middleAngle;
+              leftValue = middleValue;
+            } else {
+              rightAngle = middleAngle;
+              rightValue = middleValue;
+            }
+          }
+          rootAngle = (leftAngle + rightAngle) / 2;
+        }
+        if (rootAngle == null) continue;
+        const normalized = (rootAngle + 2 * Math.PI) % (2 * Math.PI);
+        const duplicate = ringRoots.some((root) => {
+          const separation = Math.abs(root.angle - normalized);
+          return Math.min(separation, 2 * Math.PI - separation) < 2 * Math.PI / ringSamples * 0.6;
+        });
+        if (!duplicate) ringRoots.push({ angle: normalized, point: ringPoint(normalized) });
+      }
+    }
+    if (ringRoots.length >= 2) {
+      const existingDirections = [];
+      for (const segment of dedupedSegments) {
+        let other = null;
+        if (
+          Math.abs(segment[0].r - singular.r) <= (rMax - rMin) * 1e-11
+          && Math.abs(segment[0].x - singular.x) <= (xMax - xMin) * 1e-11
+        ) other = segment[1];
+        else if (
+          Math.abs(segment[1].r - singular.r) <= (rMax - rMin) * 1e-11
+          && Math.abs(segment[1].x - singular.x) <= (xMax - xMin) * 1e-11
+        ) other = segment[0];
+        if (other) existingDirections.push(Math.atan2(
+          (other.x - singular.x) / xRadius,
+          (other.r - singular.r) / rRadius
+        ));
+      }
+      for (const root of ringRoots) {
+        const direction = Math.atan2(
+          (root.point.x - singular.x) / xRadius,
+          (root.point.r - singular.r) / rRadius
+        );
+        const alreadyConnected = existingDirections.some((other) => {
+          const separation = Math.abs(other - direction);
+          return Math.min(separation, 2 * Math.PI - separation) < 0.16;
+        });
+        if (alreadyConnected) continue;
+        const bridge = [
+          { r: singular.r, x: singular.x },
+          { r: root.point.r, x: root.point.x }
+        ];
+        const key = contourSegmentKey(bridge, boundsRecord);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        dedupedSegments.push(bridge);
+        existingDirections.push(direction);
+      }
+      continue;
+    }
+    const endpointData = new Map();
+    for (const segment of dedupedSegments) {
+      for (const point of segment) {
+        const key = pointKey(point);
+        const record = endpointData.get(key) || { point, count: 0 };
+        record.count += 1;
+        endpointData.set(key, record);
+      }
+    }
+    const nearbyEnds = [...endpointData.values()]
+      .filter((record) => record.count === 1)
+      .map((record) => ({
+        point: record.point,
+        distance: Math.hypot(
+          (record.point.r - singular.r) / rStep,
+          (record.point.x - singular.x) / xStep
+        )
+      }))
+      .filter((record) => record.distance <= 3.25)
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, 8);
+    for (const endpoint of nearbyEnds) {
+      const bridge = [
+        { r: singular.r, x: singular.x },
+        { r: endpoint.point.r, x: endpoint.point.x }
+      ];
+      const key = contourSegmentKey(bridge, boundsRecord);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dedupedSegments.push(bridge);
+    }
+  }
+  const segments = dedupedSegments.map((segment) =>
+    Object.freeze(segment.map((point) => Object.freeze({ r: point.r, x: point.x })))
+  );
+  return Object.freeze({
+    bounds: Object.freeze(boundsRecord),
+    rSamples: rValues.length,
+    xSamples: xValues.length,
+    segments: Object.freeze(segments)
+  });
+}
+
 /**
  * Taylor data in u = x-x0 and mu = r-r0. Coefficients already include the
  * factorial denominator, so they can be evaluated directly as a polynomial.
@@ -1868,6 +2311,7 @@ export default Object.freeze({
   derivativesAt,
   findEquilibria,
   sampleBifurcation,
+  sampleZeroContour,
   detectBifurcations,
   classifyCandidate,
   taylorData,

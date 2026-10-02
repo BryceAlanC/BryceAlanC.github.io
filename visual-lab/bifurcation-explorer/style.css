@@ -44,6 +44,40 @@
   min-height: 44px;
 }
 
+.imperfection-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.bifurcation-app .imperfection-play {
+  display: inline-grid;
+  width: 1.8rem;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  min-height: 1.8rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(11, 87, 72, 0.45);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--forest);
+  cursor: pointer;
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.bifurcation-app .imperfection-play:hover,
+.bifurcation-app .imperfection-play[aria-pressed="true"] {
+  background: var(--forest);
+  color: var(--white);
+}
+
+.bifurcation-app .imperfection-play:focus-visible {
+  outline: 3px solid rgba(217, 167, 63, 0.7);
+  outline-offset: 2px;
+}
+
 .full-width-button {
   width: 100%;
   margin-top: 0.65rem;
@@ -1226,6 +1260,70 @@
 #bifurcation-workspace.is-fullscreen .canvas-frame-large,
 #bifurcation-workspace.is-fullscreen .canvas-frame-phase {
   min-height: 0;
+}
+
+@media (min-width: 1280px) {
+  #bifurcation-workspace.is-fullscreen.is-hysteresis {
+    grid-template-columns: minmax(260px, 280px) minmax(0, 1fr);
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .stage-stack {
+    grid-template-columns: minmax(0, 2.3fr) minmax(270px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+    scrollbar-gutter: auto;
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .stage-stack > .stage-panel:first-child,
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .stage-stack > .hysteresis-panel:not([hidden]) {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .dynamics-workbench {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.85fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 0.38fr);
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-panel:not([hidden]) {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-panel .stage-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-panel .stage-heading > p {
+    text-align: left;
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-grid {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    overflow: hidden;
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-plot {
+    min-width: 0;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  #bifurcation-workspace.is-fullscreen.is-hysteresis .hysteresis-copy {
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
 }
 
 @media (max-width: 1179px) {

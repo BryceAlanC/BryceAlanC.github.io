@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261001-10" />
-    <script type="module" src="./demo.js?v=20261001-10"></script>
+    <link rel="stylesheet" href="./style.css?v=20261002-1" />
+    <script type="module" src="./demo.js?v=20261002-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -97,7 +97,7 @@
               <legend>Family</legend>
               <label class="field-label" for="family-select">Equation family</label>
               <select id="family-select">
-                <option value="random" selected>Random analytic family · 3–6 folds</option>
+                <option value="random" selected>Random analytic family · mixed events</option>
                 <option value="custom">Custom equation…</option>
                 <option value="saddle-node">Saddle-node</option>
                 <option value="transcritical">Transcritical</option>
@@ -202,13 +202,23 @@
 
               <div class="field-label field-label-spaced">
                 <label for="pitchfork-alpha"><span class="math-symbol">α</span> · constant imperfection</label>
-                <output id="pitchfork-alpha-value" for="pitchfork-alpha">0.000</output>
+                <span class="imperfection-readout">
+                  <output id="pitchfork-alpha-value" for="pitchfork-alpha">0.000</output>
+                  <button class="imperfection-play" id="play-pitchfork-alpha" type="button" aria-controls="pitchfork-alpha" aria-pressed="false" aria-label="Play alpha imperfection animation">
+                    <span aria-hidden="true">▶</span>
+                  </button>
+                </span>
               </div>
               <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" aria-label="Alpha, constant imperfection" aria-describedby="pitchfork-unfolding-help" />
 
               <div class="field-label field-label-spaced">
                 <label for="pitchfork-beta"><span class="math-symbol">β</span> · quadratic imperfection</label>
-                <output id="pitchfork-beta-value" for="pitchfork-beta">0.000</output>
+                <span class="imperfection-readout">
+                  <output id="pitchfork-beta-value" for="pitchfork-beta">0.000</output>
+                  <button class="imperfection-play" id="play-pitchfork-beta" type="button" aria-controls="pitchfork-beta" aria-pressed="false" aria-label="Play beta imperfection animation">
+                    <span aria-hidden="true">▶</span>
+                  </button>
+                </span>
               </div>
               <input id="pitchfork-beta" type="range" min="-1.5" max="1.5" value="0" step="0.01" aria-label="Beta, quadratic imperfection" aria-describedby="pitchfork-unfolding-help" />
               <p class="control-help" id="pitchfork-unfolding-help">
@@ -361,15 +371,17 @@
                       id="slope-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Slope field in the time-state plane for the currently selected parameter. Click to add a trajectory, or use arrow keys to choose an initial state and Enter to add it."
+                      aria-label="Slope field in the time-state plane for the currently selected parameter. Gold dots on equilibrium lines show constant solutions. Click to add a trajectory, or use arrow keys to move the gold initial-state arrow and Enter to add it."
                       aria-describedby="slope-description"
                     ></canvas>
                   </div>
                   <p class="sr-only" id="slope-description">
                     Short line segments show the direction of solutions in the time-state
-                    plane. Horizontal guide lines mark equilibria, and solution curves show
-                    where several initial states move. With the plot focused, use arrow keys
-                    to choose an initial state and press Enter or Space to add its trajectory.
+                    plane. Horizontal guide lines mark equilibria. Gold dots traveling along
+                    those lines highlight the corresponding constant solutions, while the other
+                    solution curves show where several initial states move. The gold arrow beside
+                    the state axis marks the keyboard-selected initial state. With the plot focused,
+                    use arrow keys to move that arrow and press Enter or Space to add its trajectory.
                   </p>
                 </section>
 
@@ -522,12 +534,12 @@
             <details class="method-notes">
               <summary>Mathematical notes</summary>
               <p class="app-note">
-                <strong>Random analytic families.</strong> Each generated family uses
-                a seeded analytic equilibrium curve with three to six distinct turning points,
-                together with positive trigonometric, exponential, and logarithmic factors that
-                vary the flow speed without changing its equilibria. Each turning point is a
-                generic saddle-node. Exact transcritical and pitchfork bifurcations require additional
-                structure and therefore remain deliberate presets rather than generic random output.
+                <strong>Random analytic families.</strong> Each seeded family combines two or three
+                separated analytic event blocks chosen from saddle-node, transcritical, and pitchfork
+                forms. Positive trigonometric and logarithmic factors vary the flow speed without
+                changing the equilibria. This generator is deliberately curated rather than
+                statistically generic: exact transcritical and pitchfork events require special
+                structure, but including them makes the generated diagrams more useful for comparison.
               </p>
               <p class="app-note">
                 <strong>N-branch crossings and pitchfork unfoldings.</strong> The adjustable n-branch family

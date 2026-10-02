@@ -328,9 +328,9 @@ assert.deepEqual(model.PRESET_IDS, [
 }
 
 {
-  const first = model.createFamily("random", "repeatable-seed");
-  const second = model.createFamily("random", "repeatable-seed");
-  const third = model.createFamily("random", "different-seed");
+  const first = model.createFamily("random", "repeatable-seed", { mode: "landscape" });
+  const second = model.createFamily("random", "repeatable-seed", { mode: "landscape" });
+  const third = model.createFamily("random", "different-seed", { mode: "landscape" });
   assert.equal(first.formula, second.formula);
   assert.equal(first.eval(0.37, -0.18), second.eval(0.37, -0.18));
   assert.deepEqual(first.knownCandidates, second.knownCandidates);
@@ -348,9 +348,11 @@ assert.deepEqual(model.PRESET_IDS, [
   assert.ok(detected.every((candidate) => candidate.type === "saddle-node"));
 
   assert.deepEqual(
-    ["c", "e", "a", "d"].map((seed) => model.createRandomFamily(seed).knownCandidates.length),
+    ["c", "e", "a", "d"].map((seed) =>
+      model.createRandomFamily(seed, { mode: "landscape" }).knownCandidates.length
+    ),
     [3, 4, 5, 6],
-    "seeded defaults should cover the advertised three-to-six-fold range"
+    "seeded landscapes should cover the advertised three-to-six-fold range"
   );
   assert.equal(model.createRandomFamily("three-fold-landscape", { foldCount: 2 }).knownCandidates.length, 3);
   assert.equal(model.createRandomFamily("six-fold-landscape", { foldCount: 9 }).knownCandidates.length, 6);
@@ -383,6 +385,51 @@ assert.deepEqual(model.PRESET_IDS, [
     "subcritical-pitchfork"
   ].includes(disallowed.knownCandidates[0].type));
   assert.notEqual(disallowed.knownCandidates[0].type, "n-fold");
+}
+
+{
+  const expectedTypesBySeed = new Map([
+    ["c", ["transcritical", "subcritical-pitchfork", "saddle-node"]],
+    ["e", ["saddle-node", "transcritical"]],
+    ["a", ["supercritical-pitchfork", "transcritical"]],
+    ["d", ["transcritical", "supercritical-pitchfork", "saddle-node"]]
+  ]);
+
+  for (const [seed, expectedTypes] of expectedTypesBySeed) {
+    const family = model.createFamily("random", seed);
+    const repeated = model.createFamily("random", seed);
+    const unplanted = Object.freeze({ ...family, knownCandidates: Object.freeze([]) });
+    assert.equal(family.formula, repeated.formula, `mixed family ${seed} should be deterministic`);
+    assert.deepEqual(family.knownCandidates, repeated.knownCandidates);
+    assert.deepEqual(family.knownCandidates.map((candidate) => candidate.type), expectedTypes);
+    assert.ok(
+      family.knownCandidates.some((candidate) => candidate.type !== "saddle-node"),
+      `default mixed family ${seed} should include a non-fold event`
+    );
+
+    for (const candidate of family.knownCandidates) {
+      near(family.eval(candidate.x, candidate.r), 0, 1e-11, "mixed event must satisfy f=0");
+      near(
+        model.partialDerivative(family, candidate.x, candidate.r, 1, 0),
+        0,
+        2e-7,
+        "mixed event must satisfy f_x=0"
+      );
+      assert.equal(
+        model.classifyCandidate(unplanted, { x: candidate.x, r: candidate.r }).type,
+        candidate.type
+      );
+    }
+    const detectedTypes = model.sampleBifurcation(family, {
+      rSamples: 121,
+      xSamples: 360
+    }).candidates.map((candidate) => candidate.type).sort();
+    assert.deepEqual(
+      detectedTypes,
+      expectedTypes.slice().sort(),
+      `mixed family ${seed} should expose every planted event without ghost bifurcations`
+    );
+  }
 }
 
 {
@@ -496,6 +543,52 @@ assert.deepEqual(model.PRESET_IDS, [
   }
   const normalTerms = data.coefficients.filter((coefficient) => coefficient.normalFormTerm);
   assert.deepEqual(normalTerms.map(({ xOrder, rOrder }) => [xOrder, rOrder]), [[2, 0], [1, 1]]);
+}
+
+{
+  const incidenceCases = [
+    ["saddle-node", 2],
+    ["transcritical", 4],
+    ["supercritical-pitchfork", 4],
+    ["subcritical-pitchfork", 4]
+  ];
+  for (const [familyId, expectedArms] of incidenceCases) {
+    const family = model.createFamily(familyId);
+    const singular = family.knownCandidates[0];
+    for (const halfWidth of [1, 0.08]) {
+      const contour = model.sampleZeroContour(
+        family.eval,
+        {
+          rMin: singular.r - halfWidth,
+          rMax: singular.r + halfWidth,
+          xMin: singular.x - halfWidth,
+          xMax: singular.x + halfWidth
+        },
+        {
+          rCells: 80,
+          xCells: 80,
+          rAnchors: [singular.r],
+          xAnchors: [singular.x],
+          singularPoints: [singular]
+        }
+      );
+      const incidentArms = contour.segments.filter((segment) => segment.some((point) =>
+        Math.abs(point.r - singular.r) <= 1e-14
+        && Math.abs(point.x - singular.x) <= 1e-14
+      ));
+      assert.equal(
+        incidentArms.length,
+        expectedArms,
+        `${familyId} microscope contour should have ${expectedArms} arms at width ${halfWidth}`
+      );
+      assert.ok(
+        contour.segments.every((segment) => segment.every((point) =>
+          Number.isFinite(point.r) && Number.isFinite(point.x)
+        )),
+        `${familyId} microscope contour should remain finite at width ${halfWidth}`
+      );
+    }
+  }
 }
 
 {
