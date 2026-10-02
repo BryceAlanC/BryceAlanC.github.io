@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-9";
+} from "./model.js?v=20261001-10";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -125,7 +125,7 @@ const state = {
   sweepRunning: false,
   sweepDirection: 1,
   sweepSpeed: Number(elements.sweepSpeed.value),
-  particlesPaused: false,
+  particlesPaused: motionQuery.matches,
   particles: [],
   particleCursor: 0,
   particleEmitterElapsed: 0,
@@ -192,6 +192,13 @@ function formatNumber(value, digits = 3) {
   return Number(formatted) === 0 ? formatted.replace(/^-/, "") : formatted;
 }
 
+function bifurcationStatus(count, pointOutsideView = false) {
+  const pointText = count === 0
+    ? "no bifurcation points detected"
+    : `${count} bifurcation ${count === 1 ? "point" : "points"} marked`;
+  return `Ready · ${pointText}${pointOutsideView ? " · selected point is outside the current view" : ""}`;
+}
+
 function titleCase(text) {
   return String(text)
     .replace(/-/g, " ")
@@ -242,7 +249,6 @@ function syncFullscreenState(options = {}) {
   state.fullscreenActive = isActive;
   elements.workspace?.classList.toggle("is-fullscreen", isActive);
   if (elements.fullscreenToggle) {
-    elements.fullscreenToggle.setAttribute("aria-pressed", String(isActive));
     elements.fullscreenToggle.setAttribute("aria-label", isActive ? "Exit full screen" : "Enter full screen");
     elements.fullscreenToggle.title = isActive ? "Exit full screen" : "Enter full screen";
   }
@@ -354,7 +360,7 @@ function drawAxes(context, box, xRange, yRange, options = {}) {
   const axisColor = dark ? "rgba(231, 246, 241, 0.42)" : "rgba(23, 33, 29, 0.42)";
   const labelColor = dark ? "rgba(231, 246, 241, 0.68)" : COLORS.muted;
   context.save();
-  context.font = "10px 'IBM Plex Mono', monospace";
+  context.font = "11px 'IBM Plex Mono', monospace";
   context.textBaseline = "top";
   for (const value of niceTicks(xRange[0], xRange[1], 6)) {
     const x = mapHorizontal(value, xRange[0], xRange[1], box);
@@ -855,7 +861,7 @@ function drawPhaseLine() {
   context.lineTo(right, lineY);
   context.stroke();
 
-  context.font = "10px 'IBM Plex Mono', monospace";
+  context.font = "11px 'IBM Plex Mono', monospace";
   context.textAlign = "center";
   context.fillStyle = COLORS.muted;
   for (const tick of niceTicks(state.view.xMin, state.view.xMax, 8)) {
@@ -889,9 +895,9 @@ function drawPhaseLine() {
     const x = phaseX(equilibrium.x, width);
     drawEquilibriumMarker(context, x, lineY, equilibrium, 7, false);
     context.fillStyle = String(equilibrium.stability).startsWith("stable") ? COLORS.forest : COLORS.unstable;
-    context.font = "600 9px 'IBM Plex Mono', monospace";
+    context.font = "600 10px 'IBM Plex Mono', monospace";
     context.fillText(
-      String(equilibrium.stability).startsWith("stable") ? "ATTRACT" : String(equilibrium.stability).startsWith("unstable") ? "REPEL" : "NONHYP",
+      String(equilibrium.stability).startsWith("stable") ? "STABLE" : String(equilibrium.stability).startsWith("unstable") ? "UNSTABLE" : "NONHYP.",
       x,
       lineY - 18
     );
@@ -1194,8 +1200,8 @@ function updateHysteresis(delta, now) {
     const increasingAtCenter = nearestTracePoint(state.hysteresis.increasing, comparisonR);
     state.r = comparisonR;
     if (increasingAtCenter) state.hysteresis.x = increasingAtCenter.x;
-    elements.runHysteresis.textContent = "Run hysteresis loop again";
-    elements.hysteresisPanelButton.textContent = "Run the loop again";
+    elements.runHysteresis.textContent = "Run loop again";
+    elements.hysteresisPanelButton.textContent = "Run loop again";
     elements.hysteresisStatus.textContent = "Loop complete · comparing both histories at r = 0";
     updateCurrentSlice();
     announce("The hysteresis loop is complete. The display now compares the increasing and decreasing histories at the same parameter.");
@@ -1275,7 +1281,7 @@ function updateCurrentOutputs() {
     const chip = document.createElement("span");
     chip.className = "equilibrium-chip";
     chip.setAttribute("role", "listitem");
-    chip.textContent = "No equilibrium in the visible window";
+    chip.textContent = "No equilibria in the visible window";
     elements.phaseReadout.append(chip);
   } else {
     for (const equilibrium of state.equilibria) {
@@ -1292,14 +1298,14 @@ function updateCurrentOutputs() {
 
 function stopSweep() {
   state.sweepRunning = false;
-  elements.toggleSweep.textContent = "Play sweep";
+  elements.toggleSweep.textContent = "Play parameter sweep";
   elements.toggleSweep.classList.add("lab-button-primary");
 }
 
 function toggleSweep() {
   if (state.hysteresis.running) stopHysteresis(false);
   state.sweepRunning = !state.sweepRunning;
-  elements.toggleSweep.textContent = state.sweepRunning ? "Pause sweep" : "Play sweep";
+  elements.toggleSweep.textContent = state.sweepRunning ? "Pause parameter sweep" : "Play parameter sweep";
   elements.toggleSweep.classList.toggle("lab-button-primary", !state.sweepRunning);
   announce(state.sweepRunning ? "Parameter sweep playing." : "Parameter sweep paused.");
 }
@@ -1321,9 +1327,9 @@ function startHysteresis() {
   state.hysteresis.cycles = 0;
   state.hysteresis.lastRecordedAt = 0;
   state.hysteresisDirty = true;
-  elements.runHysteresis.textContent = "Pause hysteresis loop";
-  elements.hysteresisPanelButton.textContent = "Pause the loop";
-  elements.hysteresisStatus.textContent = "Recording the increasing-r path";
+  elements.runHysteresis.textContent = "Pause loop";
+  elements.hysteresisPanelButton.textContent = "Pause loop";
+  elements.hysteresisStatus.textContent = "Tracing the path as r increases";
   applyParameterReadout(true);
   announce("Hysteresis loop started. The parameter is increasing from the left.");
 }
@@ -1332,8 +1338,8 @@ function stopHysteresis(announceChange = true) {
   if (!state.hysteresis.running) return;
   state.hysteresis.running = false;
   state.hysteresisDirty = true;
-  elements.runHysteresis.textContent = "Restart hysteresis loop";
-  elements.hysteresisPanelButton.textContent = "Restart the loop";
+  elements.runHysteresis.textContent = "Restart loop";
+  elements.hysteresisPanelButton.textContent = "Restart loop";
   elements.hysteresisStatus.textContent = "Loop paused; the recorded path remains visible";
   if (announceChange) announce("Hysteresis loop paused.");
 }
@@ -1348,7 +1354,7 @@ function requestHysteresis() {
 
 function updateHysteresisReadout() {
   if (!state.family?.supportsHysteresis) {
-    elements.hysteresisStatus.textContent = "Load the hysteresis preset to begin";
+    elements.hysteresisStatus.textContent = "Choose the hysteresis family to begin";
     elements.hysteresisDirection.textContent = "—";
     elements.hysteresisState.textContent = "x = —";
     elements.hysteresisMemory.textContent = "Run one full loop to compare both histories.";
@@ -1362,10 +1368,10 @@ function updateHysteresisReadout() {
   elements.hysteresisState.textContent = `x = ${formatNumber(state.hysteresis.x, 3)}`;
   if (state.hysteresis.running) {
     elements.hysteresisStatus.textContent = state.hysteresis.direction > 0
-      ? "Recording the increasing-r path"
-      : "Recording the decreasing-r path";
+      ? "Tracing the path as r increases"
+      : "Tracing the path as r decreases";
   } else if (!hasTrace) {
-    elements.hysteresisStatus.textContent = "Ready to record an increasing and decreasing sweep";
+    elements.hysteresisStatus.textContent = "Ready to trace increasing and decreasing paths";
   }
   const increasing = nearestTracePoint(state.hysteresis.increasing, state.r);
   const decreasing = nearestTracePoint(state.hysteresis.decreasing, state.r);
@@ -1383,7 +1389,7 @@ function buildCandidateOptions() {
   if (!state.candidates.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No resolved candidate";
+    option.textContent = "No bifurcation point detected";
     elements.candidateSelect.append(option);
     elements.candidateSelect.disabled = true;
     elements.focusCandidate.disabled = true;
@@ -1543,6 +1549,10 @@ function updateMicroscopeCopy(candidate) {
   elements.localPopoverTitle.textContent = `B${state.selectedCandidate + 1} · ${classification.label}`;
   elements.classificationBadge.textContent = classification.label;
   elements.candidateCoordinate.textContent = `r* = ${formatNumber(candidate.r, 4)} · x* = ${formatNumber(candidate.x, 4)}`;
+  elements.candidateCoordinate.setAttribute(
+    "aria-label",
+    `Bifurcation parameter r equals ${formatNumber(candidate.r, 4)}; equilibrium state x equals ${formatNumber(candidate.x, 4)}`
+  );
   const derivativeKeys = ["f", "fx", "fr", "fxx", "fxr", "fxxx"];
   const values = elements.derivativeGrid.querySelectorAll("dd");
   derivativeKeys.forEach((key, index) => {
@@ -1555,12 +1565,12 @@ function updateMicroscopeCopy(candidate) {
   elements.microscopeCanvas.setAttribute(
     "aria-label",
     taylorCurveOmitted
-      ? `Zoomable local comparison of the exact equilibrium branches and degree-${branchCount} branch-product normal form. The degree-4 Taylor jet is zero, so it has no separate curve. Scroll to zoom, drag to pan, or press 0 to reset.`
-      : `Zoomable local comparison of the exact equilibrium branches, degree-${state.taylor.degree} Taylor approximation, and normal-form geometry near the selected bifurcation. Scroll to zoom, drag to pan, or press 0 to reset.`
+      ? `Bifurcation microscope for a ${branchCount}-branch crossing`
+      : `Bifurcation microscope for ${classification.label}`
   );
   elements.microscopeDescription.textContent = taylorCurveOmitted
-    ? `At this ${branchCount}-fold point, all derivatives through total degree 4 vanish. The exact local family is compared with its degree-${branchCount} branch-product normal form; there is no separate quartic Taylor curve.`
-    : "The selected point is translated to μ = r − r* and y = x − x*. The exact local family is compared with its Taylor polynomial and corresponding normal form.";
+    ? `At this ${branchCount}-branch crossing, every derivative through total degree 4 vanishes. The degree-4 Taylor polynomial is identically zero, so its zero set fills the local plane and is not drawn as a separate curve. The exact family is compared with its degree-${branchCount} branch-product normal form.`
+    : "The selected point is translated to μ = r − r* and y = x − x*. The exact local family is compared with its Taylor polynomial and leading normal-form terms.";
   if (classification.type === "triple-root-passage") {
     elements.classificationNote.textContent =
       "Here f = fₓ = fₓₓ = 0 while fᵣ and fₓₓₓ remain nonzero. A single local equilibrium passes through a triple root without changing the local equilibrium count or stability.";
@@ -1575,11 +1585,11 @@ function updateMicroscopeCopy(candidate) {
       "The quadratic Taylor form factors into two transverse branches. They persist through the crossing and exchange stability.";
   } else if (classification.type.includes("pitchfork")) {
     elements.classificationNote.textContent =
-      "The quadratic state term vanishes, leaving the mixed μy term and cubic y³ term to determine the symmetry-breaking geometry.";
+      "The quadratic state term vanishes, leaving the mixed μy term and cubic y³ term to determine the local pitchfork geometry.";
   } else if (classification.type === "four-fold" || classification.type === "n-fold" || branchCount >= 4) {
     if (branchCount > 4) {
       elements.classificationNote.textContent =
-        `All derivatives through total degree 4 vanish here. The first nonzero homogeneous term has degree ${branchCount}, so the green quartic Taylor zero set is intentionally absent; the dashed normal-form curve shows the degree-${branchCount} branch product. This simultaneous crossing is genuine but nongeneric.`;
+        `Every derivative through total degree 4 vanishes here. The degree-4 Taylor polynomial is identically zero, so its zero set fills the local plane and is not drawn as a separate curve. The dashed curve shows the degree-${branchCount} branch-product normal form. This simultaneous crossing is genuine but nongeneric.`;
     } else if (branchCount === 4) {
       elements.classificationNote.textContent =
         "The first nonzero jet is quartic and factors into four equilibrium branches. Exact, Taylor, and branch-product curves overlap here by construction; a generic perturbation splits this high-codimension meeting.";
@@ -1597,7 +1607,8 @@ function positionLocalPopover() {
   if (!state.localPopoverOpen || elements.localPopover.hidden) return false;
   const marker = state.candidateScreens.find((entry) => entry.index === state.selectedCandidate);
   if (!marker) {
-    dismissLocalPopover();
+    const focusIsInside = elements.localPopover.contains(document.activeElement);
+    dismissLocalPopover({ restoreFocus: focusIsInside, announce: focusIsInside });
     return false;
   }
   const host = elements.localPopover.parentElement;
@@ -1689,7 +1700,7 @@ function resetMicroscopeView(options = {}) {
     drawLocalDiagram();
     state.localDirty = false;
   }
-  if (options.announce) announce("The local lens is fitted to the selected bifurcation again.");
+  if (options.announce) announce("The bifurcation microscope has been reset to the selected point.");
   return true;
 }
 
@@ -1703,6 +1714,7 @@ function openLocalPopover(trigger = null) {
   elements.localPopover.hidden = false;
   elements.bifurcationCanvas.setAttribute("aria-expanded", "true");
   elements.focusCandidate.setAttribute("aria-expanded", "true");
+  elements.candidateSelect.setAttribute("aria-expanded", "true");
   window.requestAnimationFrame(() => {
     if (!state.localPopoverOpen) return;
     drawBifurcationDiagram();
@@ -1711,10 +1723,10 @@ function openLocalPopover(trigger = null) {
     state.localDirty = false;
     if (trigger && trigger !== elements.bifurcationCanvas) {
       elements.localPopover.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-      elements.closeLocalPopover.focus();
       state.localPopoverNeedsPosition = true;
       positionLocalPopover();
     }
+    elements.closeLocalPopover.focus({ preventScroll: true });
   });
 }
 
@@ -1730,10 +1742,11 @@ function dismissLocalPopover(options = {}) {
   elements.localPopover.hidden = true;
   elements.bifurcationCanvas.setAttribute("aria-expanded", "false");
   elements.focusCandidate.setAttribute("aria-expanded", "false");
+  elements.candidateSelect.setAttribute("aria-expanded", "false");
   if (options.restoreFocus && trigger?.isConnected && typeof trigger.focus === "function") {
     trigger.focus({ preventScroll: true });
   }
-  if (options.announce) announce("Local bifurcation lens closed.");
+  if (options.announce) announce("Bifurcation microscope closed.");
 }
 
 function focusSelectedCandidate() {
@@ -1766,7 +1779,7 @@ function focusSelectedCandidate() {
 function fitAllBranches() {
   state.view = { ...state.fullView };
   refreshSharedView({ resetParticles: true });
-  announce("The full branch diagram is visible.");
+  announce("The full bifurcation diagram is visible.");
 }
 
 function updateFamilyCopy() {
@@ -1774,19 +1787,16 @@ function updateFamilyCopy() {
     ? state.family.shortName
     : state.family.name;
   elements.familyEquation.textContent = state.family.formula;
-  if (state.family.seed) elements.familySeed.textContent = `Seed ${state.family.seed}`;
-  else if (state.family.branchCount) elements.familySeed.textContent = `${state.family.branchCount}-branch construction`;
+  if (state.family.seed) elements.familySeed.textContent = `Reproducible seed ${state.family.seed}`;
+  else if (state.family.branchCount) elements.familySeed.textContent = `${state.family.branchCount} equilibrium branches meet at r = 0`;
   else if (state.family.supportsUnfolding) {
     const { alpha, beta, caseLabel } = state.family.unfolding;
-    const ratio = Math.abs(beta) > 1e-10 ? alpha / (beta ** 3) : null;
-    elements.familySeed.textContent = ratio == null
-      ? `${caseLabel} · α = ${formatNumber(alpha, 3)} · β = ${formatNumber(beta, 3)}`
-      : `${caseLabel} · α/β³ = ${formatNumber(ratio, 4)}`;
+    elements.familySeed.textContent = `${caseLabel} · α = ${formatNumber(alpha, 3)} · β = ${formatNumber(beta, 3)}`;
   } else if (state.family.sourceType === "custom") {
     elements.familySeed.textContent = state.family.expressionUsesParameter
-      ? "Restricted parser · variables x and r"
-      : "Restricted parser · expression has no r dependence";
-  } else elements.familySeed.textContent = "Classical preset";
+      ? "Variables in use: x and r"
+      : "No r in this equation · changing r has no effect";
+  } else elements.familySeed.textContent = "Classical normal form";
   elements.telemetryFamily.textContent = state.family.shortName;
   elements.generateFamily.hidden = state.family.sourceType !== "random";
   elements.generateFamily.disabled = state.family.sourceType !== "random";
@@ -1819,8 +1829,10 @@ function updatePitchforkReadouts() {
   elements.pitchforkBeta.value = String(beta);
   elements.pitchforkAlphaValue.value = formatNumber(alpha, 3);
   elements.pitchforkAlphaValue.textContent = formatNumber(alpha, 3);
+  elements.pitchforkAlpha.setAttribute("aria-valuetext", `alpha equals ${formatNumber(alpha, 3)}`);
   elements.pitchforkBetaValue.value = formatNumber(beta, 3);
   elements.pitchforkBetaValue.textContent = formatNumber(beta, 3);
+  elements.pitchforkBeta.setAttribute("aria-valuetext", `beta equals ${formatNumber(beta, 3)}`);
 }
 
 function applyPitchforkCase(caseId) {
@@ -1917,8 +1929,8 @@ function showCustomEquationError(error) {
   elements.customEquationError.textContent = message;
   elements.customEquationError.hidden = false;
   let invalidInputs = [elements.customEquation];
-  if (/xRange/i.test(message)) invalidInputs = [elements.customXMin, elements.customXMax];
-  else if (/rRange/i.test(message)) invalidInputs = [elements.customRMin, elements.customRMax];
+  if (/State x/i.test(message)) invalidInputs = [elements.customXMin, elements.customXMax];
+  else if (/Parameter r/i.test(message)) invalidInputs = [elements.customRMin, elements.customRMax];
   for (const input of invalidInputs) input.setAttribute("aria-invalid", "true");
   invalidInputs[0].focus();
 }
@@ -2020,7 +2032,7 @@ function loadFamily(id, options = {}) {
       if (state.candidates.length) selectCandidate(0, { announce: false, open: false });
       else {
         state.taylor = null;
-        elements.telemetryEvent.textContent = "None resolved";
+        elements.telemetryEvent.textContent = "None detected";
       }
       state.hysteresis.increasing = [];
       state.hysteresis.decreasing = [];
@@ -2028,21 +2040,24 @@ function loadFamily(id, options = {}) {
       state.hysteresis.direction = 1;
       state.hysteresis.cycles = 0;
       state.hysteresis.lastRecordedAt = 0;
-      elements.runHysteresis.textContent = "Run hysteresis loop";
-      elements.hysteresisPanelButton.textContent = "Run the loop";
+      elements.runHysteresis.textContent = "Run full loop";
+      elements.hysteresisPanelButton.textContent = "Run full loop";
       state.hysteresisDirty = true;
       updateCurrentSlice();
       resetParticles();
       updateHysteresisReadout();
-      const selectedEvent = state.candidates[state.selectedCandidate];
-      const eventOutsideView = selectedEvent && (
-        selectedEvent.r < state.view.rMin || selectedEvent.r > state.view.rMax ||
-        selectedEvent.x < state.view.xMin || selectedEvent.x > state.view.xMax
+      const selectedPoint = state.candidates[state.selectedCandidate];
+      const pointOutsideView = selectedPoint && (
+        selectedPoint.r < state.view.rMin || selectedPoint.r > state.view.rMax ||
+        selectedPoint.x < state.view.xMin || selectedPoint.x > state.view.xMax
       );
-      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${state.candidates.length} highlighted ${state.candidates.length === 1 ? "event" : "events"}${eventOutsideView ? " · selected event is outside the zoomed view" : ""}`;
+      elements.stageStatus.textContent = bifurcationStatus(state.candidates.length, pointOutsideView);
       updateFamilyCopy();
       if (options.announce) {
-        announce(`${state.family.name} loaded with ${state.candidates.length} highlighted bifurcation points.${eventOutsideView ? " The selected event is outside the zoomed view; use Focus point or Fit all." : ""}`);
+        const pointSummary = state.candidates.length === 0
+          ? "no bifurcation points detected"
+          : `${state.candidates.length} bifurcation ${state.candidates.length === 1 ? "point" : "points"} marked`;
+        announce(`${state.family.name} loaded; ${pointSummary}.${pointOutsideView ? " The selected point is outside the current view; use Inspect point or Fit full diagram." : ""}`);
       }
       if (typeof options.afterReady === "function") options.afterReady();
     } catch (error) {
@@ -2167,11 +2182,11 @@ function applyPitchforkPreview(options) {
     const candidate = candidates[selectedCandidate];
     elements.telemetryEvent.textContent = `B${selectedCandidate + 1} · ${candidate.label}`;
   } else {
-    elements.telemetryEvent.textContent = "None resolved";
+    elements.telemetryEvent.textContent = "None detected";
   }
   elements.candidateSelect.disabled = true;
   elements.focusCandidate.disabled = true;
-  elements.stageStatus.textContent = `Morphing continuously · α = ${formatNumber(options.alpha, 3)} · β = ${formatNumber(options.beta, 3)}`;
+  elements.stageStatus.textContent = `Updating pitchfork unfolding · α = ${formatNumber(options.alpha, 3)} · β = ${formatNumber(options.beta, 3)}`;
   return diagram;
 }
 
@@ -2187,7 +2202,7 @@ function schedulePitchforkRefinement(options, announceChange = false) {
     token
   };
   schedulePitchforkRefinement.pending = pending;
-  elements.stageStatus.textContent = "Refining the final unfolding…";
+  elements.stageStatus.textContent = "Locating bifurcation points…";
   schedulePitchforkRefinement.timer = window.setTimeout(() => {
     if (
       schedulePitchforkRefinement.pending !== pending
@@ -2223,14 +2238,14 @@ function schedulePitchforkRefinement(options, announceChange = false) {
       const candidate = candidates[state.selectedCandidate];
       elements.telemetryEvent.textContent = candidate
         ? `B${state.selectedCandidate + 1} · ${candidate.label}`
-        : "None resolved";
-      elements.stageStatus.textContent = `${diagram.points.length.toLocaleString()} equilibrium samples · ${candidates.length} highlighted ${candidates.length === 1 ? "event" : "events"} · smooth morph settled`;
+        : "None detected";
+      elements.stageStatus.textContent = bifurcationStatus(candidates.length);
       if (pending.announce) {
-        announce(`Pitchfork unfolding settled at alpha ${formatNumber(pending.options.alpha, 3)} and beta ${formatNumber(pending.options.beta, 3)}.`);
+        announce(`Pitchfork unfolding updated: alpha ${formatNumber(pending.options.alpha, 3)}, beta ${formatNumber(pending.options.beta, 3)}.`);
       }
     } catch (error) {
       console.error(error);
-      elements.stageStatus.textContent = "The final unfolding could not be refined; the smooth preview remains visible.";
+      elements.stageStatus.textContent = "Bifurcation points could not be located; the updated diagram remains visible.";
       buildCandidateOptions();
     } finally {
       if (schedulePitchforkRefinement.pending === pending) {
@@ -2331,7 +2346,7 @@ function updatePitchforkMorph(now, options = {}) {
     console.error(error);
     state.pitchforkMorph = null;
     buildCandidateOptions();
-    elements.stageStatus.textContent = "The smooth unfolding preview could not be computed.";
+    elements.stageStatus.textContent = "The pitchfork diagram could not be updated.";
     return false;
   }
   morph.current = next;
@@ -2386,7 +2401,7 @@ function microscopeViewIsZoomed() {
   );
 }
 
-function microscopeBoundsMessage(prefix = "Local view") {
+function microscopeBoundsMessage(prefix = "Bifurcation microscope") {
   const view = state.microscopeView;
   if (!view) return prefix;
   return `${prefix}: μ from ${formatNumber(view.rMin, 3)} to ${formatNumber(view.rMax, 3)}; y from ${formatNumber(view.xMin, 3)} to ${formatNumber(view.xMax, 3)}.`;
@@ -2467,7 +2482,7 @@ function handleMicroscopeWheel(event) {
   const anchorX = valueFromVertical(position.y, state.microscopeView.xMin, state.microscopeView.xMax, box);
   if (zoomMicroscope(factor, anchorR, anchorX)) {
     event.preventDefault();
-    announce(microscopeBoundsMessage(factor < 1 ? "Zoomed into the local lens" : "Zoomed out of the local lens"));
+    announce(microscopeBoundsMessage(factor < 1 ? "Zoomed into the bifurcation microscope" : "Zoomed out of the bifurcation microscope"));
   }
 }
 
@@ -2480,7 +2495,7 @@ function handleMicroscopeKey(event) {
     event.preventDefault();
     const zoomIn = event.key === "+" || event.key === "=";
     if (zoomMicroscope(zoomIn ? 0.8 : 1.25, centerR, centerX)) {
-      announce(microscopeBoundsMessage(zoomIn ? "Zoomed into the local lens" : "Zoomed out of the local lens"));
+      announce(microscopeBoundsMessage(zoomIn ? "Zoomed into the bifurcation microscope" : "Zoomed out of the bifurcation microscope"));
     }
   } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
     event.preventDefault();
@@ -2488,7 +2503,7 @@ function handleMicroscopeKey(event) {
     const xStep = (view.xMax - view.xMin) * 0.08;
     const deltaR = event.key === "ArrowLeft" ? -rStep : event.key === "ArrowRight" ? rStep : 0;
     const deltaX = event.key === "ArrowDown" ? -xStep : event.key === "ArrowUp" ? xStep : 0;
-    if (panMicroscope(deltaR, deltaX)) announce(microscopeBoundsMessage("Panned the local lens"));
+    if (panMicroscope(deltaR, deltaX)) announce(microscopeBoundsMessage("Panned the bifurcation microscope"));
   } else if (event.key === "0" || event.key.toLowerCase() === "f") {
     event.preventDefault();
     resetMicroscopeView({ announce: true });
@@ -2817,6 +2832,7 @@ elements.sweepSpeed.addEventListener("input", () => {
   state.sweepSpeed = Number(elements.sweepSpeed.value);
   elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
   elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
+  elements.sweepSpeed.setAttribute("aria-valuetext", `${state.sweepSpeed.toFixed(2)} times`);
 });
 elements.candidateSelect.addEventListener("change", () => selectCandidate(elements.candidateSelect.value, {
   open: true,
@@ -2830,12 +2846,12 @@ elements.focusCandidate.addEventListener("click", () => selectCandidate(state.se
 elements.fitBranches.addEventListener("click", fitAllBranches);
 elements.resetParticles.addEventListener("click", () => {
   resetParticles();
-  announce("Trajectory points restarted on an even grid.");
+  announce("Trajectories restarted from evenly spaced initial conditions.");
 });
 elements.toggleParticles.addEventListener("click", () => {
   state.particlesPaused = !state.particlesPaused;
   if (!state.particlesPaused) state.particleEmitterElapsed = PARTICLE_EMISSION_INTERVAL;
-  elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" : "Pause motion";
+  elements.toggleParticles.textContent = state.particlesPaused ? "Resume trajectories" : "Pause trajectories";
   announce(state.particlesPaused ? "Trajectory motion paused." : "Trajectory motion resumed.");
 });
 elements.runHysteresis.addEventListener("click", requestHysteresis);
@@ -2901,7 +2917,7 @@ elements.microscopeCanvas.addEventListener("pointerup", (event) => {
   if (!state.microscopePointer || event.pointerId !== state.microscopePointer.pointerId) return;
   const moved = state.microscopePointer.moved;
   clearMicroscopePointer(event);
-  if (moved) announce(microscopeBoundsMessage("Panned the local lens"));
+  if (moved) announce(microscopeBoundsMessage("Panned the bifurcation microscope"));
 });
 elements.microscopeCanvas.addEventListener("pointercancel", clearMicroscopePointer);
 elements.microscopeCanvas.addEventListener("lostpointercapture", clearMicroscopePointer);
@@ -2978,7 +2994,7 @@ elements.bifurcationCanvas.addEventListener("pointerup", (event) => {
       updateParameterFromDiagram(event, true);
     }
   } else if (state.pointerMoved) {
-    announce(viewIsZoomed() ? viewBoundsMessage("Panned view") : "Fit all is already showing the complete branch window.");
+    announce(viewIsZoomed() ? viewBoundsMessage("Panned view") : "The full bifurcation diagram is already visible.");
   }
   clearDiagramPointer(event);
 });
@@ -3065,6 +3081,8 @@ motionQuery.addEventListener?.("change", (event) => {
   if (event.matches) {
     stopSweep();
     stopHysteresis(false);
+    state.particlesPaused = true;
+    elements.toggleParticles.textContent = "Resume trajectories";
     if (state.pitchforkMorph) {
       state.pitchforkMorph.finalizeRequested = true;
       updatePitchforkMorph(performance.now(), { force: true });
@@ -3072,9 +3090,10 @@ motionQuery.addEventListener?.("change", (event) => {
   }
 });
 
-elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" : "Pause motion";
+elements.toggleParticles.textContent = state.particlesPaused ? "Resume trajectories" : "Pause trajectories";
 elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
-loadFamily("random");
+elements.sweepSpeed.setAttribute("aria-valuetext", `${state.sweepSpeed.toFixed(2)} times`);
+loadFamily("random", { announce: true });
 initializeFullscreenControl();
 window.requestAnimationFrame(animate);

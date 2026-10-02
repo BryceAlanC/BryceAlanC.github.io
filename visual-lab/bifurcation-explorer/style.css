@@ -31,6 +31,15 @@
   font-size: 0.72rem;
 }
 
+.bifurcation-app .field-label {
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.bifurcation-app .math-symbol {
+  text-transform: none;
+}
+
 .bifurcation-app .lab-button {
   min-height: 44px;
 }
@@ -172,8 +181,11 @@
 .equation-card > small {
   color: var(--forest);
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.66rem;
   letter-spacing: 0.07em;
+}
+
+.equation-card > span {
   text-transform: uppercase;
 }
 
@@ -187,6 +199,8 @@
 
 .equation-card > small {
   color: var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: none;
 }
 
 .bifurcation-stage-heading {
@@ -250,9 +264,9 @@
 .stage-mini-telemetry small {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .stage-mini-telemetry strong {
@@ -417,13 +431,14 @@
   right: 0.7rem;
   color: rgba(231, 240, 236, 0.7);
   font-family: var(--mono);
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   letter-spacing: 0.04em;
   pointer-events: none;
   text-transform: uppercase;
 }
 
 #bifurcation-canvas:focus-visible,
+#microscope-canvas:focus-visible,
 #phase-canvas:focus-visible {
   z-index: 3;
   outline: 3px solid #0b5748;
@@ -600,7 +615,7 @@
 }
 
 .jet-details .derivative-grid dd {
-  font-size: 0.58rem;
+  font-size: 0.64rem;
 }
 
 .method-notes {
@@ -639,10 +654,10 @@
   background: rgba(244, 241, 231, 0.88);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   backdrop-filter: blur(8px);
   pointer-events: none;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .plot-legend span,
@@ -894,7 +909,7 @@
   font-family: var(--mono);
   font-size: 0.6rem;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .memory-readout > strong {

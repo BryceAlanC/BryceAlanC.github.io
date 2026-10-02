@@ -25,11 +25,11 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261001-9" />
-    <script type="module" src="./demo.js?v=20261001-9"></script>
+    <link rel="stylesheet" href="./style.css?v=20261001-10" />
+    <script type="module" src="./demo.js?v=20261001-10"></script>
   </head>
   <body class="visual-lab-page">
-    <a class="skip-link" href="#main-content">Skip to visualizer</a>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
 
     <header class="site-header">
       <div class="header-inner">
@@ -74,10 +74,11 @@
             <p class="section-kicker">Nonlinear dynamics · one-dimensional flows</p>
             <h1>Bifurcations in motion</h1>
             <p class="app-hero-copy">
-              Move one parameter through an autonomous differential equation and
-              watch its equilibria, slope field, and trajectories change together.
-              Start with a classical normal form or generate an analytic family,
-              then inspect a singular equilibrium through its local Taylor model.
+              Move the parameter r through an autonomous differential equation and
+              watch its bifurcation diagram, slope field, and trajectories change
+              together. Start with a classical normal form or generate an analytic
+              family, then inspect any marked bifurcation point through its local
+              Taylor model.
             </p>
           </div>
         </div>
@@ -88,7 +89,7 @@
           <aside class="control-panel" aria-label="Bifurcation explorer controls">
             <h2>Choose a family</h2>
             <p>
-              Every view below is driven by the same scalar equation
+              All three views use the same scalar differential equation
               <span class="nowrap">ẋ = f(x; r)</span>.
             </p>
 
@@ -96,18 +97,18 @@
               <legend>Family</legend>
               <label class="field-label" for="family-select">Equation family</label>
               <select id="family-select">
-                <option value="random" selected>Random analytic family</option>
+                <option value="random" selected>Random analytic family · 3–6 folds</option>
                 <option value="custom">Custom equation…</option>
                 <option value="saddle-node">Saddle-node</option>
                 <option value="transcritical">Transcritical</option>
-                <option value="pitchfork-unfolding">Pitchfork / universal unfolding</option>
-                <option value="n-fold">Adjustable n-fold crossing</option>
-                <option value="hysteresis">Hysteresis / fold pair</option>
+                <option value="pitchfork-unfolding">Pitchfork universal unfolding</option>
+                <option value="n-fold">Adjustable n-branch crossing</option>
+                <option value="hysteresis">Hysteresis (fold pair)</option>
               </select>
 
               <div class="family-parameter-control" id="n-fold-control" hidden>
                 <div class="field-label">
-                  <label for="n-fold-count">Branch count n</label>
+                  <label for="n-fold-count">Number of branches <span class="math-symbol">n</span></label>
                   <output id="n-fold-count-value" for="n-fold-count">5</output>
                 </div>
                 <input
@@ -120,9 +121,9 @@
                   aria-describedby="n-fold-help"
                 />
                 <p class="control-help" id="n-fold-help">
-                  All n equilibrium branches meet at one point. This is a valid analytic
-                  family, but a highly nongeneric event: a small perturbation usually splits
-                  it into simpler bifurcations.
+                  Each branch is a line x = a<sub>k</sub>r, and all n branches meet at
+                  (0, 0). This analytic example is deliberately nongeneric: a small
+                  perturbation usually separates the crossing into simpler bifurcations.
                 </p>
               </div>
 
@@ -130,7 +131,7 @@
                 Generate a new family
               </button>
               <div class="equation-card">
-                <span id="family-kind">Structured random family</span>
+                <span id="family-kind">Random analytic family</span>
                 <code id="family-equation">Preparing f(x; r)…</code>
                 <small id="family-seed">Seed —</small>
               </div>
@@ -138,7 +139,7 @@
 
             <fieldset class="control-group dynamic-family-controls" id="custom-equation-controls" hidden>
               <legend>Custom equation</legend>
-              <label class="field-label" for="custom-equation">Right-hand side f(x, r)</label>
+              <label class="field-label" for="custom-equation">Right-hand side f(x; r)</label>
               <div class="equation-input-row">
                 <span aria-hidden="true">ẋ =</span>
                 <input
@@ -153,8 +154,9 @@
                 />
               </div>
               <p class="control-help" id="custom-equation-help">
-                Use x, r, numbers, + − * / ^, parentheses, and functions such as
-                sin, cos, exp, log, sqrt, or abs. Multiplication may be explicit or implicit.
+                Use x, r, numbers, + − * / ^, parentheses, constants pi and e, and
+                functions such as sin, cos, exp, log, sqrt, or abs. Both 2x and
+                2*x are accepted.
               </p>
               <details class="control-details">
                 <summary>Plot window</summary>
@@ -172,48 +174,49 @@
             </fieldset>
 
             <fieldset class="control-group dynamic-family-controls" id="pitchfork-controls" hidden>
-              <legend>Pitchfork unfolding</legend>
-              <label class="field-label" for="pitchfork-case">Representative case</label>
+              <legend>Pitchfork universal unfolding</legend>
+              <label class="field-label" for="pitchfork-case">Unfolding regime</label>
               <select id="pitchfork-case">
-                <option value="perfect" selected>Perfect pitchfork</option>
-                <option value="additive">Additive bias · one fold</option>
-                <option value="transcritical-fold">Transcritical + fold</option>
+                <option value="perfect" selected>Perfect pitchfork · α = 0, β = 0</option>
+                <option value="additive">Additive imperfection · one saddle-node</option>
+                <option value="transcritical-fold">Transcritical crossing + saddle-node</option>
                 <option value="three-folds">Three saddle-nodes</option>
-                <option value="triple-boundary">Fold + triple-root boundary</option>
-                <option value="one-fold">Generic one-fold region</option>
-                <option value="custom">Custom α and β</option>
+                <option value="triple-boundary">Saddle-node + triple-root passage · boundary case</option>
+                <option value="one-fold">One saddle-node + continuing branch</option>
+                <option value="custom">Choose α and β freely</option>
               </select>
 
-              <label class="field-label field-label-spaced" for="pitchfork-signs">Parameter and cubic signs</label>
+              <label class="field-label field-label-spaced" for="pitchfork-signs">Signs of <span class="math-symbol">rx</span> and <span class="math-symbol">x³</span></label>
               <select id="pitchfork-signs">
-                <option value="1,-1" selected>+rx − x³ · supercritical</option>
-                <option value="1,1">+rx + x³ · subcritical</option>
-                <option value="-1,1">−rx + x³ · reflected supercritical</option>
-                <option value="-1,-1">−rx − x³ · reflected subcritical</option>
+                <option value="1,-1" selected>+rx − x³</option>
+                <option value="1,1">+rx + x³</option>
+                <option value="-1,1">−rx + x³</option>
+                <option value="-1,-1">−rx − x³</option>
               </select>
 
               <label class="field-label field-label-spaced" for="pitchfork-time-sign">Flow direction</label>
               <select id="pitchfork-time-sign">
-                <option value="1" selected>As written</option>
-                <option value="-1">Reverse time · swap stability</option>
+                <option value="1" selected>Forward time · as written</option>
+                <option value="-1">Reverse time · stability swaps</option>
               </select>
 
               <div class="field-label field-label-spaced">
-                <label for="pitchfork-alpha">Constant imperfection α</label>
+                <label for="pitchfork-alpha"><span class="math-symbol">α</span> · constant imperfection</label>
                 <output id="pitchfork-alpha-value" for="pitchfork-alpha">0.000</output>
               </div>
-              <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" aria-describedby="pitchfork-unfolding-help" />
+              <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" aria-label="Alpha, constant imperfection" aria-describedby="pitchfork-unfolding-help" />
 
               <div class="field-label field-label-spaced">
-                <label for="pitchfork-beta">Quadratic imperfection β</label>
+                <label for="pitchfork-beta"><span class="math-symbol">β</span> · quadratic imperfection</label>
                 <output id="pitchfork-beta-value" for="pitchfork-beta">0.000</output>
               </div>
-              <input id="pitchfork-beta" type="range" min="-1.5" max="1.5" value="0" step="0.01" aria-describedby="pitchfork-unfolding-help" />
+              <input id="pitchfork-beta" type="range" min="-1.5" max="1.5" value="0" step="0.01" aria-label="Beta, quadratic imperfection" aria-describedby="pitchfork-unfolding-help" />
               <p class="control-help" id="pitchfork-unfolding-help">
-                The local family is α + βx² + εrx + σx³. The case menu lands on
-                every special regime; moving either slider leaves the preset and explores
-                the full two-parameter unfolding. Reverse time keeps the branches fixed and
-                swaps attraction with repulsion.
+                The family is ẋ = α + βx² + εrx + σx³. Here α adds a constant
+                bias and β adds a quadratic asymmetry. The signs determine which side
+                of r contains the extra branches. The menu selects key regimes; the
+                sliders explore smoothly between them. Reversing time leaves every
+                equilibrium branch fixed but swaps stable with unstable.
               </p>
             </fieldset>
 
@@ -225,7 +228,7 @@
               </div>
               <input id="parameter-r" type="range" min="-2" max="2" value="0" step="0.002" />
               <div class="control-row control-row-spaced">
-                <button class="lab-button lab-button-primary" id="toggle-sweep" type="button">Play sweep</button>
+                <button class="lab-button lab-button-primary" id="toggle-sweep" type="button">Play parameter sweep</button>
                 <button class="lab-button" id="center-parameter" type="button">Center r</button>
               </div>
               <div class="field-label field-label-spaced">
@@ -236,48 +239,49 @@
             </fieldset>
 
             <fieldset class="control-group">
-              <legend>Local view</legend>
-              <label class="field-label" for="candidate-select">Detected point</label>
-              <select id="candidate-select" aria-controls="local-popover">
-                <option value="">No point selected</option>
+              <legend>Bifurcation microscope</legend>
+              <label class="field-label" for="candidate-select">Bifurcation point</label>
+              <select id="candidate-select" aria-controls="local-popover" aria-haspopup="dialog" aria-expanded="false">
+                <option value="">No bifurcation point detected</option>
               </select>
               <div class="control-row">
-                <button class="lab-button" id="focus-candidate" type="button" aria-controls="local-popover" aria-haspopup="dialog" aria-expanded="false">Open + focus</button>
-                <button class="lab-button" id="fit-branches" type="button">Fit all</button>
+                <button class="lab-button" id="focus-candidate" type="button" aria-controls="local-popover" aria-haspopup="dialog" aria-expanded="false">Inspect point</button>
+                <button class="lab-button" id="fit-branches" type="button">Fit full diagram</button>
               </div>
               <p class="control-help">
-                Click a numbered marker—or choose one here—to open its local Taylor
-                and normal-form lens directly over the diagram.
+                Click a numbered marker—or choose one here—to compare its local
+                Taylor jet with the corresponding normal form.
               </p>
             </fieldset>
 
             <fieldset class="control-group">
               <legend>Trajectories</legend>
               <div class="control-row">
-                <button class="lab-button" id="reset-particles" type="button">Restart points</button>
-                <button class="lab-button" id="toggle-particles" type="button">Pause motion</button>
+                <button class="lab-button" id="reset-particles" type="button">Restart trajectories</button>
+                <button class="lab-button" id="toggle-particles" type="button">Pause trajectories</button>
               </div>
               <p class="control-help">
-                Click the slope field or phase line to release an additional
-                initial condition.
+                Click the slope field or phase line to add another initial condition
+                and follow its trajectory.
               </p>
             </fieldset>
 
             <fieldset class="control-group hysteresis-controls" id="hysteresis-controls" hidden>
               <legend>Hysteresis</legend>
               <button class="lab-button full-width-button" id="run-hysteresis" type="button">
-                Run hysteresis loop
+                Run full loop
               </button>
               <p class="control-help" id="hysteresis-control-help">
-                Sweep through a pair of folds and keep one state alive as the
-                parameter reverses direction.
+                Track the same solution as r passes through one fold, reverses
+                direction, and passes through the other.
               </p>
             </fieldset>
 
             <p class="keyboard-help">
-              Mouse over the branch diagram: scroll zooms · left click or drag adjusts r ·
-              middle-drag pans. Keys: ←/→ adjust r · +/- zoom · Ctrl + arrows pan ·
-              Space plays the sweep · F or 0 fits the view · N makes a new random family.
+              Over the bifurcation diagram: scroll to zoom · left-click or drag to set r ·
+              middle-button drag to pan. Keyboard: ←/→ set r · +/− zoom · Ctrl + arrows pan ·
+              Space starts or pauses the sweep · F or 0 fits the full diagram · N generates
+              a new random family.
             </p>
           </aside>
 
@@ -285,8 +289,8 @@
             <section class="stage-panel" aria-labelledby="visualizer-title">
               <div class="stage-heading bifurcation-stage-heading">
                 <div>
-                  <p class="section-kicker">One family · three linked views</p>
-                  <h2 id="visualizer-title">A scalar flow across parameter</h2>
+                  <p class="section-kicker">One equation · three linked views</p>
+                  <h2 id="visualizer-title">Bifurcation diagram, slope field, and phase line</h2>
                 </div>
                 <div class="stage-heading-status">
                   <div class="stage-heading-toolbar">
@@ -297,7 +301,6 @@
                       type="button"
                       aria-controls="bifurcation-workspace"
                       aria-label="Enter full screen"
-                      aria-pressed="false"
                       hidden
                     >
                       <span aria-hidden="true">⛶</span>
@@ -308,7 +311,7 @@
                     <span><small>Family</small><strong id="telemetry-family">—</strong></span>
                     <span><small>r</small><strong id="telemetry-r">0.000</strong></span>
                     <span><small>Equilibria</small><strong id="telemetry-equilibria">—</strong></span>
-                    <span><small>Event</small><strong id="telemetry-event">None</strong></span>
+                    <span><small>Bifurcation</small><strong id="telemetry-event">None detected</strong></span>
                   </div>
                 </div>
               </div>
@@ -316,8 +319,8 @@
               <div class="dynamics-workbench">
                 <section class="dynamics-panel branches-panel" aria-labelledby="branches-title">
                   <div class="dynamics-heading">
-                    <div><span>01</span><h3 id="branches-title">Equilibria across parameter</h3></div>
-                    <p>Scroll: zoom · left click/drag: r · middle drag: pan</p>
+                    <div><span>01</span><h3 id="branches-title">Bifurcation diagram</h3></div>
+                    <p>Scroll: zoom · left-drag: set r · middle-drag: pan</p>
                   </div>
                   <div class="canvas-frame canvas-frame-large">
                     <canvas
@@ -327,8 +330,9 @@
                       aria-controls="local-popover"
                       aria-haspopup="dialog"
                       aria-expanded="false"
-                      aria-label="Zoomable bifurcation diagram with parameter r on the horizontal axis and equilibrium state x on the vertical axis. Click a numbered bifurcation marker, or press Enter for the selected marker, to open its local normal-form lens. Scroll to zoom around the pointer, left-click or left-drag to set r, or middle-drag to pan. Moving initial-condition particles from the phase line are mirrored on the current-parameter slice."
+                      aria-label="Interactive bifurcation diagram"
                       aria-describedby="branches-description"
+                      aria-keyshortcuts="ArrowLeft ArrowRight Control+ArrowLeft Control+ArrowRight Control+ArrowUp Control+ArrowDown + - Space F 0 N Enter"
                     ></canvas>
                     <div class="plot-legend" aria-hidden="true">
                       <span><i class="legend-stable"></i>Stable</span>
@@ -338,7 +342,7 @@
                   </div>
                   <p class="sr-only" id="branches-description">
                     Solid branches are stable equilibria. Dashed branches are unstable.
-                    Numbered diamonds mark detected singular equilibria. Moving circles on
+                    Numbered diamonds mark detected bifurcation points. Moving circles on
                     the current-parameter line mirror the same trajectories shown on the
                     phase line below. The slope field and phase line use this diagram's visible
                     x range. Scroll to zoom, left-click or left-drag to change r, and middle-drag
@@ -349,7 +353,7 @@
 
                 <section class="dynamics-panel slope-panel" aria-labelledby="slope-title">
                   <div class="dynamics-heading dynamics-heading-dark">
-                    <div><span>02</span><h3 id="slope-title">Current slope field</h3></div>
+                    <div><span>02</span><h3 id="slope-title">Slope field at the selected r</h3></div>
                     <p id="slope-parameter-label">r = 0.000</p>
                   </div>
                   <div class="canvas-frame canvas-frame-large canvas-frame-dark">
@@ -371,7 +375,7 @@
 
                 <section class="dynamics-panel phase-panel" aria-labelledby="phase-title">
                   <div class="dynamics-heading">
-                    <div><span>03</span><h3 id="phase-title">Where initial conditions go</h3></div>
+                    <div><span>03</span><h3 id="phase-title">Phase line and trajectories</h3></div>
                     <p id="equilibrium-summary">Finding equilibria…</p>
                   </div>
                   <div class="phase-readout" id="phase-readout" role="list" aria-label="Equilibria in the visible state window at the current parameter"></div>
@@ -381,13 +385,14 @@
                       tabindex="0"
                       role="application"
                       aria-label="Animated phase line showing the direction of the vector field, equilibria, and moving initial conditions. Click to add a point, or use arrow keys to choose a state and Enter to add it."
-                      aria-describedby="phase-description"
+                      aria-describedby="phase-description equilibrium-summary phase-readout"
                     ></canvas>
                   </div>
                   <p class="sr-only" id="phase-description">
                     Arrows show the sign of f. Filled circles mark stable equilibria,
                     open circles mark unstable equilibria, and moving gold points follow
-                    the differential equation forward in time. With the plot focused, use
+                    the differential equation forward in time. Stable equilibria attract
+                    nearby points; unstable equilibria repel them. With the plot focused, use
                     arrow keys to choose an initial state and press Enter or Space to add it.
                   </p>
                 </section>
@@ -403,10 +408,10 @@
                 >
                   <div class="local-popover-heading">
                     <div>
-                      <span>Local lens</span>
+                      <span>Bifurcation microscope</span>
                       <strong id="local-popover-title">Normal form near B1</strong>
                     </div>
-                    <button class="local-popover-close" id="close-local-popover" type="button" aria-label="Close local bifurcation view">×</button>
+                    <button class="local-popover-close" id="close-local-popover" type="button" aria-label="Close bifurcation microscope">×</button>
                   </div>
                   <div class="local-popover-body">
                     <div class="microscope-plot local-popover-plot">
@@ -414,14 +419,15 @@
                         id="microscope-canvas"
                         tabindex="0"
                         role="application"
-                        aria-label="Zoomable local comparison of the exact equilibrium branches, Taylor approximation, and canonical normal-form geometry near the selected bifurcation. Scroll to zoom around the pointer and drag to pan. Press 0 to restore the fitted local view."
+                        aria-label="Interactive bifurcation microscope"
                         aria-describedby="microscope-description"
+                        aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - F 0"
                       ></canvas>
-                      <span class="microscope-nav-hint" aria-hidden="true">scroll: zoom · drag: pan</span>
+                      <span class="microscope-nav-hint" aria-hidden="true">scroll or +/−: zoom · drag or arrows: pan · 0: reset</span>
                       <div class="microscope-legend" aria-hidden="true">
                         <span><i class="legend-exact"></i>Exact</span>
-                        <span id="taylor-legend"><i class="legend-taylor"></i>Taylor</span>
-                        <span><i class="legend-normal"></i>Normal</span>
+                        <span id="taylor-legend"><i class="legend-taylor"></i>Taylor jet</span>
+                        <span><i class="legend-normal"></i>Normal form</span>
                       </div>
                     </div>
                     <div class="microscope-copy local-popover-copy">
@@ -434,15 +440,15 @@
                         branches with the Taylor model and normal form.
                       </p>
                       <div class="formula-block">
-                        <span>Local Taylor model</span>
+                        <span>Local Taylor jet</span>
                         <code id="taylor-formula">T(y, μ) = —</code>
                       </div>
                       <div class="formula-block formula-block-accent">
-                        <span>Equivalent normal form</span>
+                        <span>Leading normal-form terms</span>
                         <code id="normal-formula">Select a point to compare.</code>
                       </div>
                       <details class="jet-details">
-                        <summary>Derivative jet</summary>
+                        <summary>Key derivatives at the point</summary>
                         <dl class="derivative-grid" id="derivative-grid">
                           <div><dt>f</dt><dd>—</dd></div>
                           <div><dt>f<sub>x</sub></dt><dd>—</dd></div>
@@ -453,8 +459,9 @@
                         </dl>
                       </details>
                       <p class="local-caveat" id="classification-note">
-                        The Taylor polynomial is local data. A normal form additionally
-                        uses smooth coordinate changes and a rescaling of time.
+                        The dashed model keeps the leading terms that determine the local
+                        geometry. A canonical normal form may also use smooth coordinate
+                        changes and a rescaling of time.
                       </p>
                     </div>
                   </div>
@@ -465,10 +472,10 @@
             <section class="stage-panel hysteresis-panel" id="hysteresis-panel" aria-labelledby="hysteresis-title" hidden>
               <div class="stage-heading">
                 <div>
-                  <p class="section-kicker">05 · Memory in a scalar flow</p>
+                  <p class="section-kicker">04 · Memory in a scalar flow</p>
                   <h2 id="hysteresis-title">Hysteresis: the path depends on the past</h2>
                 </div>
-                <p id="hysteresis-status">Load the hysteresis preset to begin</p>
+                <p id="hysteresis-status">Ready to run a parameter loop</p>
               </div>
               <div class="hysteresis-grid">
                 <div class="hysteresis-plot">
@@ -485,8 +492,9 @@
                 </div>
                 <div class="hysteresis-copy">
                   <p id="hysteresis-description">
-                    In the bistable interval, the same parameter value supports two attracting
-                    equilibria. As r increases, the tracked state stays near the lower branch
+                    In the bistable interval, the same parameter value supports two stable
+                    equilibria separated by one unstable equilibrium. As r increases, the
+                    tracked state stays near the lower branch
                     and tips upward after the right fold; as r decreases, it stays near the
                     upper branch and tips downward after the left fold. The static folds are
                     the quasi-static thresholds. At finite sweep speed, tipping can lag beyond
@@ -501,35 +509,36 @@
                     <strong id="hysteresis-state">x = —</strong>
                   </div>
                   <div class="memory-readout memory-readout-wide">
-                    <span>At the same r</span>
+                    <span>Same r, different histories</span>
                     <strong id="hysteresis-memory">Run one full loop to compare both histories.</strong>
                   </div>
                   <button class="lab-button lab-button-primary" id="hysteresis-panel-button" type="button">
-                    Run the loop
+                    Run full loop
                   </button>
                 </div>
               </div>
             </section>
 
             <details class="method-notes">
-              <summary>How the generated and nongeneric families are constructed</summary>
+              <summary>Mathematical notes</summary>
               <p class="app-note">
-                <strong>What the random button is doing.</strong> The generated families use
+                <strong>Random analytic families.</strong> Each generated family uses
                 a seeded analytic equilibrium curve with three to six distinct turning points,
                 together with positive trigonometric, exponential, and logarithmic factors that
                 vary the flow speed without changing its equilibria. Each turning point is a
-                generic saddle-node. Exact transcritical and pitchfork events require additional
+                generic saddle-node. Exact transcritical and pitchfork bifurcations require additional
                 structure and therefore remain deliberate presets rather than generic random output.
               </p>
               <p class="app-note">
-                <strong>What the many-fold example means.</strong> The adjustable n-fold family
+                <strong>N-branch crossings and pitchfork unfoldings.</strong> The adjustable n-branch family
                 (including n = 4) is a genuine analytic scalar differential equation with several
-                equilibrium branches meeting at one parameter value. It is deliberately
-                constructed, high-codimension events—not structurally stable one-parameter
-                bifurcations. A small generic perturbation separates the meeting into simpler
-                events. The pitchfork panel shows the complete local cubic unfolding
-                <span class="nowrap">α + βx² + εrx + σx³</span>: perfect, transcritical-plus-fold,
-                three-fold, triple-root-boundary, and one-fold regimes. This is locally exhaustive
+                equilibrium branches meeting at one parameter value. These deliberately constructed
+                crossings are high-codimension events, not structurally stable one-parameter
+                bifurcations. A small generic perturbation separates them into simpler events.
+                The pitchfork panel shows the complete local cubic unfolding
+                <span class="nowrap">α + βx² + εrx + σx³</span>: perfect,
+                transcritical-plus-saddle-node, three-saddle-node, triple-root-boundary,
+                and one-saddle-node regimes. This is locally exhaustive
                 near an ordinary cubic pitchfork, not a classification of higher-order or global
                 degeneracies.
               </p>

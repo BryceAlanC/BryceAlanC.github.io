@@ -21,11 +21,12 @@ function assertFinite(value, label) {
 
 function normalizeRange(range, fallback, label) {
   const candidate = Array.isArray(range) && range.length >= 2 ? range : fallback;
-  const minimum = assertFinite(Number(candidate[0]), `${label}[0]`);
-  const maximum = assertFinite(Number(candidate[1]), `${label}[1]`);
+  const friendlyName = label === "xRange" ? "State x" : label === "rRange" ? "Parameter r" : label;
+  const minimum = assertFinite(Number(candidate[0]), `${friendlyName} minimum`);
+  const maximum = assertFinite(Number(candidate[1]), `${friendlyName} maximum`);
   const width = maximum - minimum;
   if (!(width > 0) || !Number.isFinite(width)) {
-    throw new RangeError(`${label} must have finite positive width`);
+    throw new RangeError(`${friendlyName} minimum must be less than ${friendlyName} maximum`);
   }
   return Object.freeze([minimum, maximum]);
 }
@@ -35,7 +36,7 @@ function freezeCandidate(candidate) {
     x: Number(candidate.x),
     r: Number(candidate.r),
     type: candidate.type || "unknown",
-    label: candidate.label || candidate.type || "Candidate",
+    label: candidate.label || candidate.type || "Bifurcation point",
     branchCount: Number.isInteger(candidate.branchCount) ? candidate.branchCount : null,
     nongeneric: Boolean(candidate.nongeneric)
   });
@@ -110,7 +111,7 @@ function createNFoldDefinition(branchCount = 5, options = {}) {
   ));
   const scale = 2 ** (2 - n);
   const candidateType = options.candidateType || "n-fold";
-  const name = options.name || `${n}-fold branch crossing`;
+  const name = options.name || `${n}-branch crossing`;
 
   return {
     id: options.id || "n-fold",
@@ -130,7 +131,7 @@ function createNFoldDefinition(branchCount = 5, options = {}) {
       type: candidateType,
       branchCount: n,
       nongeneric: true,
-      label: `${n}-fold branch crossing`
+      label: `${n}-branch crossing`
     }],
     eval(x, r) {
       let product = 1;
@@ -213,13 +214,13 @@ const presetDefinitions = {
   }),
   "n-fold": createNFoldDefinition(5, {
     id: "n-fold",
-    name: "Adjustable n-fold crossing",
-    shortName: "n-fold",
+    name: "Adjustable n-branch crossing",
+    shortName: "n-branch",
     candidateType: "n-fold"
   }),
   hysteresis: {
     id: "hysteresis",
-    name: "Fold pair / hysteresis",
+    name: "Hysteresis (fold pair)",
     formula: "ẋ = r + x − x³",
     description: "Two saddle-node folds enclose a three-equilibrium region, the geometric source of a hysteresis loop under slow parameter sweeps.",
     xRange: [-2.1, 2.1],
@@ -274,7 +275,7 @@ function unfoldingCase(alpha, beta) {
   if (Math.abs(beta) > tolerance) {
     const boundary = beta ** 3 / 27;
     if (Math.abs(alpha - boundary) <= tolerance) {
-      return { id: "triple-boundary", label: "Saddle-node + triple-root passage" };
+      return { id: "triple-boundary", label: "Saddle-node + triple-root passage (boundary case)" };
     }
     const ratio = alpha / (beta ** 3);
     if (ratio > 0 && ratio < 1 / 27) {
@@ -282,7 +283,7 @@ function unfoldingCase(alpha, beta) {
     }
   }
   if (Math.abs(beta) <= tolerance) {
-    return { id: "additive", label: "Additive bias · one saddle-node" };
+    return { id: "additive", label: "Additive imperfection · one saddle-node" };
   }
   return { id: "one-fold", label: "One saddle-node + continuing branch" };
 }
@@ -341,7 +342,7 @@ function createPitchforkDefinition(id, options = {}) {
   const roots = pitchforkFoldRoots(alpha, beta, cubicSign);
   const scale = Math.max(1, Math.abs(beta));
   const specialTolerance = 3e-6 * scale;
-  const perfectType = couplingSign * cubicSign < 0
+  const perfectType = timeSign * cubicSign < 0
     ? "supercritical-pitchfork"
     : "subcritical-pitchfork";
   const tripleX = -beta / (3 * cubicSign);
@@ -562,8 +563,8 @@ function createLocalRandomFamily(seed = "bifurcation", options = {}) {
   const r0 = Number.isFinite(options.r0) ? options.r0 : randomBetween(random, -0.55, 0.55);
   const a = randomSign(random) * randomBetween(random, 0.8, 1.3);
   let b = randomSign(random) * randomBetween(random, 0.78, 1.25);
-  if (kind === "supercritical-pitchfork") b = -Math.sign(a) * Math.abs(b);
-  if (kind === "subcritical-pitchfork") b = Math.sign(a) * Math.abs(b);
+  if (kind === "supercritical-pitchfork") b = -Math.abs(b);
+  if (kind === "subcritical-pitchfork") b = Math.abs(b);
 
   const c = randomBetween(random, -0.12, 0.12);
   const d = randomBetween(random, -0.09, 0.09);
@@ -701,7 +702,7 @@ function createRandomLandscapeFamily(seed = "bifurcation", options = {}) {
 
   return makeFamily({
     id: `random-${hashSeed(`${seed}|landscape|${foldCount}|${foldXs.join(",")}`).toString(16).padStart(8, "0")}`,
-    name: `Random analytic landscape · ${foldCount} folds`,
+    name: `Random analytic family · ${foldCount} folds`,
     shortName: `Random · ${foldCount} folds`,
     description: `A seeded analytic family with ${foldCount} distinct generic saddle-node bifurcations in the displayed window.`,
     formula,
@@ -753,7 +754,7 @@ function expressionSyntaxError(message, position = 0) {
 
 function normalizeExpressionSource(source) {
   const text = String(source ?? "").trim();
-  if (!text) throw expressionSyntaxError("Enter a right-hand side for f(x, r)", 0);
+  if (!text) throw expressionSyntaxError("Enter a right-hand side for f(x; r)", 0);
   if (text.length > 256) throw new RangeError("The equation is too long; use at most 256 characters.");
   return text
     .replace(/\*\*/g, "^")
@@ -1022,7 +1023,7 @@ export function createCustomFamily(expression, options = {}) {
     shortName: "Custom equation",
     formula: `ẋ = ${compiled.source}`,
     description: compiled.usesR
-      ? "A user-authored scalar family evaluated by the restricted mathematical expression parser."
+      ? "A user-authored scalar family f(x; r)."
       : "A user-authored autonomous flow with no parameter r in its expression.",
     xRange,
     rRange,
@@ -1481,7 +1482,7 @@ function refineBifurcationCandidate(family, candidate, bounds, options = {}) {
 }
 
 function candidateTypeLabel(type, branchCount = null) {
-  if (type === "n-fold" && Number.isInteger(branchCount)) return `${branchCount}-fold branch crossing`;
+  if (type === "n-fold" && Number.isInteger(branchCount)) return `${branchCount}-branch crossing`;
   return {
     "saddle-node": "Saddle-node",
     transcritical: "Transcritical",
@@ -1489,11 +1490,11 @@ function candidateTypeLabel(type, branchCount = null) {
     "subcritical-pitchfork": "Subcritical pitchfork",
     "triple-root-passage": "Degenerate triple-root passage",
     "four-fold": "Four-fold branch crossing",
-    "n-fold": "n-fold branch crossing",
+    "n-fold": "n-branch crossing",
     "degenerate-pitchfork": "Pitchfork-like degeneracy",
     degenerate: "Higher-order degeneracy",
-    unknown: "Unclassified candidate"
-  }[type] || "Unclassified candidate";
+    unknown: "Unclassified bifurcation point"
+  }[type] || "Unclassified bifurcation point";
 }
 
 /** Classify a point satisfying f = f_x = 0 from its local derivative jet. */
@@ -1531,8 +1532,8 @@ export function classifyCandidate(family, candidate, options = {}) {
   if (guaranteedType === "four-fold" || guaranteedType === "n-fold") {
     type = guaranteedType;
     normalForm = Number.isInteger(branchCount)
-      ? `u̇ ≈ −C∏(u−aₖμ), k = 1,…,${branchCount}, with ${branchCount} equilibrium branches meeting at μ = 0`
-      : "u̇ ≈ −C∏ₖ(u−aₖμ)";
+      ? `ẏ ≈ −C∏(y−aₖμ), k = 1,…,${branchCount}, with ${branchCount} equilibrium branches meeting at μ = 0`
+      : "ẏ ≈ −C∏ₖ(y−aₖμ)";
     if (Number.isInteger(branchCount) && branchCount <= 4) {
       normalFormTerms = Array.from({ length: branchCount + 1 }, (_, rOrder) => [branchCount - rOrder, rOrder]);
     }
@@ -1545,11 +1546,11 @@ export function classifyCandidate(family, candidate, options = {}) {
     )
   ) {
     type = "triple-root-passage";
-    normalForm = "u̇ ≈ aμ + cμu + bu³";
+    normalForm = "ẏ ≈ aμ + cμy + by³";
     normalFormTerms = [[0, 1], [1, 1], [3, 0]];
   } else if (Math.abs(derivatives.fr) > zeroTolerance && Math.abs(derivatives.fxx) > zeroTolerance) {
     type = "saddle-node";
-    normalForm = "u̇ ≈ aμ + bu²";
+    normalForm = "ẏ ≈ aμ + by²";
     normalFormTerms = [[0, 1], [2, 0]];
   } else if (
     Math.abs(derivatives.fr) <= zeroTolerance
@@ -1558,7 +1559,7 @@ export function classifyCandidate(family, candidate, options = {}) {
     && (guaranteedPersistentBranch || hessianDiscriminant > zeroTolerance * zeroTolerance)
   ) {
     type = "transcritical";
-    normalForm = "u̇ ≈ aμu + bu²";
+    normalForm = "ẏ ≈ aμy + by²";
     normalFormTerms = [[1, 1], [2, 0]];
   } else if (
     Math.abs(derivatives.fr) <= zeroTolerance
@@ -1566,12 +1567,12 @@ export function classifyCandidate(family, candidate, options = {}) {
     && Math.abs(derivatives.fxr) > zeroTolerance
     && Math.abs(derivatives.fxxx) > zeroTolerance
   ) {
-    type = pitchforkProduct < 0 ? "supercritical-pitchfork" : "subcritical-pitchfork";
-    normalForm = "u̇ ≈ aμu + bu³";
+    type = derivatives.fxxx < 0 ? "supercritical-pitchfork" : "subcritical-pitchfork";
+    normalForm = "ẏ ≈ aμy + by³";
     normalFormTerms = [[1, 1], [3, 0]];
   } else if (Math.abs(derivatives.fxr) > zeroTolerance && Math.abs(derivatives.fxxx) > zeroTolerance) {
     type = "degenerate-pitchfork";
-    normalForm = "u̇ ≈ aμu + bu³ plus symmetry-breaking terms";
+    normalForm = "ẏ ≈ aμy + by³ plus symmetry-breaking terms";
     normalFormTerms = [[1, 1], [3, 0]];
   } else if (Math.abs(derivatives.f) <= zeroTolerance && Math.abs(derivatives.fx) <= zeroTolerance) {
     type = "degenerate";

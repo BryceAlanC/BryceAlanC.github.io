@@ -196,34 +196,39 @@ assert.deepEqual(model.PRESET_IDS, [
     if (equilibrium.stable != null) assert.equal(reversedEquilibria[index].stable, !equilibrium.stable);
   });
 
-  for (const couplingSign of [-1, 1]) {
-    for (const cubicSign of [-1, 1]) {
-      const signedPerfect = model.createFamily("pitchfork-unfolding", "unused", {
-        alpha: 0,
-        beta: 0,
-        couplingSign,
-        cubicSign
-      });
-      const expectedType = couplingSign * cubicSign < 0
-        ? "supercritical-pitchfork"
-        : "subcritical-pitchfork";
-      assert.equal(signedPerfect.knownCandidates[0].type, expectedType);
-      const branchR = -couplingSign * cubicSign;
-      const signedEquilibria = model.findEquilibria(signedPerfect, branchR);
-      assert.equal(signedEquilibria.length, 3);
-      near(equilibriumNear(signedEquilibria, -1).derivative, 2 * cubicSign, 2e-5);
-      near(equilibriumNear(signedEquilibria, 0).derivative, -cubicSign, 2e-5);
-      near(equilibriumNear(signedEquilibria, 1).derivative, 2 * cubicSign, 2e-5);
+  for (const timeSign of [-1, 1]) {
+    for (const couplingSign of [-1, 1]) {
+      for (const cubicSign of [-1, 1]) {
+        const signedPerfect = model.createFamily("pitchfork-unfolding", "unused", {
+          alpha: 0,
+          beta: 0,
+          couplingSign,
+          cubicSign,
+          timeSign
+        });
+        const expectedType = timeSign * cubicSign < 0
+          ? "supercritical-pitchfork"
+          : "subcritical-pitchfork";
+        assert.equal(signedPerfect.knownCandidates[0].type, expectedType);
+        assert.equal(model.classifyCandidate(signedPerfect, signedPerfect.knownCandidates[0]).type, expectedType);
+        const branchR = -couplingSign * cubicSign;
+        const signedEquilibria = model.findEquilibria(signedPerfect, branchR);
+        assert.equal(signedEquilibria.length, 3);
+        near(equilibriumNear(signedEquilibria, -1).derivative, 2 * timeSign * cubicSign, 2e-5);
+        near(equilibriumNear(signedEquilibria, 0).derivative, -timeSign * cubicSign, 2e-5);
+        near(equilibriumNear(signedEquilibria, 1).derivative, 2 * timeSign * cubicSign, 2e-5);
 
-      const signedThreeFold = model.createFamily("pitchfork-unfolding", "unused", {
-        alpha: 0.0625,
-        beta: 1.5,
-        couplingSign,
-        cubicSign
-      });
-      assert.equal(signedThreeFold.unfolding.caseId, "three-folds");
-      assert.equal(signedThreeFold.knownCandidates.length, 3);
-      assert.ok(signedThreeFold.knownCandidates.every((candidate) => candidate.type === "saddle-node"));
+        const signedThreeFold = model.createFamily("pitchfork-unfolding", "unused", {
+          alpha: 0.0625,
+          beta: 1.5,
+          couplingSign,
+          cubicSign,
+          timeSign
+        });
+        assert.equal(signedThreeFold.unfolding.caseId, "three-folds");
+        assert.equal(signedThreeFold.knownCandidates.length, 3);
+        assert.ok(signedThreeFold.knownCandidates.every((candidate) => candidate.type === "saddle-node"));
+      }
     }
   }
 }
@@ -476,7 +481,7 @@ assert.deepEqual(model.PRESET_IDS, [
       xRange: [-Number.MAX_VALUE, Number.MAX_VALUE],
       rRange: [-1, 1]
     }),
-    /finite positive width/i,
+    /State x minimum must be less than State x maximum/i,
     "ranges whose width overflows must be rejected"
   );
 }
