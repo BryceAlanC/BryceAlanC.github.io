@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261001-8" />
-    <script type="module" src="./demo.js?v=20261001-8"></script>
+    <link rel="stylesheet" href="./style.css?v=20261001-9" />
+    <script type="module" src="./demo.js?v=20261001-9"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to visualizer</a>
@@ -84,7 +84,7 @@
       </section>
 
       <section class="lab-app bifurcation-app" aria-label="One-dimensional bifurcation explorer">
-        <div class="lab-stage-shell app-layout bifurcation-app-layout">
+        <div class="lab-stage-shell app-layout bifurcation-app-layout" id="bifurcation-workspace">
           <aside class="control-panel" aria-label="Bifurcation explorer controls">
             <h2>Choose a family</h2>
             <p>
@@ -289,7 +289,21 @@
                   <h2 id="visualizer-title">A scalar flow across parameter</h2>
                 </div>
                 <div class="stage-heading-status">
-                  <p id="stage-status">Computing equilibrium branches…</p>
+                  <div class="stage-heading-toolbar">
+                    <p id="stage-status">Computing equilibrium branches…</p>
+                    <button
+                      class="lab-button workspace-fullscreen-toggle"
+                      id="workspace-fullscreen-toggle"
+                      type="button"
+                      aria-controls="bifurcation-workspace"
+                      aria-label="Enter full screen"
+                      aria-pressed="false"
+                      hidden
+                    >
+                      <span aria-hidden="true">⛶</span>
+                      <span id="workspace-fullscreen-label">Full screen</span>
+                    </button>
+                  </div>
                   <div class="stage-mini-telemetry" aria-label="Current dynamical measurements">
                     <span><small>Family</small><strong id="telemetry-family">—</strong></span>
                     <span><small>r</small><strong id="telemetry-r">0.000</strong></span>
@@ -521,10 +535,10 @@
               </p>
             </details>
           </div>
+
+          <div class="sr-only" id="bifurcation-announcer" aria-live="polite" aria-atomic="true"></div>
         </div>
       </section>
-
-      <div class="sr-only" id="bifurcation-announcer" aria-live="polite" aria-atomic="true"></div>
 
       <footer class="site-footer">
         <div>

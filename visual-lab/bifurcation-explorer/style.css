@@ -203,6 +203,36 @@
   margin: 0;
 }
 
+.stage-heading-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.stage-heading-toolbar > p {
+  margin: 0;
+}
+
+.workspace-fullscreen-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  border-color: rgba(11, 87, 72, 0.35);
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.67rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.workspace-fullscreen-toggle[hidden] {
+  display: none;
+}
+
 .stage-mini-telemetry {
   display: flex;
   flex-wrap: wrap;
@@ -1100,5 +1130,147 @@
   #phase-canvas,
   #hysteresis-canvas {
     scroll-behavior: auto;
+  }
+}
+
+#bifurcation-workspace.is-fullscreen {
+  box-sizing: border-box;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: max(0.65rem, env(safe-area-inset-top)) max(0.65rem, env(safe-area-inset-right)) max(0.65rem, env(safe-area-inset-bottom)) max(0.65rem, env(safe-area-inset-left));
+  overflow: hidden;
+  background: #e9e4d7;
+}
+
+#bifurcation-workspace:fullscreen::backdrop,
+#bifurcation-workspace:-webkit-full-screen::backdrop {
+  background: #e9e4d7;
+}
+
+#bifurcation-workspace.is-fullscreen .control-panel {
+  position: static;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  grid-template-columns: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#bifurcation-workspace.is-fullscreen .stage-stack {
+  height: 100%;
+  min-height: 0;
+  gap: 0.75rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#bifurcation-workspace.is-fullscreen .stage-stack > .stage-panel:first-child {
+  display: grid;
+  min-height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#bifurcation-workspace.is-fullscreen .stage-heading {
+  padding: 0.8rem 1rem;
+}
+
+#bifurcation-workspace.is-fullscreen .method-notes {
+  display: none;
+}
+
+#bifurcation-workspace.is-fullscreen .dynamics-workbench {
+  min-height: 0;
+  grid-template-columns: minmax(400px, 1.35fr) minmax(300px, 0.85fr);
+  grid-template-rows: minmax(260px, 1fr) minmax(220px, 0.38fr);
+}
+
+#bifurcation-workspace.is-fullscreen .branches-panel,
+#bifurcation-workspace.is-fullscreen .slope-panel {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#bifurcation-workspace.is-fullscreen .phase-panel {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+#bifurcation-workspace.is-fullscreen .canvas-frame-large,
+#bifurcation-workspace.is-fullscreen .canvas-frame-phase {
+  min-height: 0;
+}
+
+@media (max-width: 1179px) {
+  #bifurcation-workspace.is-fullscreen {
+    grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+  }
+
+  #bifurcation-workspace.is-fullscreen .control-panel {
+    display: block;
+  }
+
+  #bifurcation-workspace.is-fullscreen .stage-stack > .stage-panel:first-child {
+    display: block;
+    min-height: 0;
+  }
+
+  #bifurcation-workspace.is-fullscreen .dynamics-workbench {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  #bifurcation-workspace.is-fullscreen .branches-panel,
+  #bifurcation-workspace.is-fullscreen .slope-panel,
+  #bifurcation-workspace.is-fullscreen .phase-panel {
+    display: block;
+  }
+
+  #bifurcation-workspace.is-fullscreen .phase-panel {
+    grid-column: auto;
+  }
+
+  #bifurcation-workspace.is-fullscreen .canvas-frame-large {
+    min-height: 390px;
+  }
+
+  #bifurcation-workspace.is-fullscreen .canvas-frame-phase {
+    min-height: 170px;
+  }
+}
+
+@media (max-width: 719px) {
+  #bifurcation-workspace.is-fullscreen {
+    display: block;
+    overflow-y: auto;
+  }
+
+  #bifurcation-workspace.is-fullscreen .control-panel,
+  #bifurcation-workspace.is-fullscreen .stage-stack {
+    height: auto;
+    overflow: visible;
+  }
+
+  #bifurcation-workspace.is-fullscreen .stage-stack {
+    margin-top: 0.75rem;
+  }
+
+  .stage-heading-toolbar {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
   }
 }

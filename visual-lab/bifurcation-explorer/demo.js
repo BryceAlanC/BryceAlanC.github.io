@@ -5,7 +5,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261001-8";
+} from "./model.js?v=20261001-9";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -31,6 +31,9 @@ const COLORS = Object.freeze({
 });
 
 const elements = {
+  workspace: document.getElementById("bifurcation-workspace"),
+  fullscreenToggle: document.getElementById("workspace-fullscreen-toggle"),
+  fullscreenLabel: document.getElementById("workspace-fullscreen-label"),
   familySelect: document.getElementById("family-select"),
   generateFamily: document.getElementById("generate-family"),
   familyKind: document.getElementById("family-kind"),
@@ -146,6 +149,8 @@ const state = {
   localPopoverOpen: false,
   localPopoverNeedsPosition: false,
   localPopoverTrigger: null,
+  fullscreenActive: false,
+  fullscreenInitialized: false,
   hysteresisDirty: true,
   hysteresis: {
     running: false,
@@ -198,6 +203,95 @@ function announce(message) {
   announce.timeout = window.setTimeout(() => {
     elements.announcer.textContent = message;
   }, 180);
+}
+
+function currentFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function fullscreenSupported() {
+  if (!elements.workspace) return false;
+  const request = elements.workspace.requestFullscreen || elements.workspace.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const explicitlyDisabled = document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true;
+  return typeof request === "function" && typeof exit === "function" && !explicitlyDisabled;
+}
+
+function redrawAfterFullscreenChange() {
+  drawBifurcationDiagram();
+  drawSlopeField();
+  drawPhaseLine();
+  if (state.localPopoverOpen) {
+    state.localPopoverNeedsPosition = true;
+    drawLocalDiagram();
+    positionLocalPopover();
+  }
+  if (!elements.hysteresisPanel.hidden) drawHysteresisPanel();
+}
+
+function scheduleFullscreenResize() {
+  window.requestAnimationFrame(() => {
+    redrawAfterFullscreenChange();
+    window.requestAnimationFrame(redrawAfterFullscreenChange);
+  });
+}
+
+function syncFullscreenState(options = {}) {
+  const wasActive = state.fullscreenActive;
+  const isActive = currentFullscreenElement() === elements.workspace;
+  state.fullscreenActive = isActive;
+  elements.workspace?.classList.toggle("is-fullscreen", isActive);
+  if (elements.fullscreenToggle) {
+    elements.fullscreenToggle.setAttribute("aria-pressed", String(isActive));
+    elements.fullscreenToggle.setAttribute("aria-label", isActive ? "Exit full screen" : "Enter full screen");
+    elements.fullscreenToggle.title = isActive ? "Exit full screen" : "Enter full screen";
+  }
+  if (elements.fullscreenLabel) {
+    elements.fullscreenLabel.textContent = isActive ? "Exit full screen" : "Full screen";
+  }
+  if (options.scheduleResize !== false) scheduleFullscreenResize();
+  if (state.fullscreenInitialized && isActive !== wasActive && options.announceChange !== false) {
+    announce(isActive ? "Full screen view opened." : "Full screen view closed.");
+  }
+  state.fullscreenInitialized = true;
+  return isActive;
+}
+
+function initializeFullscreenControl() {
+  const supported = fullscreenSupported();
+  if (elements.fullscreenToggle) elements.fullscreenToggle.hidden = !supported;
+  syncFullscreenState({ announceChange: false, scheduleResize: false });
+  return supported;
+}
+
+function reportFullscreenError(error) {
+  if (error) console.warn("Full screen could not change.", error);
+  const now = performance.now();
+  if (Number.isFinite(reportFullscreenError.lastAt) && now - reportFullscreenError.lastAt < 500) return;
+  reportFullscreenError.lastAt = now;
+  announce("Full screen could not change in this browser.");
+  syncFullscreenState({ announceChange: false });
+}
+
+function toggleWorkspaceFullscreen() {
+  if (!fullscreenSupported()) {
+    announce("Full screen is not available in this browser.");
+    return Promise.resolve(false);
+  }
+  const active = currentFullscreenElement() === elements.workspace;
+  const action = active
+    ? document.exitFullscreen || document.webkitExitFullscreen
+    : elements.workspace.requestFullscreen || elements.workspace.webkitRequestFullscreen;
+  const receiver = active ? document : elements.workspace;
+  try {
+    return Promise.resolve(action.call(receiver)).then(() => true).catch((error) => {
+      reportFullscreenError(error);
+      return false;
+    });
+  } catch (error) {
+    reportFullscreenError(error);
+    return Promise.resolve(false);
+  }
 }
 
 function canvasSurface(canvas) {
@@ -1519,7 +1613,9 @@ function positionLocalPopover() {
   const hostMaxTop = Math.max(padding, host.clientHeight - height - padding);
   const viewportWidth = Number(window.innerWidth) || host.clientWidth;
   const viewportHeight = Number(window.innerHeight) || host.clientHeight;
-  const siteHeaderRect = document.querySelector(".site-header")?.getBoundingClientRect();
+  const siteHeaderRect = currentFullscreenElement()
+    ? null
+    : document.querySelector(".site-header")?.getBoundingClientRect();
   const viewportTopInset = siteHeaderRect && siteHeaderRect.top <= padding && siteHeaderRect.bottom > padding
     ? Math.min(viewportHeight - padding, siteHeaderRect.bottom + padding)
     : padding;
@@ -2748,6 +2844,17 @@ elements.closeLocalPopover.addEventListener("click", () => dismissLocalPopover({
   restoreFocus: true,
   announce: true
 }));
+elements.fullscreenToggle?.addEventListener("click", () => {
+  toggleWorkspaceFullscreen();
+});
+document.addEventListener("fullscreenchange", syncFullscreenState);
+document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+document.addEventListener("fullscreenerror", () => {
+  reportFullscreenError();
+});
+document.addEventListener("webkitfullscreenerror", () => {
+  reportFullscreenError();
+});
 
 elements.microscopeCanvas.addEventListener("pointerdown", (event) => {
   if (
@@ -2969,4 +3076,5 @@ elements.toggleParticles.textContent = state.particlesPaused ? "Resume motion" :
 elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 loadFamily("random");
+initializeFullscreenControl();
 window.requestAnimationFrame(animate);
