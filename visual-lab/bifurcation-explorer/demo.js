@@ -1,12 +1,13 @@
 import {
   createFamily,
   findEquilibria,
+  pitchforkSurfaceAlpha,
   sampleBifurcation,
   sampleZeroContour,
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261002-2";
+} from "./model.js?v=20261002-4";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -101,6 +102,11 @@ const elements = {
   hysteresisPanel: document.getElementById("hysteresis-panel"),
   announcer: document.getElementById("bifurcation-announcer"),
   bifurcationCanvas: document.getElementById("bifurcation-canvas"),
+  pitchforkSurfacePanel: document.getElementById("pitchfork-surface-minimap"),
+  pitchforkSurfaceCanvas: document.getElementById("pitchfork-surface-canvas"),
+  pitchforkSurfaceAlpha: document.getElementById("pitchfork-surface-alpha"),
+  pitchforkSurfaceBeta: document.getElementById("pitchfork-surface-beta"),
+  pitchforkSurfaceDescription: document.getElementById("pitchfork-surface-description"),
   slopeCanvas: document.getElementById("slope-canvas"),
   phaseCanvas: document.getElementById("phase-canvas"),
   microscopeCanvas: document.getElementById("microscope-canvas"),
@@ -158,6 +164,7 @@ const state = {
   localPopoverOpen: false,
   localPopoverNeedsPosition: false,
   localPopoverTrigger: null,
+  pitchforkSurfaceDirty: true,
   fullscreenActive: false,
   fullscreenInitialized: false,
   hysteresisDirty: true,
@@ -235,6 +242,8 @@ function fullscreenSupported() {
 
 function redrawAfterFullscreenChange() {
   drawBifurcationDiagram();
+  state.pitchforkSurfaceDirty = true;
+  drawPitchforkSurface({ force: true });
   drawSlopeField();
   drawPhaseLine();
   if (state.localPopoverOpen) {
@@ -592,6 +601,342 @@ function drawHysteresisTrail(context, trail, ranges, box, color, width = 2.8, da
   }
   context.stroke();
   context.restore();
+}
+
+const PITCHFORK_SURFACE_BOUNDS = Object.freeze({
+  xMin: -2.2,
+  xMax: 2.2,
+  rMin: -2.2,
+  rMax: 2.2,
+  alphaMin: -0.58,
+  alphaMax: 0.58
+});
+
+function pitchforkSurfacePoint(x, r, unfolding) {
+  return {
+    x,
+    r,
+    alpha: pitchforkSurfaceAlpha(x, r, unfolding)
+  };
+}
+
+function interpolateSurfacePoint(start, end, amount) {
+  return {
+    x: lerp(start.x, end.x, amount),
+    r: lerp(start.r, end.r, amount),
+    alpha: lerp(start.alpha, end.alpha, amount)
+  };
+}
+
+function clipSurfacePolygonAtAlpha(points, bound, keepAbove) {
+  if (!points.length) return [];
+  const clipped = [];
+  let previous = points[points.length - 1];
+  let previousInside = keepAbove ? previous.alpha >= bound : previous.alpha <= bound;
+  for (const current of points) {
+    const currentInside = keepAbove ? current.alpha >= bound : current.alpha <= bound;
+    if (currentInside !== previousInside) {
+      const denominator = current.alpha - previous.alpha;
+      const amount = Math.abs(denominator) < 1e-14 ? 0 : (bound - previous.alpha) / denominator;
+      clipped.push(interpolateSurfacePoint(previous, current, clamp(amount, 0, 1)));
+    }
+    if (currentInside) clipped.push(current);
+    previous = current;
+    previousInside = currentInside;
+  }
+  return clipped;
+}
+
+function clipSurfacePolygon(points, bounds = PITCHFORK_SURFACE_BOUNDS) {
+  return clipSurfacePolygonAtAlpha(
+    clipSurfacePolygonAtAlpha(points, bounds.alphaMin, true),
+    bounds.alphaMax,
+    false
+  );
+}
+
+function clipSurfaceSegment(start, end, bounds = PITCHFORK_SURFACE_BOUNDS) {
+  const delta = end.alpha - start.alpha;
+  if (Math.abs(delta) < 1e-14) {
+    return start.alpha >= bounds.alphaMin && start.alpha <= bounds.alphaMax
+      ? [start, end]
+      : null;
+  }
+  const first = (bounds.alphaMin - start.alpha) / delta;
+  const second = (bounds.alphaMax - start.alpha) / delta;
+  const enter = Math.max(0, Math.min(first, second));
+  const exit = Math.min(1, Math.max(first, second));
+  if (enter > exit) return null;
+  return [
+    interpolateSurfacePoint(start, end, enter),
+    interpolateSurfacePoint(start, end, exit)
+  ];
+}
+
+function projectPitchforkSurface(point, width, height, bounds = PITCHFORK_SURFACE_BOUNDS) {
+  const xCenter = (bounds.xMin + bounds.xMax) / 2;
+  const rCenter = (bounds.rMin + bounds.rMax) / 2;
+  const alphaCenter = (bounds.alphaMin + bounds.alphaMax) / 2;
+  const xHalf = (bounds.xMax - bounds.xMin) / 2;
+  const rHalf = (bounds.rMax - bounds.rMin) / 2;
+  const alphaHalf = (bounds.alphaMax - bounds.alphaMin) / 2;
+  const x = (point.x - xCenter) / xHalf;
+  const r = (point.r - rCenter) / rHalf;
+  const alpha = (point.alpha - alphaCenter) / alphaHalf;
+  const scale = Math.min(width / 3.05, height / 3.05);
+  return {
+    x: width * 0.5 + scale * (0.88 * r - 0.62 * x),
+    y: height * 0.5 + scale * (0.26 * r + 0.34 * x - 0.88 * alpha),
+    depth: 0.62 * r + 0.72 * x + 0.1 * alpha
+  };
+}
+
+function traceProjectedPolygon(context, points, project) {
+  if (!points.length) return;
+  const first = project(points[0]);
+  context.beginPath();
+  context.moveTo(first.x, first.y);
+  for (let index = 1; index < points.length; index += 1) {
+    const point = project(points[index]);
+    context.lineTo(point.x, point.y);
+  }
+  context.closePath();
+}
+
+function drawPitchforkSlicePlane(context, alpha, bounds, project) {
+  const corners = [
+    { x: bounds.xMin, r: bounds.rMin, alpha },
+    { x: bounds.xMin, r: bounds.rMax, alpha },
+    { x: bounds.xMax, r: bounds.rMax, alpha },
+    { x: bounds.xMax, r: bounds.rMin, alpha }
+  ];
+  context.save();
+  traceProjectedPolygon(context, corners, project);
+  context.fillStyle = "rgba(242, 201, 105, 0.13)";
+  context.fill();
+  context.strokeStyle = "rgba(242, 201, 105, 0.52)";
+  context.lineWidth = 1;
+  context.setLineDash([4, 4]);
+  context.stroke();
+  context.setLineDash([]);
+  context.strokeStyle = "rgba(242, 201, 105, 0.16)";
+  context.lineWidth = 0.7;
+  for (const amount of [0.25, 0.5, 0.75]) {
+    for (const alongR of [true, false]) {
+      const start = alongR
+        ? { x: lerp(bounds.xMin, bounds.xMax, amount), r: bounds.rMin, alpha }
+        : { x: bounds.xMin, r: lerp(bounds.rMin, bounds.rMax, amount), alpha };
+      const end = alongR
+        ? { x: start.x, r: bounds.rMax, alpha }
+        : { x: bounds.xMax, r: start.r, alpha };
+      const projectedStart = project(start);
+      const projectedEnd = project(end);
+      context.beginPath();
+      context.moveTo(projectedStart.x, projectedStart.y);
+      context.lineTo(projectedEnd.x, projectedEnd.y);
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function drawPitchforkSurfaceMesh(context, unfolding, bounds, project) {
+  const xIntervals = 24;
+  const rIntervals = 22;
+  const grid = Array.from({ length: xIntervals + 1 }, (_, xIndex) => {
+    const x = lerp(bounds.xMin, bounds.xMax, xIndex / xIntervals);
+    return Array.from({ length: rIntervals + 1 }, (_, rIndex) => {
+      const r = lerp(bounds.rMin, bounds.rMax, rIndex / rIntervals);
+      return pitchforkSurfacePoint(x, r, unfolding);
+    });
+  });
+  const polygons = [];
+  for (let xIndex = 0; xIndex < xIntervals; xIndex += 1) {
+    for (let rIndex = 0; rIndex < rIntervals; rIndex += 1) {
+      const corners = [
+        grid[xIndex][rIndex],
+        grid[xIndex + 1][rIndex],
+        grid[xIndex + 1][rIndex + 1],
+        grid[xIndex][rIndex + 1]
+      ];
+      for (const triangle of [
+        [corners[0], corners[1], corners[2]],
+        [corners[0], corners[2], corners[3]]
+      ]) {
+        const clipped = clipSurfacePolygon(triangle, bounds);
+        if (clipped.length < 3) continue;
+        const projected = clipped.map(project);
+        const centroid = clipped.reduce((result, point) => ({
+          x: result.x + point.x / clipped.length,
+          r: result.r + point.r / clipped.length,
+          alpha: result.alpha + point.alpha / clipped.length
+        }), { x: 0, r: 0, alpha: 0 });
+        const alphaR = -unfolding.couplingSign * centroid.x;
+        const alphaX = -(
+          2 * unfolding.beta * centroid.x
+          + unfolding.couplingSign * centroid.r
+          + 3 * unfolding.cubicSign * centroid.x * centroid.x
+        );
+        const length = Math.hypot(alphaR, alphaX, 1) || 1;
+        const illumination = clamp(
+          0.58 + 0.2 * ((-0.32 * alphaR - 0.45 * alphaX + 0.83) / length),
+          0.28,
+          0.88
+        );
+        const depth = projected.reduce((sum, point) => sum + point.depth, 0) / projected.length;
+        polygons.push({ clipped, depth, illumination });
+      }
+    }
+  }
+  polygons.sort((left, right) => left.depth - right.depth);
+  context.save();
+  for (const polygon of polygons) {
+    const shade = polygon.illumination;
+    const red = Math.round(96 + 150 * shade);
+    const green = Math.round(122 + 126 * shade);
+    const blue = Math.round(158 + 94 * shade);
+    traceProjectedPolygon(context, polygon.clipped, project);
+    context.fillStyle = `rgba(${red}, ${green}, ${blue}, 0.62)`;
+    context.fill();
+  }
+  context.strokeStyle = "rgba(231, 240, 236, 0.2)";
+  context.lineWidth = 0.65;
+  const drawGridLine = (points) => {
+    for (let index = 1; index < points.length; index += 1) {
+      const clipped = clipSurfaceSegment(points[index - 1], points[index], bounds);
+      if (!clipped) continue;
+      const start = project(clipped[0]);
+      const end = project(clipped[1]);
+      context.beginPath();
+      context.moveTo(start.x, start.y);
+      context.lineTo(end.x, end.y);
+      context.stroke();
+    }
+  };
+  for (let xIndex = 0; xIndex <= xIntervals; xIndex += 3) drawGridLine(grid[xIndex]);
+  for (let rIndex = 0; rIndex <= rIntervals; rIndex += 3) {
+    drawGridLine(grid.map((row) => row[rIndex]));
+  }
+  context.restore();
+}
+
+function drawPitchforkSliceIntersection(context, branches, alpha, bounds, project) {
+  context.save();
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.shadowColor = "rgba(255, 253, 247, 0.62)";
+  context.shadowBlur = 3;
+  for (const branch of branches || []) {
+    const points = branch.points || [];
+    let activeStyle = null;
+    let pathOpen = false;
+    const strokePath = () => {
+      if (!pathOpen || !activeStyle) return;
+      context.strokeStyle = activeStyle.color;
+      context.lineWidth = Math.max(1.8, activeStyle.width - 0.2);
+      context.setLineDash((activeStyle.dash || []).map((value) => value * 0.72));
+      context.stroke();
+      pathOpen = false;
+    };
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const previousVisible = previous.r >= bounds.rMin && previous.r <= bounds.rMax
+        && previous.x >= bounds.xMin && previous.x <= bounds.xMax;
+      const currentVisible = current.r >= bounds.rMin && current.r <= bounds.rMax
+        && current.x >= bounds.xMin && current.x <= bounds.xMax;
+      if (!previousVisible || !currentVisible) {
+        strokePath();
+        activeStyle = null;
+        continue;
+      }
+      const style = branchStyle(current.stability, true);
+      if (!sameBranchStyle(style, activeStyle)) {
+        strokePath();
+        activeStyle = style;
+        const start = project({ x: previous.x, r: previous.r, alpha });
+        context.beginPath();
+        context.moveTo(start.x, start.y);
+      }
+      const end = project({ x: current.x, r: current.r, alpha });
+      context.lineTo(end.x, end.y);
+      pathOpen = true;
+    }
+    strokePath();
+  }
+  context.setLineDash([]);
+  context.restore();
+}
+
+function drawPitchforkSurfaceAxes(context, bounds, project) {
+  const origin = project({ x: 0, r: 0, alpha: 0 });
+  const axes = [
+    { end: { x: 0, r: bounds.rMax, alpha: 0 }, label: "r", dx: 5, dy: -2 },
+    { end: { x: bounds.xMax, r: 0, alpha: 0 }, label: "x", dx: -9, dy: -2 },
+    { end: { x: 0, r: 0, alpha: bounds.alphaMax }, label: "α", dx: 4, dy: -3 }
+  ];
+  context.save();
+  context.strokeStyle = "rgba(231, 240, 236, 0.62)";
+  context.fillStyle = "rgba(231, 240, 236, 0.92)";
+  context.lineWidth = 1;
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.textAlign = "left";
+  context.textBaseline = "middle";
+  for (const axis of axes) {
+    const end = project(axis.end);
+    context.beginPath();
+    context.moveTo(origin.x, origin.y);
+    context.lineTo(end.x, end.y);
+    context.stroke();
+    context.fillText(axis.label, end.x + axis.dx, end.y + axis.dy);
+  }
+  context.restore();
+}
+
+function drawPitchforkSurface(options = {}) {
+  const unfolding = state.family?.unfolding;
+  const visible = Boolean(unfolding && state.family?.supportsUnfolding && !elements.pitchforkSurfacePanel.hidden);
+  if (!visible) {
+    state.pitchforkSurfaceDirty = false;
+    return;
+  }
+  if (!options.force && !state.pitchforkSurfaceDirty) return;
+  const { context, width, height } = canvasSurface(elements.pitchforkSurfaceCanvas);
+  const bounds = PITCHFORK_SURFACE_BOUNDS;
+  const project = (point) => projectPitchforkSurface(point, width, height, bounds);
+  const alpha = unfolding.alpha;
+  const beta = unfolding.beta;
+  context.clearRect(0, 0, width, height);
+  const background = typeof context.createLinearGradient === "function"
+    ? context.createLinearGradient(0, 0, width, height)
+    : COLORS.plot;
+  if (typeof background?.addColorStop === "function") {
+    background.addColorStop(0, "#0d332c");
+    background.addColorStop(1, "#071c18");
+  }
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+  drawPitchforkSlicePlane(context, alpha, bounds, project);
+  drawPitchforkSurfaceMesh(context, unfolding, bounds, project);
+  drawPitchforkSliceIntersection(context, state.diagram?.branches, alpha, bounds, project);
+  for (const candidate of state.candidates || []) {
+    if (
+      candidate.r < bounds.rMin || candidate.r > bounds.rMax
+      || candidate.x < bounds.xMin || candidate.x > bounds.xMax
+    ) continue;
+    const point = project({ x: candidate.x, r: candidate.r, alpha });
+    drawDiamond(context, point.x, point.y, 5.5, COLORS.currentBright, COLORS.ivory);
+  }
+  drawPitchforkSurfaceAxes(context, bounds, project);
+  elements.pitchforkSurfaceAlpha.textContent = `α plane = ${formatNumber(alpha, 3)}`;
+  elements.pitchforkSurfaceBeta.textContent = `β = ${formatNumber(beta, 3)}`;
+  const branchCount = state.diagram?.branches?.length || 0;
+  elements.pitchforkSurfaceDescription.textContent =
+    `Three-dimensional equilibrium surface at beta ${formatNumber(beta, 3)}. `
+    + `The gold plane alpha equals ${formatNumber(alpha, 3)} intersects it in `
+    + `${branchCount} ${branchCount === 1 ? "branch" : "branches"} shown in Diagram 01. `
+    + "Changing alpha moves the plane; changing beta deforms the surface.";
+  state.pitchforkSurfaceDirty = false;
 }
 
 function drawBifurcationDiagram() {
@@ -1839,6 +2184,12 @@ function updateFamilyCopy() {
   elements.hysteresisPanel.hidden = !showHysteresis;
   elements.workspace.classList.toggle("is-hysteresis", showHysteresis);
   if (showHysteresis) state.hysteresisDirty = true;
+  const showPitchforkSurface = Boolean(
+    state.family?.supportsUnfolding
+    && elements.familySelect.value === "pitchfork-unfolding"
+  );
+  elements.pitchforkSurfacePanel.hidden = !showPitchforkSurface;
+  if (showPitchforkSurface) state.pitchforkSurfaceDirty = true;
 }
 
 function familyIsPitchfork(id) {
@@ -1987,6 +2338,8 @@ function updateFamilySpecificControls(id) {
   elements.customEquationControls.hidden = !showCustom;
   elements.hysteresisControls.hidden = id !== "hysteresis";
   elements.hysteresisPanel.hidden = id !== "hysteresis";
+  elements.pitchforkSurfacePanel.hidden = id !== "pitchfork-unfolding";
+  if (id === "pitchfork-unfolding") state.pitchforkSurfaceDirty = true;
   elements.workspace.classList.toggle("is-hysteresis", id === "hysteresis");
   if (id !== "hysteresis") stopHysteresis(false);
   elements.generateFamily.hidden = id !== "random";
@@ -3189,6 +3542,7 @@ function animate(now) {
   }
   if (!document.hidden && now - state.lastRenderTime >= 30) {
     drawBifurcationDiagram();
+    if (state.pitchforkSurfaceDirty) drawPitchforkSurface();
     drawSlopeField();
     drawPhaseLine();
     if (state.localPopoverOpen && state.localDirty) {
@@ -3207,6 +3561,8 @@ function animate(now) {
 if (typeof ResizeObserver === "function") {
   const observer = new ResizeObserver(() => {
     drawBifurcationDiagram();
+    state.pitchforkSurfaceDirty = true;
+    drawPitchforkSurface({ force: true });
     drawSlopeField();
     drawPhaseLine();
     if (state.localPopoverOpen) {
@@ -3218,6 +3574,7 @@ if (typeof ResizeObserver === "function") {
   });
   [
     elements.bifurcationCanvas,
+    elements.pitchforkSurfaceCanvas,
     elements.slopeCanvas,
     elements.phaseCanvas,
     elements.microscopeCanvas,

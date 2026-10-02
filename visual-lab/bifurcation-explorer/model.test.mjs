@@ -231,6 +231,42 @@ assert.deepEqual(model.PRESET_IDS, [
       }
     }
   }
+
+  for (const beta of [-1.5, -0.4, 0, 0.7, 1.5]) {
+    for (const couplingSign of [-1, 1]) {
+      for (const cubicSign of [-1, 1]) {
+        for (const [x, r] of [[-1.2, -0.8], [-0.35, 1.1], [0, -1.7], [0.62, 0.45], [1.4, -1.2]]) {
+          const alpha = model.pitchforkSurfaceAlpha(x, r, {
+            beta,
+            couplingSign,
+            cubicSign
+          });
+          for (const timeSign of [-1, 1]) {
+            const family = model.createFamily("pitchfork-unfolding", "unused", {
+              alpha,
+              beta,
+              couplingSign,
+              cubicSign,
+              timeSign
+            });
+            near(
+              family.eval(x, r),
+              0,
+              2e-12,
+              "every plotted surface point should be an equilibrium"
+            );
+          }
+        }
+      }
+    }
+  }
+  near(
+    model.pitchforkSurfaceAlpha(0.8, -0.3, { beta: 1.1, couplingSign: -1, cubicSign: 1 })
+      - model.pitchforkSurfaceAlpha(0.8, -0.3, { beta: -0.4, couplingSign: -1, cubicSign: 1 }),
+    -(1.1 - (-0.4)) * 0.8 ** 2,
+    1e-12,
+    "changing beta should morph the surface by minus delta-beta times x squared"
+  );
 }
 
 {

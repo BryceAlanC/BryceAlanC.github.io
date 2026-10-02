@@ -442,6 +442,80 @@
   cursor: pointer;
 }
 
+.pitchfork-surface-minimap {
+  position: absolute;
+  z-index: 4;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  width: min(258px, 43%);
+  height: 190px;
+  box-sizing: border-box;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 0.48rem 0.55rem 0.42rem;
+  border: 1px solid rgba(231, 246, 241, 0.25);
+  background: rgba(7, 28, 24, 0.94);
+  box-shadow: 0 10px 26px rgba(7, 28, 24, 0.2);
+  color: #e7f0ec;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pitchfork-surface-minimap[hidden] {
+  display: none;
+}
+
+.pitchfork-surface-heading,
+.pitchfork-surface-caption {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  font-family: var(--mono);
+  letter-spacing: 0.035em;
+}
+
+.pitchfork-surface-heading {
+  padding-bottom: 0.2rem;
+  color: #e7f0ec;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
+.pitchfork-surface-heading strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pitchfork-surface-heading span {
+  flex: 0 0 auto;
+  color: #79d8c5;
+  font-size: 0.6rem;
+}
+
+.pitchfork-surface-minimap canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  cursor: default;
+  touch-action: auto;
+}
+
+.pitchfork-surface-caption {
+  padding-top: 0.18rem;
+  color: rgba(231, 240, 236, 0.76);
+  font-size: 0.55rem;
+  text-transform: none;
+}
+
+.pitchfork-surface-caption span:last-child {
+  color: #f2c969;
+  text-align: right;
+}
+
 #phase-canvas {
   position: absolute;
   inset: 0;
@@ -1036,6 +1110,11 @@
     grid-column: auto;
   }
 
+  .pitchfork-surface-minimap {
+    width: min(218px, 38%);
+    height: 164px;
+  }
+
   .microscope-grid,
   .hysteresis-grid {
     grid-template-columns: 1fr;
@@ -1145,6 +1224,27 @@
     min-height: 220px;
   }
 
+  .pitchfork-surface-minimap {
+    top: 0.45rem;
+    right: 0.45rem;
+    width: 158px;
+    height: 128px;
+    padding: 0.3rem 0.36rem;
+  }
+
+  .pitchfork-surface-heading {
+    font-size: 0.55rem;
+  }
+
+  .pitchfork-surface-heading span,
+  .pitchfork-surface-caption {
+    font-size: 0.5rem;
+  }
+
+  .pitchfork-surface-caption span:last-child {
+    display: none;
+  }
+
   .microscope-plot,
   .hysteresis-plot {
     min-height: 330px;
@@ -1165,6 +1265,7 @@
 
 @media (forced-colors: active) {
   #bifurcation-canvas,
+  #pitchfork-surface-canvas,
   #slope-canvas,
   #phase-canvas,
   #microscope-canvas,

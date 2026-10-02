@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261002-3" />
-    <script type="module" src="./demo.js?v=20261002-3"></script>
+    <link rel="stylesheet" href="./style.css?v=20261002-4" />
+    <script type="module" src="./demo.js?v=20261002-4"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -226,7 +226,9 @@
                 bias and β adds a quadratic asymmetry. The signs determine which side
                 of r contains the extra branches. The menu selects key regimes; the
                 sliders explore smoothly between them. Reversing time leaves every
-                equilibrium branch fixed but swaps stable with unstable.
+                equilibrium branch fixed but swaps stable with unstable. In the 3D inset,
+                the gold α plane cuts the equilibrium surface along the branches shown in
+                Diagram 01; changing β reshapes the surface itself.
               </p>
             </fieldset>
 
@@ -344,6 +346,32 @@
                       aria-describedby="branches-description"
                       aria-keyshortcuts="ArrowLeft ArrowRight Control+ArrowLeft Control+ArrowRight Control+ArrowUp Control+ArrowDown + - Space F 0 N Enter"
                     ></canvas>
+                    <div
+                      class="pitchfork-surface-minimap"
+                      id="pitchfork-surface-minimap"
+                      aria-labelledby="pitchfork-surface-title"
+                      hidden
+                    >
+                      <div class="pitchfork-surface-heading">
+                        <strong id="pitchfork-surface-title">Unfolding surface</strong>
+                        <span id="pitchfork-surface-beta">β = 0.000</span>
+                      </div>
+                      <canvas
+                        id="pitchfork-surface-canvas"
+                        role="img"
+                        aria-label="Three-dimensional equilibrium surface with the current alpha slicing plane"
+                        aria-describedby="pitchfork-surface-description"
+                      ></canvas>
+                      <div class="pitchfork-surface-caption" aria-hidden="true">
+                        <span id="pitchfork-surface-alpha">α plane = 0.000</span>
+                        <span>intersection = diagram 01</span>
+                      </div>
+                      <p class="sr-only" id="pitchfork-surface-description">
+                        The three-dimensional equilibrium surface in x, r, and alpha.
+                        The highlighted alpha plane intersects the surface in the branches
+                        shown in the bifurcation diagram.
+                      </p>
+                    </div>
                     <div class="plot-legend" aria-hidden="true">
                       <span><i class="legend-stable"></i>Stable</span>
                       <span><i class="legend-unstable"></i>Unstable</span>
@@ -355,7 +383,9 @@
                     Numbered diamonds mark detected bifurcation points. Moving circles on
                     the current-parameter line mirror the same trajectories shown on the
                     phase line below. The slope field and phase line use this diagram's visible
-                    x range. Scroll to zoom, left-click or left-drag to change r, and middle-drag
+                    x range. For the pitchfork unfolding, the upper-right inset shows this
+                    diagram as a fixed-alpha slice through the three-dimensional equilibrium
+                    surface. Scroll to zoom, left-click or left-drag to change r, and middle-drag
                     to pan. With the diagram focused, plus and minus zoom, Control plus arrow
                     keys pan, arrow keys change r, and F or 0 restores the complete view.
                   </p>
@@ -552,7 +582,9 @@
                 transcritical-plus-saddle-node, three-saddle-node, triple-root-boundary,
                 and one-saddle-node regimes. This is locally exhaustive
                 near an ordinary cubic pitchfork, not a classification of higher-order or global
-                degeneracies.
+                degeneracies. In that family, the corner inset shows the equilibrium surface
+                in <span class="nowrap">(x, r, α)</span>-space. Moving α translates the slicing
+                plane whose intersection is Diagram 01; moving β deforms the surface itself.
               </p>
             </details>
           </div>

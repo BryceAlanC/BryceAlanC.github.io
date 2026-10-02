@@ -308,6 +308,25 @@ function formatUnfoldingExpression(alpha, beta, couplingSign, cubicSign) {
   return expression || "0";
 }
 
+/**
+ * Alpha coordinate of the equilibrium surface for the cubic pitchfork
+ * unfolding alpha + beta*x^2 + epsilon*r*x + sigma*x^3 = 0.
+ * Reversing time does not change this surface, only its stability labels.
+ */
+export function pitchforkSurfaceAlpha(x, r, options = {}) {
+  const state = Number(x);
+  const parameter = Number(r);
+  if (!Number.isFinite(state) || !Number.isFinite(parameter)) return Number.NaN;
+  const beta = normalizeImperfection(options.beta ?? 0);
+  const couplingSign = normalizeSign(options.couplingSign, 1);
+  const cubicSign = normalizeSign(options.cubicSign, -1);
+  return -(
+    beta * state * state
+    + couplingSign * parameter * state
+    + cubicSign * state * state * state
+  );
+}
+
 function pitchforkFoldRoots(alpha, beta, cubicSign) {
   const polynomial = (x) => alpha - beta * x * x - 2 * cubicSign * x * x * x;
   const bound = 1 + Math.max(Math.abs(beta) / 2, Math.abs(alpha) / 2);
@@ -2319,6 +2338,7 @@ export default Object.freeze({
   hashSeed,
   createRng,
   createFamily,
+  pitchforkSurfaceAlpha,
   createRandomFamily,
   compileExpression,
   createCustomFamily,
