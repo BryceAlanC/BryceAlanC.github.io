@@ -703,7 +703,9 @@ function configureParameterControl() {
   elements.parameter.min = String(minimum);
   elements.parameter.max = String(maximum);
   elements.parameter.step = String(step);
+  elements.parameter.value = String(state.parameter);
   elements.parameter.setAttribute("aria-valuetext", `r equals ${formatNumber(state.parameter)}`);
+  if (elements.parameterValue) elements.parameterValue.textContent = formatNumber(state.parameter);
 }
 
 function resetPhaseView() {
