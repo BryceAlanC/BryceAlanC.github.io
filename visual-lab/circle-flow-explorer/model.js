@@ -160,10 +160,10 @@ const presetDefinitions = Object.freeze({
   }),
   nonuniform: Object.freeze({
     id: "nonuniform",
-    name: "Nonuniform rotation",
+    name: "Nonuniform circle flow",
     shortName: "Nonuniform",
     formula: () => "θ̇ = ω[1 + a cos(θ − φ)]",
-    description: "The orbit speeds up and slows down while continuing around the circle.",
+    description: "A periodic speed profile can produce rotation, a threshold stall, or a stable–unstable fixed-point pair.",
     lesson: "Changing speed does not create an equilibrium until the velocity actually reaches zero.",
     parameters: Object.freeze([
       Object.freeze({ ...commonParameters.omega, defaultValue: 1 }),
@@ -222,8 +222,8 @@ const presetDefinitions = Object.freeze({
     name: "Overdamped Josephson junction",
     shortName: "Josephson junction",
     formula: () => "φ̇ = I − I_c sin φ",
-    description: "The phase is pinned below critical current and runs above it.",
-    lesson: "The same circle flow describes a voltage-free locked state and a running state with nonzero mean voltage.",
+    description: "In rescaled time, the phase is pinned when |I| < I_c and runs when |I| > I_c.",
+    lesson: "The same circle flow describes a locked state with zero mean voltage and a running state with nonzero mean voltage.",
     parameters: Object.freeze([
       Object.freeze({ ...commonParameters.omega, symbol: "I", label: "Applied current I", defaultValue: 1.25 }),
       Object.freeze({ ...commonParameters.amplitude, symbol: "I_c", label: "Critical current I_c", defaultValue: 1 })
@@ -714,7 +714,7 @@ export function analyzeCircleFlow(flowOrId, options = {}) {
   const frequency = Number.isFinite(period)
     ? rotationSign(flow) * (flow.period || TWO_PI) / period
     : 0;
-  const sign = Number.isFinite(period) ? Math.sign(frequency) : 0;
+  const sign = Number.isFinite(period) ? Math.sign(frequency) : threshold ? rotationSign(flow) : 0;
   return Object.freeze({
     flowId: flow.id || "custom",
     regime: continuum ? "stationary" : equilibria.length === 0 ? "rotating" : threshold ? "threshold" : "locked",

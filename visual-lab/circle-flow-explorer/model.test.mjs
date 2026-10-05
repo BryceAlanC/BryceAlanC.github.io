@@ -86,6 +86,11 @@ for (const id of model.PRESET_IDS) {
   assert.equal(thresholdEquilibria[0].stability, "semistable");
   assert.equal(model.rotationPeriod(threshold), Infinity);
   assert.equal(model.analyzeCircleFlow(threshold).regime, "threshold");
+  assert.equal(model.analyzeCircleFlow(threshold).direction, "counterclockwise");
+
+  const negativeThreshold = model.createCircleFlow("overdamped-pendulum", { omega: -1, amplitude: 1 });
+  assert.equal(model.analyzeCircleFlow(negativeThreshold).regime, "threshold");
+  assert.equal(model.analyzeCircleFlow(negativeThreshold).direction, "clockwise");
 
   const running = model.createCircleFlow("overdamped-pendulum", { omega: 1.2, amplitude: 1 });
   assert.equal(model.findEquilibria(running).length, 0);

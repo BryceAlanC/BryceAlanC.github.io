@@ -99,7 +99,7 @@ const FAMILY_UI = Object.freeze({
     defaults: { omega: 1, a: 0.65, phase: 0.35 },
     ranges: { omega: [-2.2, 2.2, 0.002], a: [0, 1.4, 0.002], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Base angular velocity ω", a: "Speed modulation a", phase: "Wave phase φ" },
-    help: "For a < 1 the speed varies but never vanishes. At a = 1 a bottleneck becomes a threshold; for a > 1 fixed points appear."
+    help: "For ω ≠ 0 and a < 1 the speed varies but never vanishes. At a = 1 a bottleneck becomes a threshold; for a > 1 fixed points appear."
   },
   "overdamped-pendulum": {
     visible: ["omega", "a"],
@@ -120,7 +120,7 @@ const FAMILY_UI = Object.freeze({
     defaults: { omega: 1.25, a: 1 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0.15, 1.6, 0.002] },
     labels: { omega: "Applied current I", a: "Critical current I_c" },
-    help: "Below critical current the phase is pinned. Above it the phase runs, producing a nonzero mean voltage."
+    help: "For |I| < I_c the phase is pinned with zero mean voltage. At |I| = I_c it reaches threshold; for |I| > I_c it runs with nonzero mean voltage."
   },
   "repeated-locking-sites": {
     visible: ["omega", "a", "n", "phase"],
@@ -147,6 +147,7 @@ const state = {
   minimumVelocityPoint: null,
   particles: [],
   nextParticleId: 1,
+  activeParticleId: null,
   selectedAngle: 0,
   elapsed: 0,
   totalLaps: 0,
@@ -164,7 +165,8 @@ const state = {
   velocityPlot: null,
   liftPhaseLine: null,
   fullscreenInitialized: false,
-  lastAnnouncement: ""
+  lastAnnouncement: "",
+  dirty: true
 };
 
 function clamp(value, minimum, maximum) {
@@ -311,18 +313,22 @@ function resetParticles(options = {}) {
   for (let index = 0; index < count; index += 1) {
     makeParticle(TWO_PI * (index + 0.37) / count, { ambient: true });
   }
-  makeParticle(state.selectedAngle, { ambient: false });
+  const selected = makeParticle(state.selectedAngle, { ambient: false });
+  state.activeParticleId = selected.id;
+  state.dirty = true;
   if (options.announce !== false) announce("Trajectories restarted from angles around the circle.");
 }
 
 function addParticle(angle, options = {}) {
   state.selectedAngle = wrapAngle(angle);
   const particle = makeParticle(state.selectedAngle, { ambient: false });
+  state.activeParticleId = particle.id;
   if (state.particles.length > 18) {
     const removable = state.particles.findIndex((entry) => entry.id !== particle.id && entry.ambient);
     state.particles.splice(removable >= 0 ? removable : 0, 1);
   }
   updateSelectedReadout();
+  state.dirty = true;
   const symbolName = state.flow && ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "phi" : "theta";
   if (options.announce !== false) announce(`Trajectory added at ${symbolName} ${formatPi(state.selectedAngle)}.`);
 }
@@ -392,8 +398,11 @@ function updateRegimeCopy() {
     elements.regimeNoteKicker.textContent = "Degenerate stationary flow";
     elements.regimeNoteCopy.textContent = "The vector field vanishes everywhere, so every initial angle is a constant solution.";
   } else if (regime === "threshold") {
-    elements.regimeNoteKicker.textContent = "Saddle-node threshold";
-    elements.regimeNoteCopy.textContent = "A stable and unstable equilibrium have just met. Motion approaches the contact from one side and leaves on the other.";
+    const repeated = elements.familySelect.value === "repeated-locking-sites" && Number(elements.n.value) > 1;
+    elements.regimeNoteKicker.textContent = repeated ? "Symmetry-forced thresholds" : "Saddle-node threshold";
+    elements.regimeNoteCopy.textContent = repeated
+      ? `${Math.round(Number(elements.n.value))} stable–unstable pairs meet simultaneously because of the rotational symmetry. Motion stalls at each contact from one side.`
+      : "A stable and unstable equilibrium have just met. Motion approaches the contact from one side and leaves on the other.";
   } else if (regime === "locked") {
     elements.regimeNoteKicker.textContent = elements.familySelect.value === "firefly-locking" ? "Phase locked" : "Fixed points divide the circle";
     elements.regimeNoteCopy.textContent = elements.familySelect.value === "firefly-locking"
@@ -425,7 +434,13 @@ function updateTelemetry() {
       : direction === "mixed"
         ? "Toward attractors"
         : "Stationary";
-  elements.telemetryFrequency.textContent = regime === "rotating" ? formatNumber(meanFrequency, 3) : regime === "stationary" ? "—" : "0 (locked)";
+  elements.telemetryFrequency.textContent = regime === "rotating"
+    ? formatNumber(meanFrequency, 3)
+    : regime === "stationary"
+      ? "—"
+      : regime === "threshold"
+        ? "0 (threshold)"
+        : "0 (locked)";
   elements.stageStatus.textContent = Number.isFinite(period)
     ? `One lap: T = ${formatNumber(period, 3)}`
     : regime === "threshold"
@@ -439,6 +454,7 @@ function updateTelemetry() {
 
 function refreshFlow(options = {}) {
   const id = elements.familySelect.value;
+  const previousRegime = state.analysis?.regime || null;
   state.flow = createCircleFlow(id, currentParameters());
   state.analysis = analyzeCircleFlow(state.flow, { equilibriumOptions: { samples: 2048 } });
   state.samples = sampleFlow(state.flow, { samples: 481 }).points;
@@ -456,7 +472,11 @@ function refreshFlow(options = {}) {
   updateEquilibriumList();
   updateTelemetry();
   updateRegimeCopy();
+  state.dirty = true;
   if (options.resetParticles) resetParticles({ announce: false });
+  if (previousRegime && previousRegime !== state.analysis.regime && !options.announce) {
+    announce(`Regime changed to ${elements.telemetryRegime.textContent.toLowerCase()}.`);
+  }
   if (options.announce) announce(`${state.flow.name}. ${elements.telemetryRegime.textContent}.`);
 }
 
@@ -830,7 +850,8 @@ function drawVelocityGraph() {
   context.fillText("0", box.left - 7, zeroY + 3);
   context.fillText(formatNumber(-yMaximum, 2), box.left - 7, box.bottom + 3);
   context.textAlign = "left";
-  context.fillText("f(θ)", box.left + 5, box.top + 13);
+  const stateSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "φ" : "θ";
+  context.fillText(`f(${stateSymbol})`, box.left + 5, box.top + 13);
   context.restore();
 
   if (state.analysis.equilibriumCount !== Infinity) {
@@ -962,10 +983,11 @@ function drawLiftedFlow() {
   if (elements.showTrails.checked) {
     recentTrails.forEach((trail, particleIndex) => {
       if (trail.length < 2) return;
-      context.strokeStyle = particleIndex === recentTrails.length - 1
+      const highlighted = state.particles[particleIndex]?.id === state.activeParticleId;
+      context.strokeStyle = highlighted
         ? "rgba(138, 98, 0, 0.88)"
         : "rgba(11, 87, 72, 0.48)";
-      context.lineWidth = particleIndex === recentTrails.length - 1 ? 2 : 1.2;
+      context.lineWidth = highlighted ? 2 : 1.2;
       context.lineJoin = "round";
       context.beginPath();
       trail.forEach((point, index) => {
@@ -986,7 +1008,8 @@ function drawLiftedFlow() {
   context.fillStyle = COLORS.muted;
   context.font = "9px 'IBM Plex Mono', monospace";
   context.textAlign = "left";
-  context.fillText("lift Θ(t)", graph.left + 4, graph.top + 11);
+  const liftSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "Φ" : "Θ";
+  context.fillText(`lift ${liftSymbol}(t)`, graph.left + 4, graph.top + 11);
   context.fillText(`${formatNumber(startTime, 1)} s`, graph.left, graph.bottom + 12);
   context.textAlign = "right";
   context.fillText(`${formatNumber(endTime, 1)} s`, graph.right, graph.bottom + 12);
@@ -1074,6 +1097,7 @@ function drawAll() {
   drawLiftedFlow();
   elements.elapsedTime.textContent = formatNumber(state.elapsed, 1);
   elements.lapCount.textContent = String(state.totalLaps);
+  state.dirty = false;
 }
 
 function appendTrails() {
@@ -1111,6 +1135,7 @@ function updateParticles(delta) {
     appendTrails();
     state.lastTrailTime = state.elapsed;
   }
+  state.dirty = true;
 }
 
 function syncAnimationButton() {
@@ -1194,6 +1219,7 @@ function beginCanvasPointer(canvas, event) {
   state.pointer = { canvas, pointerId: event.pointerId, moved: false };
   state.selectedAngle = angleFromCanvas(canvas, event);
   updateSelectedReadout();
+  state.dirty = true;
   canvas.dataset.dragging = "true";
   canvas.setPointerCapture?.(event.pointerId);
 }
@@ -1203,6 +1229,7 @@ function moveCanvasPointer(canvas, event) {
   state.pointer.moved = true;
   state.selectedAngle = angleFromCanvas(canvas, event);
   updateSelectedReadout();
+  state.dirty = true;
 }
 
 function endCanvasPointer(canvas, event) {
@@ -1230,6 +1257,7 @@ function handleCanvasKey(event) {
     const increment = event.shiftKey ? Math.PI / 6 : Math.PI / 24;
     state.selectedAngle = wrapAngle(state.selectedAngle + (event.key === "ArrowRight" ? increment : -increment));
     updateSelectedReadout();
+    state.dirty = true;
     const symbolName = state.flow && ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "phi" : "theta";
     announce(`Selected ${symbolName} ${formatPi(state.selectedAngle)}.`);
   } else if (event.key === "Enter") {
@@ -1301,6 +1329,11 @@ function installEvents() {
       announce(`${input.previousElementSibling?.textContent?.trim() || "Parameter"} set to ${input.getAttribute("aria-valuetext") || input.value}.`);
     });
   });
+  [elements.showArrows, elements.showTrails, elements.showLabels, elements.showEquilibriumParticles].forEach((input) => {
+    input.addEventListener("change", () => {
+      state.dirty = true;
+    });
+  });
   elements.playOmega.addEventListener("click", toggleParameterPlay);
   elements.toggleAnimation.addEventListener("click", () => toggleAnimation());
   elements.resetParticles.addEventListener("click", () => resetParticles());
@@ -1338,7 +1371,7 @@ function animate(now) {
   state.lastFrameTime = now;
   updateParameterSweep(delta);
   updateParticles(delta);
-  if (!document.hidden && now - state.lastRenderTime >= 30) {
+  if (state.dirty && !document.hidden && now - state.lastRenderTime >= 30) {
     drawAll();
     state.lastRenderTime = now;
   }
@@ -1359,7 +1392,10 @@ function initialize() {
   if (elements.fullscreenToggle) elements.fullscreenToggle.hidden = !fullscreenSupported();
   syncFullscreen({ announce: false });
   if (typeof ResizeObserver === "function") {
-    const observer = new ResizeObserver(drawAll);
+    const observer = new ResizeObserver(() => {
+      state.dirty = true;
+      drawAll();
+    });
     observer.observe(elements.circleCanvas);
     observer.observe(elements.velocityCanvas);
     observer.observe(elements.liftCanvas);
