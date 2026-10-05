@@ -509,9 +509,11 @@ function refreshObjects(options = {}) {
       data: connection
     }))
   ];
-  state.selectedObjectId = state.objects.some((object) => object.id === previous)
-    ? previous
-    : state.objects[0]?.id || null;
+  state.selectedObjectId = state.connections.length
+    ? "connection-0"
+    : state.objects.some((object) => object.id === previous)
+      ? previous
+      : state.objects[0]?.id || null;
 
   if (elements.objectSelect) {
     elements.objectSelect.replaceChildren();
