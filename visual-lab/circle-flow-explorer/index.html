@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flows on the Circle | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Explore autonomous flows on the circle through a linked phase portrait, angular-velocity graph, and cut-open phase line."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Flows on the Circle | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Connect a periodic differential equation to phase locking, rotation, equilibria, and the infinite-period bottleneck."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css?v=20261005-1" />
+    <script type="module" src="./demo.js?v=20261005-1"></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../">← Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Nonlinear dynamics · flows on the circle</p>
+            <h1>Flows on the circle</h1>
+            <p class="app-hero-copy">
+              See one periodic differential equation three ways: as motion around a
+              circle, as an angular-velocity graph, and as a phase line whose endpoints
+              are joined. Follow the transition between phase locking and continual
+              rotation without losing sight of the underlying equation.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-app circle-flow-app" aria-label="Flows on the circle explorer">
+        <div class="lab-stage-shell app-layout circle-flow-layout" id="circle-flow-workspace">
+          <aside class="control-panel" aria-label="Circle-flow controls">
+            <div class="control-intro">
+              <h2>Choose a periodic flow</h2>
+              <p>
+                Every view uses the same autonomous equation
+                <span class="nowrap">θ̇ = f(θ)</span>, with
+                <span class="nowrap">f(θ + 2π) = f(θ)</span>.
+              </p>
+            </div>
+
+            <fieldset class="control-group">
+              <legend>Flow family</legend>
+              <label class="field-label" for="family-select">Example</label>
+              <select id="family-select">
+                <option value="uniform">Uniform rotation</option>
+                <option value="nonuniform">Nonuniform rotation</option>
+                <option value="overdamped-pendulum" selected>Overdamped pendulum</option>
+                <option value="firefly-locking">Firefly phase locking</option>
+                <option value="josephson-junction">Josephson junction</option>
+                <option value="repeated-locking-sites">Repeated locking sites</option>
+                <option value="fourier-workshop">Fourier workshop</option>
+              </select>
+              <div class="equation-card" aria-live="polite">
+                <span id="family-kind">Overdamped pendulum</span>
+                <code id="family-equation">θ̇ = ω − a sin θ</code>
+                <small id="family-description">Drive competes with a restoring torque.</small>
+              </div>
+            </fieldset>
+
+            <fieldset class="control-group parameter-group">
+              <legend>Parameters</legend>
+
+              <div class="parameter-control" id="parameter-omega-control">
+                <div class="field-label">
+                  <label for="parameter-omega"><span id="parameter-omega-label">Drive ω</span></label>
+                  <span class="parameter-readout">
+                    <output id="parameter-omega-value" for="parameter-omega">0.70</output>
+                    <button
+                      class="parameter-play"
+                      id="play-parameter-omega"
+                      type="button"
+                      aria-controls="parameter-omega"
+                      aria-pressed="false"
+                      aria-label="Animate the drive parameter"
+                    ><span aria-hidden="true">▶</span></button>
+                  </span>
+                </div>
+                <input id="parameter-omega" type="range" min="-2" max="2" value="0.7" step="0.002" />
+              </div>
+
+              <div class="parameter-control" id="parameter-a-control">
+                <div class="field-label">
+                  <label for="parameter-a"><span id="parameter-a-label">Restoring strength a</span></label>
+                  <output id="parameter-a-value" for="parameter-a">1.00</output>
+                </div>
+                <input id="parameter-a" type="range" min="0" max="2" value="1" step="0.002" />
+              </div>
+
+              <div class="parameter-control" id="parameter-b-control" hidden>
+                <div class="field-label">
+                  <label for="parameter-b"><span id="parameter-b-label">Second harmonic b</span></label>
+                  <output id="parameter-b-value" for="parameter-b">0.35</output>
+                </div>
+                <input id="parameter-b" type="range" min="-1.5" max="1.5" value="0.35" step="0.002" />
+              </div>
+
+              <div class="parameter-control" id="parameter-phase-control" hidden>
+                <div class="field-label">
+                  <label for="parameter-phase"><span id="parameter-phase-label">Phase shift φ</span></label>
+                  <output id="parameter-phase-value" for="parameter-phase">0.00π</output>
+                </div>
+                <input id="parameter-phase" type="range" min="-3.141593" max="3.141593" value="0" step="0.002" />
+              </div>
+
+              <div class="parameter-control" id="parameter-n-control" hidden>
+                <div class="field-label">
+                  <label for="parameter-n"><span id="parameter-n-label">Number of locking sites n</span></label>
+                  <output id="parameter-n-value" for="parameter-n">3</output>
+                </div>
+                <input id="parameter-n" type="range" min="1" max="8" value="3" step="1" />
+              </div>
+
+              <p class="control-help" id="parameter-help">
+                Vary the drive through the locking threshold. The same particles remain
+                visible while the vector field morphs.
+              </p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Motion</legend>
+              <div class="control-row motion-buttons">
+                <button class="lab-button lab-button-primary" id="toggle-animation" type="button" aria-pressed="true">
+                  Pause motion
+                </button>
+                <button class="lab-button" id="reset-particles" type="button">Restart particles</button>
+              </div>
+              <div class="field-label field-label-spaced">
+                <label for="animation-speed">Time scale</label>
+                <output id="animation-speed-value" for="animation-speed">1.00×</output>
+              </div>
+              <input id="animation-speed" type="range" min="0.2" max="2" value="1" step="0.05" />
+              <p class="control-help">
+                Click any view to add the same initial condition to all three views.
+              </p>
+            </fieldset>
+
+            <details class="control-group display-controls">
+              <summary>Display</summary>
+              <label class="toggle-label" for="show-arrows">
+                <input id="show-arrows" type="checkbox" checked />
+                <span>Direction arrows</span>
+              </label>
+              <label class="toggle-label" for="show-trails">
+                <input id="show-trails" type="checkbox" checked />
+                <span>Particle trails</span>
+              </label>
+              <label class="toggle-label" for="show-labels">
+                <input id="show-labels" type="checkbox" checked />
+                <span>Angle labels</span>
+              </label>
+              <label class="toggle-label" for="show-equilibrium-particles">
+                <input id="show-equilibrium-particles" type="checkbox" checked />
+                <span>Constant-solution particles</span>
+              </label>
+            </details>
+
+            <section class="equilibrium-card" aria-labelledby="equilibrium-list-title">
+              <div class="equilibrium-card-heading">
+                <h3 id="equilibrium-list-title">Equilibria on the circle</h3>
+                <span id="equilibrium-list-count">—</span>
+              </div>
+              <ul id="equilibrium-list" aria-live="polite">
+                <li class="equilibrium-empty">Finding equilibria…</li>
+              </ul>
+              <p>
+                Filled markers are stable; hollow markers are unstable; double rings
+                mark a nonhyperbolic threshold.
+              </p>
+            </section>
+
+            <p class="keyboard-help">
+              In a plot: ←/→ moves the selected angle · Enter adds a particle · Space
+              pauses or resumes · 0 restarts. The angular-velocity plot also accepts
+              click-and-drag.
+            </p>
+          </aside>
+
+          <div class="stage-stack">
+            <section class="stage-panel" aria-labelledby="visualizer-title">
+              <div class="stage-heading circle-stage-heading">
+                <div>
+                  <p class="section-kicker">One periodic equation · three linked views</p>
+                  <h2 id="visualizer-title">Phase portrait, velocity graph, and lifted flow</h2>
+                </div>
+                <div class="stage-heading-status">
+                  <div class="stage-heading-toolbar">
+                    <p id="stage-status">Preparing the circle flow…</p>
+                    <button
+                      class="lab-button workspace-fullscreen-toggle"
+                      id="workspace-fullscreen-toggle"
+                      type="button"
+                      aria-controls="circle-flow-workspace"
+                      aria-label="Enter full screen"
+                      hidden
+                    >
+                      <span aria-hidden="true">⛶</span>
+                      <span id="workspace-fullscreen-label">Full screen</span>
+                    </button>
+                  </div>
+                  <div class="stage-mini-telemetry" aria-label="Current dynamical measurements">
+                    <span><small>Regime</small><strong id="telemetry-regime">—</strong></span>
+                    <span><small>Equilibria</small><strong id="telemetry-equilibria">—</strong></span>
+                    <span><small>Direction</small><strong id="telemetry-direction">—</strong></span>
+                    <span><small>Mean angular drift Ω̄</small><strong id="telemetry-frequency">—</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="circle-workbench">
+                <section class="circle-panel portrait-panel" aria-labelledby="portrait-title">
+                  <div class="circle-panel-heading circle-panel-heading-dark">
+                    <div><span>01</span><h3 id="portrait-title">Circle phase portrait</h3></div>
+                    <p>Click to release a particle</p>
+                  </div>
+                  <div class="canvas-frame portrait-frame">
+                    <canvas
+                      id="circle-canvas"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Animated phase portrait of an autonomous flow on the circle"
+                      aria-describedby="circle-description"
+                      aria-keyshortcuts="ArrowLeft ArrowRight Enter Space 0"
+                    ></canvas>
+                    <div class="portrait-readout" aria-hidden="true">
+                      <span><small>Time</small><strong id="elapsed-time">0.0</strong></span>
+                      <span><small>Selected</small><strong id="selected-angle-readout">θ = 0.00π</strong></span>
+                      <span><small>Total laps</small><strong id="lap-count">0</strong></span>
+                    </div>
+                    <div class="portrait-legend" aria-hidden="true">
+                      <span><i class="legend-stable"></i>Stable</span>
+                      <span><i class="legend-unstable"></i>Unstable</span>
+                      <span><i class="legend-particle"></i>Trajectory</span>
+                    </div>
+                  </div>
+                  <p class="sr-only" id="circle-description">
+                    Tangential arrows show the sign and relative speed of the angular
+                    velocity. Filled equilibrium markers are stable and hollow markers
+                    are unstable. Moving gold particles follow the differential equation.
+                    Use the left and right arrow keys to choose an angle, Enter to add a
+                    particle there, Space to pause, and 0 to restart.
+                  </p>
+                </section>
+
+                <section class="circle-panel velocity-panel" aria-labelledby="velocity-title">
+                  <div class="circle-panel-heading">
+                  <div><span>02</span><h3 id="velocity-title">Angular velocity f(θ)</h3></div>
+                    <p id="velocity-equation-label">θ̇ = ω − a sin θ</p>
+                  </div>
+                  <div class="canvas-frame velocity-frame">
+                    <canvas
+                      id="velocity-canvas"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Graph of angular velocity against angle over one period"
+                      aria-describedby="velocity-description"
+                      aria-keyshortcuts="ArrowLeft ArrowRight Enter Space 0"
+                    ></canvas>
+                    <div class="velocity-legend" aria-hidden="true">
+                      <span><i class="legend-positive"></i>Counterclockwise</span>
+                      <span><i class="legend-negative"></i>Clockwise</span>
+                    </div>
+                  </div>
+                  <p class="sr-only" id="velocity-description">
+                    The curve plots f of theta from zero to two pi. Its zeros align with
+                    the equilibrium markers in the other views. Positive values move
+                    counterclockwise and negative values move clockwise. Click or drag to
+                    choose an initial angle.
+                  </p>
+                </section>
+
+                <section class="circle-panel lift-panel" aria-labelledby="lift-title">
+                  <div class="circle-panel-heading">
+                    <div><span>03</span><h3 id="lift-title">Cut the circle open</h3></div>
+                    <p>0 and 2π are the same point</p>
+                  </div>
+                  <div class="canvas-frame lift-frame">
+                    <canvas
+                      id="lift-canvas"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Cut-open phase line and lifted trajectories for the circle flow"
+                      aria-describedby="lift-description"
+                      aria-keyshortcuts="ArrowLeft ArrowRight Enter Space 0"
+                    ></canvas>
+                    <div class="seam-labels" aria-hidden="true">
+                      <span>0</span>
+                      <span>same point</span>
+                      <span>2π</span>
+                    </div>
+                  </div>
+                  <p class="sr-only" id="lift-description">
+                    The circle is cut at angle zero and opened into a phase line. Its two
+                    endpoints represent the same point, so a particle leaving one end
+                    immediately returns at the other. Lifted trails keep track of complete
+                    turns while the markers show positions modulo two pi.
+                  </p>
+                </section>
+
+                <aside class="regime-note" id="regime-note" aria-live="polite">
+                  <span id="regime-note-kicker">Phase locking</span>
+                  <p id="regime-note-copy">
+                    Stable and unstable equilibria divide the circle into arcs. Every
+                    nearby trajectory approaches the stable phase.
+                  </p>
+                </aside>
+              </div>
+            </section>
+
+            <details class="method-notes">
+              <summary>Mathematical notes</summary>
+              <div class="notes-grid">
+                <p class="app-note">
+                  <strong>Equilibria and topology.</strong> An equilibrium is an angle
+                  where <span class="nowrap">f(θ*) = 0</span>. Simple equilibria around a
+                  circle alternate stable and unstable. They can therefore be created or
+                  destroyed only in pairs. With no equilibria, every trajectory keeps
+                  circling in the same direction.
+                </p>
+                <p class="app-note">
+                  <strong>Rotation and mean frequency.</strong> If f never vanishes, one
+                  turn takes
+                  <span class="nowrap">T = ∫₀²π dθ / |f(θ)|</span>, and the signed mean
+                  angular frequency is <span class="nowrap">Ω = ±2π/T</span>. Uneven
+                  speed around the circle is therefore summarized by a single long-term
+                  rotation rate.
+                </p>
+                <p class="app-note">
+                  <strong>The locking threshold.</strong> In
+                  <span class="nowrap">θ̇ = ω − a sin θ</span>, equilibria exist when
+                  <span class="nowrap">|ω| ≤ |a|</span>. At equality, a stable–unstable
+                  pair collides. Just beyond the collision the orbit rotates, but lingers
+                  near the vanished pair: the infinite-period bottleneck.
+                </p>
+              </div>
+            </details>
+          </div>
+
+          <div class="sr-only" id="circle-flow-announcer" aria-live="polite" aria-atomic="true"></div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>

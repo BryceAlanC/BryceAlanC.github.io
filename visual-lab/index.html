@@ -454,6 +454,116 @@
               </div>
             </a>
 
+            <a class="lab-card lab-card-circle-flow" href="circle-flow-explorer/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="circle-flow-bg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#071e19" />
+                      <stop offset="0.56" stop-color="#10343a" />
+                      <stop offset="1" stop-color="#17192a" />
+                    </linearGradient>
+                    <pattern id="circle-flow-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+                      <path d="M24 0H0V24" fill="none" stroke="#e5f4ee" stroke-opacity="0.05" />
+                    </pattern>
+                    <filter id="circle-flow-glow" x="-100%" y="-100%" width="300%" height="300%">
+                      <feGaussianBlur stdDeviation="5" />
+                    </filter>
+                    <marker id="circle-flow-arrow-light" viewBox="0 0 8 8" refX="6.4" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0 0 8 4 0 8Z" fill="#dff8f0" />
+                    </marker>
+                    <marker id="circle-flow-arrow-mint" viewBox="0 0 8 8" refX="6.4" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0 0 8 4 0 8Z" fill="#6bcdbf" />
+                    </marker>
+                    <clipPath id="circle-flow-graph-clip">
+                      <rect x="346" y="22" width="270" height="202" />
+                    </clipPath>
+                  </defs>
+
+                  <rect width="640" height="390" fill="url(#circle-flow-bg)" />
+                  <rect width="640" height="390" fill="url(#circle-flow-grid)" />
+
+                  <rect x="24" y="22" width="300" height="346" fill="#071e19" fill-opacity="0.7" stroke="#dff8f0" stroke-opacity="0.18" />
+                  <g font-family="IBM Plex Mono, monospace" font-size="9" letter-spacing="1">
+                    <text x="38" y="43" fill="#dff8f0">FLOW ON S¹ · θ̇ = ω − sin θ</text>
+                    <text x="38" y="354" fill="#8fa49c">FOLLOW THE ANGLE, NOT AN ENDPOINT</text>
+                  </g>
+
+                  <circle cx="174" cy="190" r="105" fill="none" stroke="#dff8f0" stroke-opacity="0.12" stroke-width="19" />
+                  <circle cx="174" cy="190" r="105" fill="none" stroke="#dff8f0" stroke-opacity="0.52" stroke-width="1.6" />
+                  <path d="M84 244A105 105 0 0 0 272 153" fill="none" stroke="#6bcdbf" stroke-width="4" stroke-linecap="round" marker-end="url(#circle-flow-arrow-mint)" />
+                  <path d="M80 149A105 105 0 0 0 264 135" fill="none" stroke="#f0b18b" stroke-width="3" stroke-linecap="round" marker-end="url(#circle-flow-arrow-light)" />
+                  <path d="M274 190H305" fill="none" stroke="#ffd166" stroke-width="1.5" stroke-dasharray="4 5" />
+                  <text x="286" y="181" fill="#ffe49a" font-family="IBM Plex Mono, monospace" font-size="8" letter-spacing="0.7" text-anchor="middle">CUT</text>
+
+                  <circle cx="271" cy="150" r="15" fill="#6bcdbf" opacity="0.18" filter="url(#circle-flow-glow)" />
+                  <circle cx="271" cy="150" r="7" fill="#6bcdbf" stroke="#dffaf4" stroke-width="1.8" />
+                  <circle cx="77" cy="150" r="7" fill="#071e19" stroke="#f0b18b" stroke-width="2.2" />
+                  <circle cx="220" cy="285" r="4.5" fill="#ffd166" stroke="#fff9dc" stroke-width="1.2" />
+                  <circle cx="104" cy="259" r="3.6" fill="#dff8f0" opacity="0.72" />
+                  <g fill="#b9cbc4" font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.75">
+                    <text x="244" y="132" fill="#6bcdbf">STABLE</text>
+                    <text x="42" y="132" fill="#f0b18b">UNSTABLE</text>
+                    <text x="164" y="194" fill="#8fa49c">S¹</text>
+                  </g>
+
+                  <rect x="346" y="22" width="270" height="202" fill="#fffdf7" fill-opacity="0.97" stroke="#dff8f0" stroke-opacity="0.18" />
+                  <g clip-path="url(#circle-flow-graph-clip)">
+                    <g fill="none" stroke="#16352e" stroke-opacity="0.12">
+                      <path d="M370 70H596M370 126H596M370 182H596" />
+                      <path d="M426 48V202M483 48V202M539 48V202" />
+                    </g>
+                    <g fill="none" stroke="#16352e" stroke-opacity="0.68" stroke-width="1.1">
+                      <path d="M368 126H600" />
+                      <path d="M370 204V46" />
+                    </g>
+                    <path d="M370 111C376 114 380 121 383 126C396 150 410 159 426 159C446 159 460 143 470 126C489 92 512 62 539 62C560 62 583 88 596 111" fill="none" stroke="#265f91" stroke-width="3.2" stroke-linecap="round" />
+                    <path d="M383 48V202M470 48V202" fill="none" stroke="#16352e" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3 5" />
+                  </g>
+                  <g font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.75">
+                    <text x="360" y="42" fill="#16352e">ANGULAR VELOCITY · f(θ)</text>
+                    <text x="591" y="140" fill="#52675f">θ</text>
+                    <text x="374" y="199" fill="#52675f">0</text>
+                    <text x="579" y="199" fill="#52675f">2π</text>
+                  </g>
+                  <circle cx="383" cy="126" r="5.5" fill="#0b5748" stroke="#dffaf4" stroke-width="1.4" />
+                  <circle cx="470" cy="126" r="5.5" fill="#fffdf7" stroke="#a84f24" stroke-width="1.9" />
+
+                  <rect x="346" y="242" width="270" height="126" fill="#0b2222" stroke="#dff8f0" stroke-opacity="0.18" />
+                  <g font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.75">
+                    <text x="360" y="263" fill="#dff8f0">CUT OPEN · LIFT TO θ ∈ ℝ</text>
+                    <text x="366" y="344" fill="#8fa49c">0</text>
+                    <text x="579" y="344" fill="#8fa49c">2π</text>
+                  </g>
+                  <path d="M370 311H596" fill="none" stroke="#dff8f0" stroke-opacity="0.36" stroke-width="1.5" />
+                  <path d="M370 282V336M596 282V336" fill="none" stroke="#ffd166" stroke-opacity="0.72" stroke-width="1.4" stroke-dasharray="4 5" />
+                  <g fill="none" stroke="#dff8f0" stroke-width="1.8" marker-end="url(#circle-flow-arrow-light)">
+                    <path d="M374 311H382" />
+                    <path d="M456 311H402" />
+                    <path d="M482 311H548" />
+                  </g>
+                  <circle cx="383" cy="311" r="6.5" fill="#6bcdbf" stroke="#dffaf4" stroke-width="1.6" />
+                  <circle cx="470" cy="311" r="6.5" fill="#0b2222" stroke="#f0b18b" stroke-width="2" />
+                  <circle cx="535" cy="311" r="4" fill="#ffd166" stroke="#fff9dc" stroke-width="1" />
+                  <path d="M305 190C326 190 331 311 354 311" fill="none" stroke="#ffd166" stroke-opacity="0.44" stroke-width="1.2" stroke-dasharray="4 5" />
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>05 · Circle dynamics</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Flows on the circle</h3>
+              <p class="lab-card-copy">
+                Watch a periodic vector field move points around the circle while its
+                angular-velocity graph and cut-open lift update in step. Find fixed
+                points, compare their stability, and see how rotation emerges when a
+                stable–unstable pair disappears.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · Numerical</span>
+                <strong>Go around the circle <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+
             <a class="lab-card lab-card-planar-bifurcation" href="planar-bifurcation-explorer/">
               <div class="lab-card-preview" aria-hidden="true">
                 <svg viewBox="0 0 640 390" focusable="false">
@@ -549,7 +659,7 @@
                 </svg>
               </div>
               <div class="card-topline">
-                <span>05 · Planar dynamics</span><i aria-hidden="true"></i>
+                <span>06 · Planar dynamics</span><i aria-hidden="true"></i>
               </div>
               <h3>Bifurcations in the plane</h3>
               <p class="lab-card-copy">
