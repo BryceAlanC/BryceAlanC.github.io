@@ -35,6 +35,7 @@ assert.deepEqual(model.PRESET_IDS, [
   "supercritical-hopf",
   "subcritical-hopf",
   "fold-cycles",
+  "homoclinic",
   "snic"
 ]);
 assert.equal(model.createPreset().id, "supercritical-hopf");
@@ -217,6 +218,60 @@ assert.throws(() => model.createPreset("not-a-preset"), /Unknown planar bifurcat
   near(rightmostField[1], 0.5);
 }
 
+{
+  const preset = model.createPreset("homoclinic");
+  assert.equal(preset.scope, "global");
+  near(model.HOMOCLINIC_PARAMETER, -0.86454525, 1e-10);
+  const sampleField = model.fieldAt(preset, 2, 0.5, -0.9);
+  near(sampleField[0], 0.5);
+  near(sampleField[1], -1.45);
+  assert.deepEqual(model.jacobianAt(preset, 2, 0.5, -0.9), [[0, 1], [-2.5, 1.1]]);
+
+  const equilibria = model.equilibriaAt(preset, -0.9);
+  assert.equal(equilibria.length, 2);
+  const saddle = findPoint(equilibria, (point) => point.x === 0);
+  const focus = findPoint(equilibria, (point) => point.x === 1);
+  assert.equal(saddle.type, "saddle");
+  assert.equal(focus.type, "unstable-focus");
+  near(saddle.classification.determinant, -1);
+  near(focus.classification.trace, 0.1);
+  assert.equal(model.equilibriaAt(preset, -1.05).find((point) => point.x === 1).type, "stable-focus");
+  assert.equal(model.equilibriaAt(preset, -1).find((point) => point.x === 1).kind, "center-or-hopf");
+
+  assert.equal(model.cyclesAt(preset, -1).length, 0);
+  assert.equal(model.cyclesAt(preset, -0.84).length, 0);
+  assert.equal(model.cyclesAt(preset, model.HOMOCLINIC_PARAMETER).length, 0);
+  const cycle = model.cyclesAt(preset, -0.9)[0];
+  assert.equal(cycle.stability, "stable");
+  near(cycle.period, 8.3424, 0.03);
+  assert.ok(cycle.floquetMultiplier > 0.24 && cycle.floquetMultiplier < 0.3);
+  assert.ok(Object.isFrozen(cycle.path));
+  assert.ok(cycle.path.length >= 160 && cycle.path.length <= 400);
+  const cycleX = cycle.path.map((point) => point.x);
+  near(Math.min(...cycleX), 0.22534, 0.004);
+  near(Math.max(...cycleX), 1.4784, 0.004);
+  assert.ok(Math.hypot(
+    cycle.path[0].x - cycle.path.at(-1).x,
+    cycle.path[0].y - cycle.path.at(-1).y
+  ) < 0.002, "numerical periodic-orbit path should close");
+
+  const nearLoop = model.cyclesAt(preset, -0.865)[0];
+  assert.ok(nearLoop.period > cycle.period * 1.7, "period should diverge near the saddle loop");
+  assert.ok(Math.min(...nearLoop.path.map((point) => point.x)) < 0.015, "cycle should approach the saddle");
+  assert.ok(nearLoop.floquetMultiplier < 0.003);
+
+  assert.equal(model.connectionsAt(preset, -0.9).length, 0);
+  const connection = model.connectionsAt(preset, model.HOMOCLINIC_PARAMETER)[0];
+  assert.equal(connection.type, "homoclinic");
+  assert.equal(connection.period, Infinity);
+  assert.ok(Object.isFrozen(connection.path));
+  assert.deepEqual(connection.path[0], { x: 0, y: 0 });
+  assert.deepEqual(connection.path.at(-1), { x: 0, y: 0 });
+  near(Math.max(...connection.path.map((point) => point.x)), 1.5222, 0.01);
+  near(Math.min(...connection.path.map((point) => point.y)), -0.766, 0.02);
+  near(Math.max(...connection.path.map((point) => point.y)), 0.470, 0.02);
+}
+
 // Every analytic Jacobian agrees with a centered finite-difference audit.
 for (const id of model.PRESET_IDS) {
   const preset = model.createPreset(id);
@@ -289,6 +344,22 @@ for (const id of model.PRESET_IDS) {
   const frequency = snic.branches.find((branch) => branch.id === "cycle-frequency");
   assert.equal(findPoint(frequency.points, (point) => point.parameter === 0).period, Infinity);
   assert.ok(frequency.points.some((point) => point.parameter > 0 && Number.isFinite(point.period)));
+
+  const homoclinic = model.sampleBranches("homoclinic", { samples: 121 });
+  assert.deepEqual(homoclinic.branches.map((branch) => branch.id), [
+    "saddle",
+    "focus",
+    "cycle-minimum-x",
+    "cycle-maximum-x"
+  ]);
+  const lowerEnvelope = homoclinic.branches.find((branch) => branch.id === "cycle-minimum-x");
+  const upperEnvelope = homoclinic.branches.find((branch) => branch.id === "cycle-maximum-x");
+  const lowerEndpoint = lowerEnvelope.points.at(-1);
+  const upperEndpoint = upperEnvelope.points.at(-1);
+  near(lowerEndpoint.parameter, model.HOMOCLINIC_PARAMETER, 1e-12);
+  near(lowerEndpoint.observable, 0, 1e-12);
+  near(upperEndpoint.observable, 1.52227, 1e-5);
+  assert.equal(lowerEndpoint.period, Infinity);
 }
 
 {

@@ -4,9 +4,10 @@ import {
   createPreset,
   equilibriaAt,
   cyclesAt,
+  connectionsAt,
   integrateTrajectory,
   sampleBranches
-} from "./model.js?v=20261005-1";
+} from "./model.js?v=20261005-2";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -66,6 +67,7 @@ const elements = {
   telemetryObject: document.getElementById("telemetry-object"),
   telemetryEvent: document.getElementById("telemetry-event"),
   phaseParameterLabel: document.getElementById("phase-parameter-label"),
+  homoclinicLegendItem: document.getElementById("homoclinic-legend-item"),
   bifurcationObservableLabel: document.getElementById("bifurcation-observable-label"),
   stabilityObjectLabel: document.getElementById("stability-object-label"),
   linearizationTitle: document.getElementById("linearization-title"),
@@ -110,6 +112,7 @@ const state = {
   parameter: 0,
   equilibria: [],
   cycles: [],
+  connections: [],
   branchDiagram: null,
   objects: [],
   selectedObjectId: null,
@@ -161,6 +164,10 @@ function formatNumber(value, digits = 3) {
     return clean.toExponential(2).replace("e+", "e").replace("-0.00", "0.00");
   }
   return clean.toFixed(digits).replace(/^-0(?=\.0+$)/, "0");
+}
+
+function formatParameter(value) {
+  return formatNumber(value, state.family?.parameterDigits ?? 3);
 }
 
 function formatSigned(value, digits = 3) {
@@ -304,6 +311,18 @@ function currentBifurcationRanges() {
 }
 
 function defaultInitialConditions() {
+  if (state.family.id === "homoclinic") {
+    return [
+      [1.15, 0.08],
+      [0.75, 0.18],
+      [1.45, 0.25],
+      [0.45, -0.45],
+      [1.30, -0.55],
+      [0.60, 0.50],
+      [1.62, -0.15],
+      [0.08, 0.035]
+    ].map(([x, y]) => ({ x, y, user: false }));
+  }
   const xRange = state.family.phaseWindow.x;
   const yRange = state.family.phaseWindow.y;
   const xCenter = (xRange[0] + xRange[1]) / 2;
@@ -348,6 +367,10 @@ function trajectoryDuration() {
   if (state.family.id === "snic") {
     const nearestPeriod = state.cycles[0]?.period;
     return Number.isFinite(nearestPeriod) ? clamp(nearestPeriod * 2.2, 18, 70) : 32;
+  }
+  if (state.family.id === "homoclinic") {
+    const nearestPeriod = state.cycles[0]?.period;
+    return Number.isFinite(nearestPeriod) ? clamp(nearestPeriod * 2.2, 24, 70) : 36;
   }
   return state.family.id.includes("hopf") || state.family.id === "fold-cycles" ? 28 : 15;
 }
@@ -440,6 +463,9 @@ function objectLabel(object) {
   if (object.kind === "equilibrium") {
     return `${object.shortLabel} · ${classificationText(object.data.type)}`;
   }
+  if (object.kind === "connection") {
+    return `${object.shortLabel} · Homoclinic saddle loop`;
+  }
   const cycleStability = object.data.stability === "stable"
     ? "Attracting"
     : object.data.stability === "unstable" ? "Repelling" : titleCase(object.data.stability);
@@ -450,7 +476,14 @@ function objectDescription(object) {
   if (object.kind === "equilibrium") {
     return `Equilibrium at (${formatNumber(object.data.x)}, ${formatNumber(object.data.y)})`;
   }
+  if (object.kind === "connection") {
+    return "The saddle's unstable separatrix returns to the same saddle; the traversal time is infinite";
+  }
   const period = Number.isFinite(object.data.period) ? `, period ${formatNumber(object.data.period, 2)}` : "";
+  if (object.data.path?.length) {
+    const xValues = object.data.path.map((point) => point.x);
+    return `Periodic orbit with x from ${formatNumber(Math.min(...xValues))} to ${formatNumber(Math.max(...xValues))}${period}`;
+  }
   return `Periodic orbit of radius ${formatNumber(object.data.radius)}${period}`;
 }
 
@@ -468,6 +501,12 @@ function refreshObjects(options = {}) {
       shortLabel: `P${index + 1}`,
       kind: "cycle",
       data: cycle
+    })),
+    ...state.connections.map((connection, index) => ({
+      id: `connection-${index}`,
+      shortLabel: `H${index + 1}`,
+      kind: "connection",
+      data: connection
     }))
   ];
   state.selectedObjectId = state.objects.some((object) => object.id === previous)
@@ -580,13 +619,30 @@ function updateSelectedObjectPanels() {
   }
   if (summaryStrong) summaryStrong.textContent = `${objectLabel(object)} · ${objectDescription(object)}`;
   if (elements.telemetryObject) elements.telemetryObject.textContent = object.shortLabel;
-  if (elements.stabilityObjectLabel) elements.stabilityObjectLabel.textContent = `${object.shortLabel} · ${object.kind === "equilibrium" ? "equilibrium" : "periodic orbit"}`;
-  if (object.kind === "cycle") {
+  if (elements.stabilityObjectLabel) {
+    const kindLabel = object.kind === "equilibrium"
+      ? "equilibrium"
+      : object.kind === "connection" ? "global connection" : "periodic orbit";
+    elements.stabilityObjectLabel.textContent = `${object.shortLabel} · ${kindLabel}`;
+  }
+  if (object.kind === "connection") {
+    if (elements.linearizationTitle) elements.linearizationTitle.textContent = "Connection data";
+    if (elements.jacobianMatrix) elements.jacobianMatrix.textContent = "The Jacobian varies along the saddle separatrix";
+    if (elements.spectralQuantityLabel) elements.spectralQuantityLabel.textContent = "Traversal time";
+    if (elements.eigenvalueFormula) elements.eigenvalueFormula.textContent = "Infinite";
+    if (elements.traceLabel) elements.traceLabel.textContent = "Departure";
+    if (elements.traceValue) elements.traceValue.textContent = "Unstable manifold";
+    if (elements.determinantLabel) elements.determinantLabel.textContent = "Return";
+    if (elements.determinantValue) elements.determinantValue.textContent = "Stable manifold";
+    if (elements.classificationValue) elements.classificationValue.textContent = "Homoclinic saddle connection";
+  } else if (object.kind === "cycle") {
     if (elements.linearizationTitle) elements.linearizationTitle.textContent = "Orbit data";
     if (elements.jacobianMatrix) elements.jacobianMatrix.textContent = "J varies along the periodic orbit";
-    const multiplier = Number.isFinite(object.data.period)
-      ? Math.exp(object.data.radialDerivative * object.data.period)
-      : NaN;
+    const multiplier = Number.isFinite(object.data.floquetMultiplier)
+      ? object.data.floquetMultiplier
+      : Number.isFinite(object.data.period)
+        ? Math.exp(object.data.radialDerivative * object.data.period)
+        : NaN;
     if (elements.spectralQuantityLabel) elements.spectralQuantityLabel.textContent = "Period";
     if (elements.eigenvalueFormula) elements.eigenvalueFormula.textContent = Number.isFinite(object.data.period)
       ? formatNumber(object.data.period, 3)
@@ -595,7 +651,7 @@ function updateSelectedObjectPanels() {
     if (elements.traceValue) elements.traceValue.textContent = Number.isFinite(multiplier)
       ? formatNumber(multiplier, 3)
       : "—";
-    if (elements.determinantLabel) elements.determinantLabel.textContent = "Radial rate";
+    if (elements.determinantLabel) elements.determinantLabel.textContent = "Transverse rate";
     if (elements.determinantValue) elements.determinantValue.textContent = formatNumber(object.data.radialDerivative, 3);
     if (elements.classificationValue) {
       const stability = object.data.stability === "stable"
@@ -623,6 +679,15 @@ function updateSelectedObjectPanels() {
 
 function updateFamilyCopy() {
   if (elements.familyTitle) elements.familyTitle.textContent = state.family.name;
+  if (elements.homoclinicLegendItem) elements.homoclinicLegendItem.hidden = state.family.id !== "homoclinic";
+  if (elements.centerParameter) {
+    const nearestEvent = state.family.criticalValues.reduce((nearest, event) =>
+      !nearest || Math.abs(event.parameter) < Math.abs(nearest.parameter) ? event : nearest
+    , null);
+    elements.centerParameter.textContent = nearestEvent && Math.abs(nearestEvent.parameter) > 1e-9
+      ? "Jump to event"
+      : "Center r";
+  }
   if (elements.familyEquations) {
     elements.familyEquations.replaceChildren();
     const equation = document.createElement("code");
@@ -645,7 +710,7 @@ function updateFamilyCopy() {
       const item = document.createElement("li");
       const strong = document.createElement("strong");
       const span = document.createElement("span");
-      strong.textContent = `${event.label} · r = ${formatNumber(event.parameter)}`;
+      strong.textContent = `${event.label} · r = ${formatParameter(event.parameter)}`;
       span.textContent = `${titleCase(event.scope)} event · ${event.genericity}`;
       item.append(strong, span);
       elements.eventList.append(item);
@@ -662,17 +727,20 @@ function nearestEvent() {
 
 function updateTelemetry() {
   const event = nearestEvent();
-  if (elements.telemetryR) elements.telemetryR.textContent = formatNumber(state.parameter);
-  if (elements.phaseParameterLabel) elements.phaseParameterLabel.textContent = `r = ${formatNumber(state.parameter)}`;
+  if (elements.telemetryR) elements.telemetryR.textContent = formatParameter(state.parameter);
+  if (elements.phaseParameterLabel) elements.phaseParameterLabel.textContent = `r = ${formatParameter(state.parameter)}`;
   if (elements.telemetryEvent) {
     elements.telemetryEvent.textContent = event
-      ? `${event.label} at r = ${formatNumber(event.parameter)}`
+      ? `${event.label} at r = ${formatParameter(event.parameter)}`
       : "No marked event";
   }
   if (elements.stageStatus) {
     const equilibriumWord = state.equilibria.length === 1 ? "equilibrium" : "equilibria";
     const orbitWord = state.cycles.length === 1 ? "periodic orbit" : "periodic orbits";
-    elements.stageStatus.textContent = `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}`;
+    const connectionText = state.connections.length
+      ? ` · ${state.connections.length} homoclinic ${state.connections.length === 1 ? "loop" : "loops"}`
+      : "";
+    elements.stageStatus.textContent = `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`;
   }
 }
 
@@ -680,6 +748,7 @@ function refreshSlice(options = {}) {
   const preferredObjectId = state.selectedObjectId;
   state.equilibria = equilibriaAt(state.family, state.parameter);
   state.cycles = cyclesAt(state.family, state.parameter);
+  state.connections = connectionsAt(state.family, state.parameter);
   state.phaseCache = null;
   refreshObjects({ preferredId: preferredObjectId });
   updateTelemetry();
@@ -689,12 +758,17 @@ function refreshSlice(options = {}) {
 
 function setParameter(value, options = {}) {
   if (!state.family) return;
-  const next = clamp(Number(value), state.family.parameterRange[0], state.family.parameterRange[1]);
+  let next = clamp(Number(value), state.family.parameterRange[0], state.family.parameterRange[1]);
   if (!Number.isFinite(next)) return;
+  if (options.stopSweep && state.family.criticalValues.length) {
+    const snapDistance = (state.family.parameterRange[1] - state.family.parameterRange[0]) / 1100;
+    const nearbyEvent = state.family.criticalValues.find((event) => Math.abs(event.parameter - next) <= snapDistance);
+    if (nearbyEvent) next = nearbyEvent.parameter;
+  }
   state.parameter = next;
   if (elements.parameter) elements.parameter.value = String(next);
-  elements.parameter?.setAttribute("aria-valuetext", `r equals ${formatNumber(next)}`);
-  if (elements.parameterValue) elements.parameterValue.textContent = formatNumber(next);
+  elements.parameter?.setAttribute("aria-valuetext", `r equals ${formatParameter(next)}`);
+  if (elements.parameterValue) elements.parameterValue.textContent = formatParameter(next);
   refreshSlice({
     immediate: Boolean(options.immediate),
     preserveProgress: options.preserveProgress,
@@ -708,7 +782,7 @@ function setParameter(value, options = {}) {
       : "";
     const equilibriumWord = state.equilibria.length === 1 ? "equilibrium" : "equilibria";
     const orbitWord = state.cycles.length === 1 ? "periodic orbit" : "periodic orbits";
-    announce(`Parameter r is ${formatNumber(next)}. ${state.equilibria.length} ${equilibriumWord} and ${state.cycles.length} ${orbitWord}.${eventText}`);
+    announce(`Parameter r is ${formatParameter(next)}. ${state.equilibria.length} ${equilibriumWord} and ${state.cycles.length} ${orbitWord}.${eventText}`);
   }
 }
 
@@ -719,8 +793,8 @@ function configureParameterControl() {
   elements.parameter.max = String(maximum);
   elements.parameter.step = String(step);
   elements.parameter.value = String(state.parameter);
-  elements.parameter.setAttribute("aria-valuetext", `r equals ${formatNumber(state.parameter)}`);
-  if (elements.parameterValue) elements.parameterValue.textContent = formatNumber(state.parameter);
+  elements.parameter.setAttribute("aria-valuetext", `r equals ${formatParameter(state.parameter)}`);
+  if (elements.parameterValue) elements.parameterValue.textContent = formatParameter(state.parameter);
 }
 
 function resetPhaseView() {
@@ -1017,34 +1091,88 @@ function drawTrajectories(context, box, ranges) {
   context.restore();
 }
 
+function drawPathArrow(context, path, box, ranges, color, width = 1.8, fraction = 0.4) {
+  if (!path?.length) return;
+  const endIndex = clamp(Math.round((path.length - 1) * fraction), 1, path.length - 1);
+  const end = path[endIndex];
+  let startIndex = Math.max(0, endIndex - 4);
+  let start = path[startIndex];
+  while (startIndex > 0 && Math.hypot(
+    mapHorizontal(end.x, ranges.x, box) - mapHorizontal(start.x, ranges.x, box),
+    mapVertical(end.y, ranges.y, box) - mapVertical(start.y, ranges.y, box)
+  ) < 6) {
+    startIndex -= 1;
+    start = path[startIndex];
+  }
+  drawArrow(
+    context,
+    mapHorizontal(start.x, ranges.x, box),
+    mapVertical(start.y, ranges.y, box),
+    mapHorizontal(end.x, ranges.x, box),
+    mapVertical(end.y, ranges.y, box),
+    color,
+    width
+  );
+}
+
 function drawCycle(context, cycle, box, ranges, selected) {
   context.save();
-  context.strokeStyle = cycle.stability === "stable" ? COLORS.stableBright : COLORS.unstableBright;
+  const color = cycle.stability === "stable" ? COLORS.stableBright : COLORS.unstableBright;
+  context.strokeStyle = color;
   context.lineWidth = selected ? 4 : 2.8;
   if (cycle.stability === "unstable") context.setLineDash([7, 5]);
   else if (cycle.stability === "semistable") context.setLineDash([9, 4, 2, 4]);
   context.beginPath();
-  for (let index = 0; index <= 160; index += 1) {
-    const angle = 2 * Math.PI * index / 160;
-    const x = mapHorizontal(cycle.radius * Math.cos(angle), ranges.x, box);
-    const y = mapVertical(cycle.radius * Math.sin(angle), ranges.y, box);
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
+  if (cycle.path?.length) {
+    cycle.path.forEach((point, index) => {
+      const x = mapHorizontal(point.x, ranges.x, box);
+      const y = mapVertical(point.y, ranges.y, box);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+  } else {
+    for (let index = 0; index <= 160; index += 1) {
+      const angle = 2 * Math.PI * index / 160;
+      const x = mapHorizontal(cycle.radius * Math.cos(angle), ranges.x, box);
+      const y = mapVertical(cycle.radius * Math.sin(angle), ranges.y, box);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
   }
   context.stroke();
   context.setLineDash([]);
-  const angle = Math.PI / 4;
-  const direction = Math.sign(cycle.angularVelocity || 1);
-  const firstAngle = angle - direction * 0.08;
-  drawArrow(
-    context,
-    mapHorizontal(cycle.radius * Math.cos(firstAngle), ranges.x, box),
-    mapVertical(cycle.radius * Math.sin(firstAngle), ranges.y, box),
-    mapHorizontal(cycle.radius * Math.cos(angle), ranges.x, box),
-    mapVertical(cycle.radius * Math.sin(angle), ranges.y, box),
-    cycle.stability === "stable" ? COLORS.stableBright : COLORS.unstableBright,
-    1.8
-  );
+  if (cycle.path?.length) {
+    drawPathArrow(context, cycle.path, box, ranges, color);
+  } else {
+    const angle = Math.PI / 4;
+    const direction = Math.sign(cycle.angularVelocity || 1);
+    const firstAngle = angle - direction * 0.08;
+    drawArrow(
+      context,
+      mapHorizontal(cycle.radius * Math.cos(firstAngle), ranges.x, box),
+      mapVertical(cycle.radius * Math.sin(firstAngle), ranges.y, box),
+      mapHorizontal(cycle.radius * Math.cos(angle), ranges.x, box),
+      mapVertical(cycle.radius * Math.sin(angle), ranges.y, box),
+      color,
+      1.8
+    );
+  }
+  context.restore();
+}
+
+function drawConnection(context, connection, box, ranges, selected) {
+  context.save();
+  context.strokeStyle = COLORS.currentBright;
+  context.lineWidth = selected ? 4 : 2.8;
+  context.beginPath();
+  connection.path.forEach((point, index) => {
+    const x = mapHorizontal(point.x, ranges.x, box);
+    const y = mapVertical(point.y, ranges.y, box);
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.stroke();
+  drawPathArrow(context, connection.path, box, ranges, COLORS.currentBright, 1.8, 0.44);
   context.restore();
 }
 
@@ -1133,6 +1261,7 @@ function drawPhasePortrait() {
     });
   }
   drawTrajectories(context, box, ranges);
+  state.connections.forEach((connection, index) => drawConnection(context, connection, box, ranges, state.selectedObjectId === `connection-${index}`));
   state.cycles.forEach((cycle, index) => drawCycle(context, cycle, box, ranges, state.selectedObjectId === `cycle-${index}`));
   state.equilibria.forEach((equilibrium, index) => drawEquilibrium(context, equilibrium, box, ranges, state.selectedObjectId === `equilibrium-${index}`));
   drawPhaseCursor(context, box, ranges);
@@ -1289,7 +1418,10 @@ function drawEigenvaluePlane() {
     context.font = "11px 'IBM Plex Mono', monospace";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText(object ? "Jacobian varies along the orbit" : "Select an equilibrium", (box.left + box.right) / 2, (box.top + box.bottom) / 2);
+    const emptyMessage = object?.kind === "connection"
+      ? "Jacobian varies along the connection"
+      : object ? "Jacobian varies along the orbit" : "Select an equilibrium";
+    context.fillText(emptyMessage, (box.left + box.right) / 2, (box.top + box.bottom) / 2);
     return;
   }
   const trails = nearbyEigenvalueTrail(object.data);
@@ -1490,6 +1622,27 @@ function phaseCoordinates(position) {
   };
 }
 
+function screenDistanceToPath(position, path, ranges) {
+  let minimum = Infinity;
+  for (let index = 1; index < path.length; index += 1) {
+    const startX = mapHorizontal(path[index - 1].x, ranges.x, state.phaseBox);
+    const startY = mapVertical(path[index - 1].y, ranges.y, state.phaseBox);
+    const endX = mapHorizontal(path[index].x, ranges.x, state.phaseBox);
+    const endY = mapVertical(path[index].y, ranges.y, state.phaseBox);
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+    const squareLength = deltaX * deltaX + deltaY * deltaY;
+    const amount = squareLength > 0
+      ? clamp(((position.x - startX) * deltaX + (position.y - startY) * deltaY) / squareLength, 0, 1)
+      : 0;
+    minimum = Math.min(minimum, Math.hypot(
+      position.x - (startX + amount * deltaX),
+      position.y - (startY + amount * deltaY)
+    ));
+  }
+  return minimum;
+}
+
 function phaseObjectAt(position) {
   if (!state.phaseBox) return null;
   const ranges = currentPhaseRanges();
@@ -1501,12 +1654,21 @@ function phaseObjectAt(position) {
     };
     if (Math.hypot(position.x - screen.x, position.y - screen.y) <= 12) return `equilibrium-${index}`;
   }
+  for (let index = 0; index < state.connections.length; index += 1) {
+    if (screenDistanceToPath(position, state.connections[index].path, ranges) <= 9) {
+      return `connection-${index}`;
+    }
+  }
   const dataPoint = phaseCoordinates(position);
   const pixelsPerUnit = Math.min(
     (state.phaseBox.right - state.phaseBox.left) / (ranges.x[1] - ranges.x[0]),
     (state.phaseBox.bottom - state.phaseBox.top) / (ranges.y[1] - ranges.y[0])
   );
   for (let index = 0; index < state.cycles.length; index += 1) {
+    if (state.cycles[index].path?.length) {
+      if (screenDistanceToPath(position, state.cycles[index].path, ranges) <= 9) return `cycle-${index}`;
+      continue;
+    }
     if (Math.abs(Math.hypot(dataPoint.x, dataPoint.y) - state.cycles[index].radius) * pixelsPerUnit <= 9) {
       return `cycle-${index}`;
     }
@@ -1617,7 +1779,7 @@ function handleBifurcationKey(event) {
   if (event.key === "Enter") {
     event.preventDefault();
     const eventRecord = nearestEvent();
-    if (eventRecord) announce(`${eventRecord.label} occurs at r ${formatNumber(eventRecord.parameter)}. Current r is ${formatNumber(state.parameter)}.`);
+    if (eventRecord) announce(`${eventRecord.label} occurs at r ${formatParameter(eventRecord.parameter)}. Current r is ${formatParameter(state.parameter)}.`);
   }
 }
 
@@ -1711,10 +1873,15 @@ elements.familySelect?.addEventListener("change", () => {
 elements.parameter?.addEventListener("input", () => setParameter(elements.parameter.value, { stopSweep: true, preserveProgress: true }));
 elements.parameter?.addEventListener("change", () => setParameter(elements.parameter.value, { stopSweep: true, announce: true, immediate: true }));
 elements.toggleSweep?.addEventListener("click", () => state.sweepRunning ? stopSweep({ announce: true }) : startSweep());
-elements.centerParameter?.addEventListener("click", () => setParameter(
-  clamp(0, state.family.parameterRange[0], state.family.parameterRange[1]),
-  { stopSweep: true, announce: true, immediate: true }
-));
+elements.centerParameter?.addEventListener("click", () => {
+  const eventNearestZero = state.family.criticalValues.reduce((nearest, event) =>
+    !nearest || Math.abs(event.parameter) < Math.abs(nearest.parameter) ? event : nearest
+  , null);
+  setParameter(
+    eventNearestZero?.parameter ?? clamp(0, state.family.parameterRange[0], state.family.parameterRange[1]),
+    { stopSweep: true, announce: true, immediate: true }
+  );
+});
 elements.sweepSpeed?.addEventListener("input", () => {
   state.sweepSpeed = Number(elements.sweepSpeed.value);
   if (elements.sweepSpeedValue) elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;

@@ -536,6 +536,10 @@
   gap: 0.32rem;
 }
 
+.phase-legend span[hidden] {
+  display: none;
+}
+
 .marker,
 .line {
   display: inline-block;
@@ -577,6 +581,10 @@
 .line-cycle-unstable,
 .line-repelling {
   border-top-style: dashed;
+}
+
+.line-homoclinic {
+  color: #f2c969;
 }
 
 .line-saddle-branch {

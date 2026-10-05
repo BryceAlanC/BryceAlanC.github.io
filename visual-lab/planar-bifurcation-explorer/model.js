@@ -71,6 +71,7 @@ function makePreset(definition) {
     scope: definition.scope === "global" ? "global" : "local",
     genericity: String(definition.genericity || "generic"),
     parameterSymbol: String(definition.parameterSymbol || "μ"),
+    parameterDigits: clamp(Math.round(definition.parameterDigits == null ? 3 : finiteNumber(definition.parameterDigits, "parameter digits")), 0, 8),
     parameterRange,
     defaultParameter: finiteNumber(definition.defaultParameter, "default parameter"),
     phaseWindow,
@@ -84,6 +85,7 @@ function makePreset(definition) {
     jacobian: definition.jacobian,
     equilibria: definition.equilibria,
     cycles: definition.cycles,
+    connections: definition.connections || (() => []),
     branches: definition.branches
   });
 }
@@ -571,6 +573,277 @@ function snicDefinition() {
   };
 }
 
+// Strogatz, Nonlinear Dynamics and Chaos, section 8.4.  The saddle-loop
+// parameter is numerical; the remaining ingredients below are computed from
+// the displayed vector field rather than from a decorative surrogate.
+export const HOMOCLINIC_PARAMETER = -0.86454525;
+
+const saddleLoopEnvelope = Object.freeze([
+  Object.freeze([-0.96000000, 0.54838457, 1.34187860, 6.82714461, -0.04617891]),
+  Object.freeze([-0.95000000, 0.48788935, 1.37371359, 6.99815784, -0.05924207]),
+  Object.freeze([-0.94000000, 0.43149541, 1.40075806, 7.18993632, -0.07470887]),
+  Object.freeze([-0.93000000, 0.37794667, 1.42411726, 7.40830094, -0.09145262]),
+  Object.freeze([-0.92000000, 0.32629499, 1.44452744, 7.66202908, -0.11064007]),
+  Object.freeze([-0.91000000, 0.27572103, 1.46249179, 7.96515095, -0.13215372]),
+  Object.freeze([-0.90000000, 0.22534125, 1.47840082, 8.34237686, -0.15763538]),
+  Object.freeze([-0.89000000, 0.17399017, 1.49253915, 8.84340052, -0.19081153]),
+  Object.freeze([-0.88000000, 0.11959770, 1.50515815, 9.59533004, -0.23535108]),
+  Object.freeze([-0.87500000, 0.08984973, 1.51096301, 10.18355159, -0.26831196]),
+  Object.freeze([-0.87000000, 0.05629442, 1.51649582, 11.16333107, -0.31661429]),
+  Object.freeze([-0.86800000, 0.04069401, 1.51863564, 11.85245195, -0.34681484]),
+  Object.freeze([-0.86600000, 0.02210735, 1.52075064, 13.16076990, -0.39630250]),
+  Object.freeze([-0.86550000, 0.01644437, 1.52127103, 13.79911651, -0.41725820]),
+  Object.freeze([-0.86500000, 0.00977543, 1.52179529, 14.92486339, -0.45095114]),
+  Object.freeze([-0.86480000, 0.00651510, 1.52200131, 15.80526388, -0.47378555]),
+  Object.freeze([-0.86465000, 0.00349893, 1.52215350, 17.15644309, -0.50417365]),
+  Object.freeze([-0.86460000, 0.00222310, 1.52221118, 18.14261639, -0.52397209]),
+  Object.freeze([HOMOCLINIC_PARAMETER, 0, 1.52227000, Infinity, -0.54])
+]);
+
+function interpolateSaddleLoopEnvelope(mu) {
+  if (mu <= saddleLoopEnvelope[0][0]) {
+    const [, minimumX, maximumX, period, transverseRate] = saddleLoopEnvelope[0];
+    return { minimumX, maximumX, period, transverseRate };
+  }
+  const last = saddleLoopEnvelope.at(-1);
+  if (mu >= last[0]) {
+    const [, minimumX, maximumX, period, transverseRate] = last;
+    return { minimumX, maximumX, period, transverseRate };
+  }
+  for (let index = 1; index < saddleLoopEnvelope.length; index += 1) {
+    const right = saddleLoopEnvelope[index];
+    if (mu > right[0]) continue;
+    const left = saddleLoopEnvelope[index - 1];
+    const amount = (mu - left[0]) / (right[0] - left[0]);
+    const interpolate = (column) => {
+      if (!Number.isFinite(right[column])) {
+        if (column === 3 && mu < HOMOCLINIC_PARAMETER) {
+          const unstableEigenvalue = (HOMOCLINIC_PARAMETER + Math.sqrt(HOMOCLINIC_PARAMETER ** 2 + 4)) / 2;
+          return TWO_PI + Math.log((HOMOCLINIC_PARAMETER + 1) / (HOMOCLINIC_PARAMETER - mu)) / unstableEigenvalue;
+        }
+        return Infinity;
+      }
+      return left[column] + amount * (right[column] - left[column]);
+    };
+    return {
+      minimumX: interpolate(1),
+      maximumX: interpolate(2),
+      period: interpolate(3),
+      transverseRate: interpolate(4)
+    };
+  }
+  return { minimumX: 0, maximumX: last[2], period: Infinity, transverseRate: last[4] };
+}
+
+function saddleLoopStep(x, y, mu, step) {
+  const k1x = y;
+  const k1y = mu * y + x - x * x + x * y;
+  const x2 = x + step * k1x / 2;
+  const y2 = y + step * k1y / 2;
+  const k2x = y2;
+  const k2y = mu * y2 + x2 - x2 * x2 + x2 * y2;
+  const x3 = x + step * k2x / 2;
+  const y3 = y + step * k2y / 2;
+  const k3x = y3;
+  const k3y = mu * y3 + x3 - x3 * x3 + x3 * y3;
+  const x4 = x + step * k3x;
+  const y4 = y + step * k3y;
+  const k4x = y4;
+  const k4y = mu * y4 + x4 - x4 * x4 + x4 * y4;
+  return [
+    x + step * (k1x + 2 * k2x + 2 * k3x + k4x) / 6,
+    y + step * (k1y + 2 * k2y + 2 * k3y + k4y) / 6
+  ];
+}
+
+function resampleOrbitPath(points, count = 241) {
+  if (!Array.isArray(points) || points.length < 2) return [];
+  const distances = [0];
+  for (let index = 1; index < points.length; index += 1) {
+    distances.push(distances[index - 1] + Math.hypot(
+      points[index].x - points[index - 1].x,
+      points[index].y - points[index - 1].y
+    ));
+  }
+  const total = distances.at(-1);
+  if (!(total > 0)) return [points[0]];
+  const result = [];
+  let segment = 1;
+  for (let index = 0; index < count; index += 1) {
+    const target = total * index / (count - 1);
+    while (segment < distances.length - 1 && distances[segment] < target) segment += 1;
+    const startDistance = distances[segment - 1];
+    const endDistance = distances[segment];
+    const amount = endDistance === startDistance ? 0 : (target - startDistance) / (endDistance - startDistance);
+    result.push({
+      x: points[segment - 1].x + amount * (points[segment].x - points[segment - 1].x),
+      y: points[segment - 1].y + amount * (points[segment].y - points[segment - 1].y)
+    });
+  }
+  return result;
+}
+
+const saddleLoopCycleCache = new Map();
+
+function numericalSaddleLoopCycle(mu) {
+  const key = mu.toFixed(6);
+  if (saddleLoopCycleCache.has(key)) return saddleLoopCycleCache.get(key);
+
+  const step = 0.02;
+  const maximumSteps = Math.ceil(160 / step);
+  let x = 1.35;
+  let y = 0;
+  let previousX = x;
+  let previousY = y;
+  let previousCrossingTime = null;
+  let previousCrossingX = null;
+  let crossingCount = 0;
+  let segment = [{ x, y }];
+  let candidate = null;
+
+  for (let index = 1; index <= maximumSteps; index += 1) {
+    previousX = x;
+    previousY = y;
+    [x, y] = saddleLoopStep(x, y, mu, step);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x, y) > 12) break;
+    segment.push({ x, y });
+
+    if (previousY < 0 && y >= 0) {
+      const fraction = -previousY / (y - previousY);
+      const crossingX = previousX + fraction * (x - previousX);
+      const crossingTime = (index - 1 + fraction) * step;
+      const crossing = { x: crossingX, y: 0 };
+      segment[segment.length - 1] = crossing;
+      crossingCount += 1;
+
+      if (previousCrossingTime != null) {
+        candidate = {
+          points: segment,
+          period: crossingTime - previousCrossingTime
+        };
+        if (crossingCount >= 4 && Math.abs(crossingX - previousCrossingX) < 2e-5) break;
+      }
+      previousCrossingTime = crossingTime;
+      previousCrossingX = crossingX;
+      segment = [crossing];
+    }
+  }
+
+  if (!candidate || candidate.points.length < 4 || !(candidate.period > 0)) return null;
+  const averageX = candidate.points.reduce((sum, point) => sum + point.x, 0) / candidate.points.length;
+  const transverseRate = mu + averageX;
+  const floquetMultiplier = Math.exp(transverseRate * candidate.period);
+  const path = resampleOrbitPath(candidate.points);
+  const radius = Math.max(...path.map((point) => Math.hypot(point.x, point.y)));
+  const result = {
+    radius,
+    path,
+    radialDerivative: transverseRate,
+    angularVelocity: TWO_PI / candidate.period,
+    period: candidate.period,
+    floquetMultiplier,
+    stability: "stable",
+    orbitType: "cycle",
+    label: "Attracting limit cycle"
+  };
+  saddleLoopCycleCache.set(key, result);
+  if (saddleLoopCycleCache.size > 128) saddleLoopCycleCache.delete(saddleLoopCycleCache.keys().next().value);
+  return result;
+}
+
+let cachedHomoclinicLoop = null;
+
+function numericalHomoclinicLoop() {
+  if (cachedHomoclinicLoop) return cachedHomoclinicLoop;
+  const nearbyCycle = numericalSaddleLoopCycle(HOMOCLINIC_PARAMETER - 0.000055);
+  const path = nearbyCycle.path.map((point) => ({ x: point.x, y: point.y }));
+  path[0] = { x: 0, y: 0 };
+  path[path.length - 1] = { x: 0, y: 0 };
+  cachedHomoclinicLoop = {
+    radius: nearbyCycle.radius,
+    path,
+    radialDerivative: -0.54,
+    angularVelocity: 0,
+    period: Infinity,
+    floquetMultiplier: NaN,
+    stability: "critical",
+    orbitType: "homoclinic",
+    label: "Homoclinic saddle loop"
+  };
+  return cachedHomoclinicLoop;
+}
+
+function homoclinicDefinition() {
+  return {
+    id: "homoclinic",
+    name: "Homoclinic saddle-loop bifurcation",
+    shortName: "Homoclinic loop",
+    formula: "ẋ = y,   ẏ = μy + x − x² + xy",
+    description: "As μ increases, an attracting limit cycle grows into the saddle at the origin, forming a homoclinic loop; after the collision, the cycle is gone.",
+    lesson: "This is a global bifurcation: the equilibria do not collide, but the cycle period diverges because each lap spends longer near the saddle.",
+    scope: "global",
+    genericity: "generic, codimension one",
+    parameterDigits: 4,
+    parameterRange: [-0.96, -0.78],
+    defaultParameter: -0.92,
+    phaseWindow: { x: [-0.3, 1.78], y: [-0.95, 0.72] },
+    observable: "x",
+    observableLabel: "x (equilibria and orbit extrema)",
+    observableRange: [-0.12, 1.66],
+    criticalValues: [{
+      parameter: HOMOCLINIC_PARAMETER,
+      type: "homoclinic",
+      label: "Cycle–saddle collision",
+      scope: "global",
+      genericity: "generic, codimension one"
+    }],
+    field(x, y, mu) {
+      return [y, mu * y + x - x * x + x * y];
+    },
+    jacobian(x, y, mu) {
+      return [[0, 1], [1 - 2 * x + y, mu + x]];
+    },
+    equilibria() {
+      return [
+        { x: 0, y: 0, label: "Saddle" },
+        { x: 1, y: 0, label: "Central focus" }
+      ];
+    },
+    cycles(mu) {
+      if (mu <= -1 + DEFAULT_TOLERANCE || mu >= HOMOCLINIC_PARAMETER) return [];
+      const cycle = numericalSaddleLoopCycle(mu);
+      return cycle ? [cycle] : [];
+    },
+    connections(mu) {
+      return Math.abs(mu - HOMOCLINIC_PARAMETER) <= 5e-8
+        ? [numericalHomoclinicLoop()]
+        : [];
+    },
+    branches(mu) {
+      const result = [
+        { branchId: "saddle", kind: "equilibrium", x: 0, y: 0, observable: 0 },
+        { branchId: "focus", kind: "equilibrium", x: 1, y: 0, observable: 1 }
+      ];
+      if (mu <= -1 || mu > HOMOCLINIC_PARAMETER + 1e-10) return result;
+      const envelope = interpolateSaddleLoopEnvelope(mu);
+      const atLoop = Math.abs(mu - HOMOCLINIC_PARAMETER) <= 1e-8;
+      const radius = Math.max(0.01, (envelope.maximumX - envelope.minimumX) / 2);
+      const common = {
+        kind: "cycle",
+        radius,
+        radialDerivative: envelope.transverseRate,
+        angularVelocity: Number.isFinite(envelope.period) ? TWO_PI / envelope.period : 0,
+        period: envelope.period
+      };
+      result.push(
+        { ...common, branchId: "cycle-minimum-x", observable: atLoop ? 0 : envelope.minimumX },
+        { ...common, branchId: "cycle-maximum-x", observable: envelope.maximumX }
+      );
+      return result;
+    }
+  };
+}
+
 const definitions = Object.freeze({
   "saddle-node": saddleNodeDefinition,
   transcritical: transcriticalDefinition,
@@ -578,6 +851,7 @@ const definitions = Object.freeze({
   "supercritical-hopf": supercriticalHopfDefinition,
   "subcritical-hopf": subcriticalHopfDefinition,
   "fold-cycles": foldCyclesDefinition,
+  homoclinic: homoclinicDefinition,
   snic: snicDefinition
 });
 
@@ -762,20 +1036,41 @@ function cycleStability(radialDerivative, tolerance = DEFAULT_TOLERANCE) {
   return "semistable";
 }
 
+function normalizeOrbitPath(rawPath, label = "orbit path") {
+  if (rawPath == null) return null;
+  if (!Array.isArray(rawPath) || rawPath.length < 2) {
+    throw new TypeError(label + " must contain at least two points");
+  }
+  return Object.freeze(rawPath.map((point) => Object.freeze({
+    x: finiteNumber(point.x, label + " x"),
+    y: finiteNumber(point.y, label + " y")
+  })));
+}
+
 function enrichCycle(raw, tolerance = DEFAULT_TOLERANCE) {
-  const radius = finiteNumber(raw.radius, "cycle radius");
+  const path = normalizeOrbitPath(raw.path, "cycle path");
+  const inferredRadius = path == null ? NaN : Math.max(...path.map((point) => Math.hypot(point.x, point.y)));
+  const radius = finiteNumber(raw.radius == null ? inferredRadius : raw.radius, "cycle radius");
   if (!(radius > 0)) throw new RangeError("A limit cycle radius must be positive");
   const radialDerivative = finiteNumber(raw.radialDerivative, "radial derivative");
   const angularVelocity = finiteNumber(raw.angularVelocity == null ? 1 : raw.angularVelocity, "angular velocity");
   const period = raw.period == null
     ? TWO_PI / Math.abs(angularVelocity)
-    : positiveNumber(raw.period, "cycle period");
+    : raw.period === Infinity ? Infinity : positiveNumber(raw.period, "cycle period");
+  const stability = ["stable", "unstable", "semistable"].includes(raw.stability)
+    ? raw.stability
+    : cycleStability(radialDerivative, tolerance);
+  const floquetMultiplier = raw.floquetMultiplier == null
+    ? (Number.isFinite(period) ? Math.exp(radialDerivative * period) : NaN)
+    : finiteNumber(raw.floquetMultiplier, "Floquet multiplier");
   return Object.freeze({
     radius,
+    path,
     radialDerivative,
     angularVelocity,
     period,
-    stability: cycleStability(radialDerivative, tolerance),
+    floquetMultiplier,
+    stability,
     label: String(raw.label || "Limit cycle")
   });
 }
@@ -785,6 +1080,24 @@ export function cyclesAt(presetOrId, parameter, options = {}) {
   const mu = finiteNumber(parameter, "parameter");
   const tolerance = options.tolerance == null ? DEFAULT_TOLERANCE : positiveNumber(options.tolerance, "tolerance");
   return Object.freeze(preset.cycles(mu).map((cycle) => enrichCycle(cycle, tolerance)));
+}
+
+export function connectionsAt(presetOrId, parameter) {
+  const preset = resolvePreset(presetOrId);
+  const mu = finiteNumber(parameter, "parameter");
+  return Object.freeze(preset.connections(mu).map((raw) => {
+    const path = normalizeOrbitPath(raw.path, "connection path");
+    if (!path) throw new TypeError("A global connection must provide a path");
+    return Object.freeze({
+      path,
+      radius: finiteNumber(raw.radius == null
+        ? Math.max(...path.map((point) => Math.hypot(point.x, point.y)))
+        : raw.radius, "connection radius"),
+      type: String(raw.orbitType || raw.type || "connection"),
+      period: Infinity,
+      label: String(raw.label || "Global connection")
+    });
+  }));
 }
 
 function normalizeState(state, label = "state") {
@@ -1030,6 +1343,7 @@ export default Object.freeze({
   classifyEquilibrium,
   equilibriaAt,
   cyclesAt,
+  connectionsAt,
   rk4Step,
   integrateTrajectory,
   sampleBranches,
