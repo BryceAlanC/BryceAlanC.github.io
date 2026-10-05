@@ -323,11 +323,21 @@ function defaultInitialConditions() {
   return seeds;
 }
 
-function integrationBounds() {
-  const xRange = state.family.phaseWindow.x;
-  const yRange = state.family.phaseWindow.y;
-  const xPadding = (xRange[1] - xRange[0]) * 0.42;
-  const yPadding = (yRange[1] - yRange[0]) * 0.42;
+function integrationBounds(seed) {
+  const familyX = state.family.phaseWindow.x;
+  const familyY = state.family.phaseWindow.y;
+  const visibleX = state.phaseView ? [state.phaseView.xMin, state.phaseView.xMax] : familyX;
+  const visibleY = state.phaseView ? [state.phaseView.yMin, state.phaseView.yMax] : familyY;
+  const xRange = [
+    Math.min(familyX[0], visibleX[0], seed?.x ?? Infinity),
+    Math.max(familyX[1], visibleX[1], seed?.x ?? -Infinity)
+  ];
+  const yRange = [
+    Math.min(familyY[0], visibleY[0], seed?.y ?? Infinity),
+    Math.max(familyY[1], visibleY[1], seed?.y ?? -Infinity)
+  ];
+  const xPadding = Math.max(familyX[1] - familyX[0], xRange[1] - xRange[0]) * 0.42;
+  const yPadding = Math.max(familyY[1] - familyY[0], yRange[1] - yRange[0]) * 0.42;
   return {
     x: [xRange[0] - xPadding, xRange[1] + xPadding],
     y: [yRange[0] - yPadding, yRange[1] + yPadding]
@@ -343,13 +353,18 @@ function trajectoryDuration() {
 }
 
 function makeTrajectory(seed, previous = null) {
+  const bounds = integrationBounds(seed);
+  const boundRadius = Math.hypot(
+    Math.max(Math.abs(bounds.x[0]), Math.abs(bounds.x[1])),
+    Math.max(Math.abs(bounds.y[0]), Math.abs(bounds.y[1]))
+  );
   const result = integrateTrajectory(state.family, {
     initial: [seed.x, seed.y],
     parameter: state.parameter,
     dt: 0.018,
     duration: trajectoryDuration(),
-    bounds: integrationBounds(),
-    maxRadius: 40,
+    bounds,
+    maxRadius: Math.max(40, boundRadius * 1.05),
     sampleEvery: 2
   });
   const previousFraction = previous && previous.points.length > 1
@@ -959,13 +974,29 @@ function drawTrajectories(context, box, ranges) {
     if (trajectory.points.length < 2) continue;
     const selected = trajectory.id === state.selectedTrajectoryId;
     const showCompleteStaticPath = motionQuery.matches && state.trajectoriesPaused;
-    const endIndex = clamp(Math.floor(trajectory.progress), 1, trajectory.points.length - 1);
-    const pathEndIndex = showCompleteStaticPath ? trajectory.points.length - 1 : endIndex;
+    const cursor = clamp(trajectory.progress, 0, trajectory.points.length - 1);
+    const lowerIndex = Math.floor(cursor);
+    const upperIndex = Math.min(trajectory.points.length - 1, lowerIndex + 1);
+    const fraction = cursor - lowerIndex;
+    const lowerPoint = trajectory.points[lowerIndex];
+    const upperPoint = trajectory.points[upperIndex];
+    const point = {
+      x: lerp(lowerPoint.x, upperPoint.x, fraction),
+      y: lerp(lowerPoint.y, upperPoint.y, fraction)
+    };
+    const pathEndIndex = showCompleteStaticPath ? trajectory.points.length - 1 : lowerIndex;
     context.strokeStyle = selected ? "rgba(242,201,105,.82)" : "rgba(231,246,241,.34)";
     context.lineWidth = selected ? 2.1 : 1.25;
     traceDataPath(context, trajectory.points, box, ranges, pathEndIndex);
+    if (!showCompleteStaticPath && upperIndex > lowerIndex
+      && lowerPoint.x >= ranges.x[0] && lowerPoint.x <= ranges.x[1]
+      && lowerPoint.y >= ranges.y[0] && lowerPoint.y <= ranges.y[1]
+      && point.x >= ranges.x[0] && point.x <= ranges.x[1]
+      && point.y >= ranges.y[0] && point.y <= ranges.y[1]) {
+      context.moveTo(mapHorizontal(lowerPoint.x, ranges.x, box), mapVertical(lowerPoint.y, ranges.y, box));
+      context.lineTo(mapHorizontal(point.x, ranges.x, box), mapVertical(point.y, ranges.y, box));
+    }
     context.stroke();
-    const point = trajectory.points[endIndex];
     if (point && point.x >= ranges.x[0] && point.x <= ranges.x[1] && point.y >= ranges.y[0] && point.y <= ranges.y[1]) {
       const x = mapHorizontal(point.x, ranges.x, box);
       const y = mapVertical(point.y, ranges.y, box);
@@ -973,7 +1004,7 @@ function drawTrajectories(context, box, ranges) {
       context.beginPath();
       context.arc(x, y, selected ? 3.5 : 2.5, 0, 2 * Math.PI);
       context.fill();
-      const previous = trajectory.points[Math.max(0, endIndex - 4)];
+      const previous = trajectory.points[Math.max(0, lowerIndex - 4)];
       if (previous) {
         const previousX = mapHorizontal(previous.x, ranges.x, box);
         const previousY = mapVertical(previous.y, ranges.y, box);
