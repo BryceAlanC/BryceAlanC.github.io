@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bifurcations in the Plane | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Explore bifurcations of two-dimensional differential equations through linked phase portraits, continuation diagrams, trajectories, nullclines, and Jacobian eigenvalues."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Bifurcations in the Plane | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Move one parameter through a planar differential equation and watch its phase portrait, invariant objects, and local stability change together."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css?v=20261005-1" />
+    <script type="module" src="./demo.js?v=20261005-1"></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../">← Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Nonlinear dynamics · planar flows</p>
+            <h1>Bifurcations in the plane</h1>
+            <p class="app-hero-copy">
+              Move the parameter <span class="math-symbol">r</span> through the planar system
+              <span class="system-inline">x&#775; = f(x, y; r), y&#775; = g(x, y; r)</span>.
+              The phase portrait, equilibria, periodic orbits, continuation diagram, and
+              Jacobian eigenvalues update together so that local stability and global motion
+              remain visible in one place.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-app planar-app" aria-label="Two-dimensional bifurcation explorer">
+        <div class="lab-stage-shell app-layout planar-app-layout" id="planar-workspace">
+          <aside class="control-panel" aria-label="Planar bifurcation explorer controls">
+            <h2>Choose a system</h2>
+            <p>
+              Begin with a classical one-parameter family, then move
+              <span class="math-symbol">r</span> to see how its equilibria and periodic
+              orbits reorganize the flow.
+            </p>
+
+            <fieldset class="control-group">
+              <legend>Family</legend>
+              <label class="field-label" for="family-select">Planar system</label>
+              <select id="family-select">
+                <option value="supercritical-hopf" selected>Supercritical Hopf</option>
+                <option value="subcritical-hopf">Bounded subcritical Hopf</option>
+                <option value="saddle-node">Saddle-node of equilibria</option>
+                <option value="transcritical">Transcritical exchange</option>
+                <option value="pitchfork">Pitchfork · supercritical</option>
+                <option value="pitchfork-subcritical">Pitchfork · subcritical</option>
+                <option value="fold-cycles">Fold of periodic orbits</option>
+                <option value="snic">Saddle-node on an invariant circle (SNIC)</option>
+              </select>
+
+              <div class="equation-card">
+                <span id="family-title">Supercritical Hopf</span>
+                <div id="family-equations" class="equation-pair">
+                  <code>x&#775; = rx − y − x(x² + y²)</code>
+                  <code>y&#775; = x + ry − y(x² + y²)</code>
+                </div>
+                <small id="family-note">
+                  A stable focus loses stability while an attracting periodic orbit is born.
+                </small>
+              </div>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Parameter</legend>
+              <div class="field-label">
+                <label for="parameter-r">Parameter <span class="math-symbol">r</span></label>
+                <output id="parameter-r-value" for="parameter-r">0.550</output>
+              </div>
+              <input
+                id="parameter-r"
+                type="range"
+                min="-1"
+                max="1.2"
+                value="0.55"
+                step="0.002"
+                aria-describedby="parameter-help"
+              />
+              <div class="control-row control-row-spaced">
+                <button class="lab-button lab-button-primary" id="toggle-sweep" type="button">
+                  Play parameter sweep
+                </button>
+                <button class="lab-button" id="center-parameter" type="button">
+                  Center <span class="math-symbol">r</span>
+                </button>
+              </div>
+              <div class="field-label field-label-spaced">
+                <label for="sweep-speed">Sweep speed</label>
+                <output id="sweep-speed-value" for="sweep-speed">0.35×</output>
+              </div>
+              <input id="sweep-speed" type="range" min="0.1" max="1.2" value="0.35" step="0.05" />
+              <p class="control-help" id="parameter-help">
+                The sweep changes the vector field continuously; it is a tour through
+                autonomous systems, not a trajectory of one fixed system.
+              </p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Add a trajectory</legend>
+              <div class="numeric-pair">
+                <label for="initial-x">
+                  <span>Initial <span class="math-symbol">x₀</span></span>
+                  <input id="initial-x" type="number" value="1.20" step="0.1" inputmode="decimal" />
+                </label>
+                <label for="initial-y">
+                  <span>Initial <span class="math-symbol">y₀</span></span>
+                  <input id="initial-y" type="number" value="0.20" step="0.1" inputmode="decimal" />
+                </label>
+              </div>
+              <button class="lab-button lab-button-primary full-width-button" id="add-initial-condition" type="button">
+                Add trajectory
+              </button>
+              <p class="control-help">
+                You can also click the phase portrait to place an initial condition.
+              </p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Trajectories</legend>
+              <div class="control-row">
+                <button class="lab-button" id="toggle-trajectories" type="button">
+                  Pause trajectories
+                </button>
+                <button class="lab-button" id="restart-trajectories" type="button">
+                  Restart
+                </button>
+              </div>
+              <button class="lab-button full-width-button" id="step-trajectories" type="button">
+                Step forward once
+              </button>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>What to show</legend>
+              <label class="check-row" for="show-vector-field">
+                <input id="show-vector-field" type="checkbox" checked />
+                <span>Vector field</span>
+              </label>
+              <label class="check-row" for="show-nullclines">
+                <input id="show-nullclines" type="checkbox" checked />
+                <span>Nullclines</span>
+              </label>
+              <label class="check-row" for="show-trajectories">
+                <input id="show-trajectories" type="checkbox" checked />
+                <span>Trajectories</span>
+              </label>
+              <button class="lab-button full-width-button" id="reset-views" type="button">
+                Reset plot views
+              </button>
+            </fieldset>
+
+            <fieldset class="control-group object-controls">
+              <legend>Inspect an invariant object</legend>
+              <label class="field-label" for="object-select">Selected object</label>
+              <select id="object-select" aria-controls="selected-object-summary object-list">
+                <option value="origin">E1 · equilibrium at (0, 0)</option>
+                <option value="cycle">C1 · attracting periodic orbit</option>
+              </select>
+              <details class="object-details">
+                <summary>Objects in the current window</summary>
+                <ul id="object-list" class="object-list" aria-label="Invariant objects in the current window">
+                  <li>
+                    <strong>E1 · repelling focus</strong>
+                    <span>Equilibrium at (0.000, 0.000)</span>
+                  </li>
+                  <li id="cycle-detection-status">
+                    <strong>C1 · attracting periodic orbit</strong>
+                    <span>Radius approximately 0.742 · period approximately 6.283</span>
+                  </li>
+                </ul>
+              </details>
+              <details class="object-details">
+                <summary>Marked bifurcation events</summary>
+                <ul id="event-list" class="object-list" aria-label="Marked bifurcation events for the selected family"></ul>
+              </details>
+            </fieldset>
+
+            <p class="keyboard-help">
+              Phase portrait: click to add a trajectory · scroll to zoom · middle-drag to pan ·
+              arrow keys move the initial-condition cursor · Enter launches it. Bifurcation
+              diagram: click or drag to set <span class="math-symbol">r</span> · scroll to zoom ·
+              middle-drag to pan. Press 0 over either plot to reset its view.
+            </p>
+          </aside>
+
+          <div class="stage-stack">
+            <section class="stage-panel planar-stage" aria-labelledby="visualizer-title">
+              <div class="stage-heading planar-stage-heading">
+                <div>
+                  <p class="section-kicker">One system · four linked views</p>
+                  <h2 id="visualizer-title">Flow, branches, and local stability</h2>
+                </div>
+                <div class="stage-heading-status">
+                  <div class="stage-heading-toolbar">
+                    <p id="stage-status">Preparing the planar flow…</p>
+                    <button
+                      class="lab-button workspace-fullscreen-toggle"
+                      id="workspace-fullscreen-toggle"
+                      type="button"
+                      aria-controls="planar-workspace"
+                      aria-label="Enter full screen"
+                      hidden
+                    >
+                      <span aria-hidden="true">⛶</span>
+                      <span id="workspace-fullscreen-label">Full screen</span>
+                    </button>
+                  </div>
+                  <div class="stage-mini-telemetry" aria-label="Current dynamical measurements">
+                    <span><small>Family</small><strong id="telemetry-family">Supercritical Hopf</strong></span>
+                    <span><small>r</small><strong id="telemetry-r">0.550</strong></span>
+                    <span><small>Selected</small><strong id="telemetry-object">E1</strong></span>
+                    <span><small>Event</small><strong id="telemetry-event">Hopf at r = 0</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="planar-workbench">
+                <section class="visual-panel phase-panel" aria-labelledby="phase-title">
+                  <div class="panel-heading panel-heading-dark">
+                    <div><span>01</span><h3 id="phase-title">Phase portrait at the selected r</h3></div>
+                    <p id="phase-parameter-label">r = 0.550</p>
+                  </div>
+                  <div class="canvas-frame phase-frame">
+                    <canvas
+                      id="phase-canvas"
+                      tabindex="0"
+                      role="application"
+                      aria-label="Interactive phase portrait in the x y plane"
+                      aria-describedby="phase-description selected-object-summary"
+                      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Enter Space + - Control+ArrowLeft Control+ArrowRight Control+ArrowUp Control+ArrowDown 0 F"
+                    >
+                      Phase portrait for the selected planar system.
+                    </canvas>
+                    <div class="phase-axis-label phase-axis-x" aria-hidden="true">x</div>
+                    <div class="phase-axis-label phase-axis-y" aria-hidden="true">y</div>
+                    <div class="phase-legend" aria-hidden="true">
+                      <span><i class="marker marker-sink"></i>Sink</span>
+                      <span><i class="marker marker-source"></i>Source</span>
+                      <span><i class="marker marker-saddle"></i>Saddle</span>
+                      <span><i class="marker marker-nonhyperbolic"></i>Nonhyperbolic</span>
+                      <span><i class="line line-cycle"></i>Attracting cycle</span>
+                      <span><i class="line line-cycle-unstable"></i>Repelling cycle</span>
+                    </div>
+                    <div class="plot-controls phase-plot-controls" aria-label="Phase portrait view controls">
+                      <button type="button" id="phase-zoom-in" aria-label="Zoom in on the phase portrait">+</button>
+                      <button type="button" id="phase-zoom-out" aria-label="Zoom out of the phase portrait">−</button>
+                      <button type="button" id="phase-pan-left" aria-label="Pan the phase portrait left">←</button>
+                      <button type="button" id="phase-pan-right" aria-label="Pan the phase portrait right">→</button>
+                      <button type="button" id="phase-pan-up" aria-label="Pan the phase portrait up">↑</button>
+                      <button type="button" id="phase-pan-down" aria-label="Pan the phase portrait down">↓</button>
+                      <button type="button" id="phase-fit" aria-label="Restore the full phase portrait">0</button>
+                    </div>
+                    <p class="sr-only" id="phase-description">
+                      Arrows show the planar vector field. The two directly labeled nullclines
+                      show where x dot and y dot vanish; their intersections are equilibria.
+                      Filled circles mark attracting equilibria, open circles mark repelling
+                      equilibria, diamonds mark saddles, and squares mark nonhyperbolic equilibria.
+                      Solid closed curves mark attracting periodic orbits; dashed closed curves mark
+                      repelling periodic orbits. Click to add a trajectory. With the plot focused, use arrow keys to
+                      move the initial-condition cursor and Enter or Space to launch it. Scroll or
+                      use plus and minus to zoom, use Control with arrow keys to pan, and press 0
+                      or F to restore the full view. Use the middle mouse button to drag the view.
+                    </p>
+                  </div>
+                  <div class="selected-object-bar" id="selected-object-summary">
+                    <span>Selected invariant object</span>
+                    <strong>E1 · repelling focus at (0.000, 0.000)</strong>
+                  </div>
+                </section>
+
+                <div class="analysis-column">
+                  <section class="visual-panel bifurcation-panel" aria-labelledby="bifurcation-title">
+                    <div class="panel-heading">
+                      <div><span>02</span><h3 id="bifurcation-title">Bifurcation diagram</h3></div>
+                      <p id="bifurcation-observable-label">Vertical axis: radial amplitude ρ</p>
+                    </div>
+                    <div class="canvas-frame bifurcation-frame">
+                      <canvas
+                        id="bifurcation-canvas"
+                        tabindex="0"
+                        role="application"
+                        aria-label="Interactive equilibrium and periodic-orbit continuation diagram"
+                        aria-describedby="bifurcation-description event-list"
+                        aria-keyshortcuts="ArrowLeft ArrowRight + - Control+ArrowLeft Control+ArrowRight Control+ArrowUp Control+ArrowDown Enter 0 F"
+                      >
+                        Bifurcation diagram for the selected planar system.
+                      </canvas>
+                      <div class="bifurcation-legend" aria-hidden="true">
+                        <span><i class="line line-attracting"></i>Attracting</span>
+                        <span><i class="line line-repelling"></i>Repelling</span>
+                        <span><i class="line line-saddle-branch"></i>Saddle</span>
+                      </div>
+                      <div class="plot-controls bifurcation-plot-controls" aria-label="Bifurcation diagram view controls">
+                        <button type="button" id="bifurcation-zoom-in" aria-label="Zoom in on the bifurcation diagram">+</button>
+                        <button type="button" id="bifurcation-zoom-out" aria-label="Zoom out of the bifurcation diagram">−</button>
+                        <button type="button" id="bifurcation-pan-left" aria-label="Pan the bifurcation diagram left">←</button>
+                        <button type="button" id="bifurcation-pan-right" aria-label="Pan the bifurcation diagram right">→</button>
+                        <button type="button" id="bifurcation-pan-up" aria-label="Pan the bifurcation diagram up">↑</button>
+                        <button type="button" id="bifurcation-pan-down" aria-label="Pan the bifurcation diagram down">↓</button>
+                        <button type="button" id="bifurcation-fit" aria-label="Restore the full bifurcation diagram">0</button>
+                      </div>
+                      <p class="sr-only" id="bifurcation-description">
+                        The horizontal axis is the parameter r. The vertical quantity is named
+                        in the panel heading and changes with the selected family. Solid branches
+                        are attracting, dashed branches are repelling, and dash-dot branches are
+                        saddles. A vertical line marks the current parameter. Click or drag to
+                        change r, scroll or use plus and minus to zoom, middle-drag or use Control
+                        with arrow keys to pan, and press 0 or F to fit the complete diagram.
+                      </p>
+                    </div>
+                  </section>
+
+                  <section class="visual-panel stability-panel" aria-labelledby="stability-title">
+                    <div class="panel-heading panel-heading-dark">
+                      <div><span>03</span><h3 id="stability-title">Local stability</h3></div>
+                      <p id="stability-object-label">E1 · equilibrium</p>
+                    </div>
+                    <div class="stability-grid">
+                      <div class="canvas-frame eigenvalue-frame">
+                        <canvas
+                          id="eigenvalue-canvas"
+                          role="img"
+                          aria-label="Jacobian eigenvalues in the complex plane"
+                          aria-describedby="eigenvalue-description stability-readout"
+                        >
+                          Eigenvalues of the selected equilibrium.
+                        </canvas>
+                        <span class="eigenvalue-axis-label eigenvalue-real" aria-hidden="true">Re λ</span>
+                        <span class="eigenvalue-axis-label eigenvalue-imaginary" aria-hidden="true">Im λ</span>
+                        <p class="sr-only" id="eigenvalue-description">
+                          The imaginary axis separates local contraction from local expansion.
+                          Faint trails show how the selected object's eigenvalues move for nearby
+                          parameter values.
+                        </p>
+                      </div>
+                      <div class="stability-readout" id="stability-readout">
+                        <div class="jacobian-block">
+                          <span id="linearization-title">Jacobian at E1</span>
+                          <code id="jacobian-matrix">J = [ 0.550  −1.000 ; 1.000  0.550 ]</code>
+                        </div>
+                        <dl class="stability-values">
+                          <div><dt id="spectral-quantity-label">Eigenvalues</dt><dd id="eigenvalue-formula">0.550 ± 1.000i</dd></div>
+                          <div><dt id="trace-label">Trace</dt><dd id="trace-value">1.100</dd></div>
+                          <div><dt id="determinant-label">Determinant</dt><dd id="determinant-value">1.303</dd></div>
+                          <div><dt>Classification</dt><dd id="classification-value">Repelling focus</dd></div>
+                        </dl>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="visual-panel time-panel" aria-labelledby="time-title">
+                    <div class="panel-heading panel-heading-compact">
+                      <div><span>04</span><h3 id="time-title">Selected trajectory through time</h3></div>
+                      <p id="time-trace-label">x(t) and y(t)</p>
+                    </div>
+                    <div class="canvas-frame time-frame">
+                      <canvas
+                        id="time-canvas"
+                        role="img"
+                        aria-label="Time traces of x and y along the selected trajectory"
+                        aria-describedby="time-description time-trace-label trajectory-summary"
+                      >
+                        Time traces for the selected trajectory.
+                      </canvas>
+                      <div class="time-legend" aria-hidden="true">
+                        <span><i class="line line-x"></i>x(t)</span>
+                        <span><i class="line line-y"></i>y(t)</span>
+                      </div>
+                      <p class="sr-only" id="time-description">
+                        The two curves show x and y as functions of time for the most recently
+                        selected or added trajectory. Their long-term behavior corresponds to the
+                        invariant objects shown in the phase portrait.
+                      </p>
+                      <p class="sr-only" id="trajectory-summary">
+                        The selected trajectory begins at x = 1.20, y = 0.20.
+                      </p>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </section>
+
+            <details class="method-notes">
+              <summary>Mathematical and numerical notes</summary>
+              <p class="app-note">
+                <strong>Which events are generic?</strong> In a generic one-parameter
+                family of planar vector fields, the local equilibrium bifurcations are
+                saddle-node and Hopf. Transcritical and pitchfork crossings require an
+                invariant structure or symmetry. Folds of periodic orbits and SNIC onset
+                are global events: they depend on the organization of trajectories beyond
+                a single equilibrium.
+              </p>
+              <p class="app-note">
+                <strong>Equilibria, nullclines, and stability.</strong> An equilibrium is an
+                intersection of the two nullclines <span class="nowrap">f(x, y; r) = 0</span>
+                and <span class="nowrap">g(x, y; r) = 0</span>. The eigenvalues of the Jacobian
+                at that point describe local contraction, expansion, and rotation. A saddle has
+                one eigenvalue on each side of the imaginary axis, so it is unstable overall,
+                with one locally attracting and one locally repelling direction.
+              </p>
+              <p class="app-note">
+                <strong>Periodic orbits.</strong> The supercritical Hopf family has an attracting
+                periodic orbit of radius <span class="nowrap">ρ = √r</span> for
+                <span class="nowrap">r &gt; 0</span>. The bounded subcritical family adds a quintic
+                term that confines the global flow without changing the local Hopf type. For
+                general families, statements about periodic orbits are numerical detections in the
+                displayed window, not proofs that every orbit has been found.
+              </p>
+              <p class="app-note">
+                <strong>Parameter sweeps.</strong> Each fixed value of
+                <span class="math-symbol">r</span> defines an autonomous system. During a sweep,
+                the display changes that system gradually to show the family. A moving particle
+                during the sweep should therefore be read as a visual guide through nearby phase
+                portraits, not as a solution of any one fixed autonomous equation.
+              </p>
+            </details>
+          </div>
+
+          <div class="sr-only" id="planar-announcer" aria-live="polite" aria-atomic="true"></div>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>
