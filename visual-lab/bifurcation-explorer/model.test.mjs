@@ -539,6 +539,12 @@ assert.deepEqual(model.PRESET_IDS, [
 
   const pole = model.createCustomFamily("1/(x-1.95)");
   assert.equal(model.findEquilibria(pole, 0, { samples: 420 }).length, 0, "a pole is not an equilibrium");
+  const partialDomain = model.createCustomFamily("sqrt(x)");
+  assert.ok(Number.isNaN(partialDomain.eval(-1, 0)), "custom families may be undefined on part of the visible window");
+  assert.ok(
+    Number.isNaN(model.rk4Step(partialDomain, -1, 0, 0.02)),
+    "a trajectory may leave a custom equation's domain without making the family invalid"
+  );
   assert.throws(() => model.createCustomFamily("r-0.123"), /depend on x/i);
   assert.throws(() => model.createCustomFamily("sqrt(x-2.9)"), /undefined across too much/i);
   assert.throws(

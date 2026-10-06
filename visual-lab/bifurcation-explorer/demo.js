@@ -1709,6 +1709,10 @@ function updateParticles(delta) {
   const span = state.view.xMax - state.view.xMin;
   for (const particle of state.particles) {
     for (let index = 0; index < substeps; index += 1) {
+      // Custom equations may be undefined on part of the visible window.
+      // Once an RK4 stage escapes the function's domain, stop integrating
+      // this particle so the next substep never receives a non-finite x.
+      if (!Number.isFinite(particle.x)) break;
       particle.x = rk4Step(state.family, particle.x, state.r, step);
     }
     particle.age += delta;
@@ -3840,36 +3844,48 @@ elements.slopeCanvas.addEventListener("keydown", (event) => handleInitialConditi
 elements.phaseCanvas.addEventListener("click", addPhaseParticle);
 elements.phaseCanvas.addEventListener("keydown", (event) => handleInitialConditionKey("phase", event));
 
+let animationFaulted = false;
+
 function animate(now) {
-  const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
-  state.lastFrameTime = now;
-  state.elapsed += delta;
-  updateNFoldPlayer(now);
-  updatePitchforkPlayers(now);
-  updatePitchforkMorph(now);
-  updateSweep(delta);
-  updateHysteresis(delta, now);
-  updateParticles(delta);
-  if ((state.sweepRunning || state.hysteresis.running) && now - state.lastSliceUpdate > 55) {
-    updateCurrentSlice();
-    state.lastSliceUpdate = now;
-  }
-  if (!document.hidden && now - state.lastRenderTime >= 30) {
-    drawBifurcationDiagram();
-    if (state.pitchforkSurfaceDirty) drawPitchforkSurface();
-    drawSlopeField();
-    drawPhaseLine();
-    if (state.localPopoverOpen && state.localDirty) {
-      drawLocalDiagram();
-      state.localDirty = false;
+  try {
+    const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
+    state.lastFrameTime = now;
+    state.elapsed += delta;
+    updateNFoldPlayer(now);
+    updatePitchforkPlayers(now);
+    updatePitchforkMorph(now);
+    updateSweep(delta);
+    updateHysteresis(delta, now);
+    updateParticles(delta);
+    if ((state.sweepRunning || state.hysteresis.running) && now - state.lastSliceUpdate > 55) {
+      updateCurrentSlice();
+      state.lastSliceUpdate = now;
     }
-    if (!elements.hysteresisPanel.hidden && (state.hysteresis.running || state.hysteresisDirty)) {
-      drawHysteresisPanel();
-      state.hysteresisDirty = false;
+    if (!document.hidden && now - state.lastRenderTime >= 30) {
+      drawBifurcationDiagram();
+      if (state.pitchforkSurfaceDirty) drawPitchforkSurface();
+      drawSlopeField();
+      drawPhaseLine();
+      if (state.localPopoverOpen && state.localDirty) {
+        drawLocalDiagram();
+        state.localDirty = false;
+      }
+      if (!elements.hysteresisPanel.hidden && (state.hysteresis.running || state.hysteresisDirty)) {
+        drawHysteresisPanel();
+        state.hysteresisDirty = false;
+      }
+      state.lastRenderTime = now;
     }
-    state.lastRenderTime = now;
+    animationFaulted = false;
+  } catch (error) {
+    // One bad numerical state must not permanently cancel the only animation
+    // callback. Logging once while the fault persists keeps the controls live
+    // and gives the user a working route back to any preset.
+    if (!animationFaulted) console.error(error);
+    animationFaulted = true;
+  } finally {
+    window.requestAnimationFrame(animate);
   }
-  window.requestAnimationFrame(animate);
 }
 
 if (typeof ResizeObserver === "function") {
