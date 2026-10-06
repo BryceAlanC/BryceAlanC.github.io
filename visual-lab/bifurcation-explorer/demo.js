@@ -44,6 +44,7 @@ const elements = {
   nFoldControl: document.getElementById("n-fold-control"),
   nFoldCount: document.getElementById("n-fold-count"),
   nFoldCountValue: document.getElementById("n-fold-count-value"),
+  playNFoldCount: document.getElementById("play-n-fold-count"),
   customEquationControls: document.getElementById("custom-equation-controls"),
   customEquation: document.getElementById("custom-equation"),
   customXMin: document.getElementById("custom-x-min"),
@@ -154,6 +155,7 @@ const state = {
   slopeCursorX: 0,
   phaseCursorX: 0,
   calculationToken: 0,
+  nFoldPlayer: { playing: false, direction: 1, lastAt: 0, accumulator: 0 },
   pitchforkMorph: null,
   pitchforkPlayers: {
     alpha: { playing: false, direction: 1, lastAt: 0 },
@@ -2445,6 +2447,71 @@ const PITCHFORK_PLAYER_CONFIG = Object.freeze({
   })
 });
 
+const N_FOLD_STEP_SECONDS = 0.8;
+
+function syncNFoldPlayerButton() {
+  const player = state.nFoldPlayer;
+  elements.playNFoldCount.setAttribute("aria-pressed", String(player.playing));
+  elements.playNFoldCount.setAttribute(
+    "aria-label",
+    `${player.playing ? "Pause" : "Play"} number of branches animation`
+  );
+  const icon = elements.playNFoldCount.querySelector("[aria-hidden='true']");
+  if (icon) icon.textContent = player.playing ? "Ⅱ" : "▶";
+}
+
+function setNFoldPlayer(playing, options = {}) {
+  const player = state.nFoldPlayer;
+  const nextPlaying = Boolean(playing) && elements.familySelect.value === "n-fold";
+  if (player.playing === nextPlaying) return false;
+  player.playing = nextPlaying;
+  player.lastAt = performance.now();
+  player.accumulator = 0;
+  if (nextPlaying) {
+    const value = Math.round(Number(elements.nFoldCount.value));
+    const minimum = Math.round(Number(elements.nFoldCount.min));
+    const maximum = Math.round(Number(elements.nFoldCount.max));
+    if (value >= maximum) player.direction = -1;
+    else if (value <= minimum) player.direction = 1;
+  }
+  syncNFoldPlayerButton();
+  if (options.announce) {
+    announce(`Branch-count animation ${nextPlaying ? "started" : "paused"}.`);
+  }
+  return true;
+}
+
+function toggleNFoldPlayer() {
+  if (elements.familySelect.value !== "n-fold") return;
+  setNFoldPlayer(!state.nFoldPlayer.playing, { announce: true });
+}
+
+function updateNFoldPlayer(now) {
+  const player = state.nFoldPlayer;
+  if (!player.playing || elements.familySelect.value !== "n-fold") return false;
+  const elapsed = clamp((now - player.lastAt) / 1000, 0, 0.08);
+  player.lastAt = now;
+  player.accumulator += elapsed;
+  if (player.accumulator < N_FOLD_STEP_SECONDS) return false;
+  player.accumulator %= N_FOLD_STEP_SECONDS;
+
+  const minimum = Math.round(Number(elements.nFoldCount.min));
+  const maximum = Math.round(Number(elements.nFoldCount.max));
+  const step = Math.max(1, Math.round(Number(elements.nFoldCount.step) || 1));
+  let next = Math.round(Number(elements.nFoldCount.value)) + player.direction * step;
+  if (next >= maximum) {
+    next = maximum;
+    player.direction = -1;
+  } else if (next <= minimum) {
+    next = minimum;
+    player.direction = 1;
+  }
+  elements.nFoldCount.value = String(next);
+  syncNFoldCountReadout();
+  scheduleConfiguredFamilyReload();
+  return true;
+}
+
 function syncPitchforkPlayerButton(name) {
   const config = PITCHFORK_PLAYER_CONFIG[name];
   const player = state.pitchforkPlayers[name];
@@ -2539,6 +2606,15 @@ function applyPitchforkCase(caseId) {
   updatePitchforkReadouts();
 }
 
+function syncNFoldCountReadout() {
+  const branchCount = clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9);
+  elements.nFoldCount.value = String(branchCount);
+  elements.nFoldCountValue.value = String(branchCount);
+  elements.nFoldCountValue.textContent = String(branchCount);
+  elements.nFoldCount.setAttribute("aria-valuetext", `${branchCount} branches`);
+  return branchCount;
+}
+
 function updateFamilySpecificControls(id) {
   const showNFold = id === "n-fold";
   const showPitchfork = familyIsPitchfork(id);
@@ -2557,16 +2633,13 @@ function updateFamilySpecificControls(id) {
   elements.workspace.classList.toggle("is-hysteresis", id === "hysteresis");
   if (id !== "hysteresis") stopHysteresis(false);
   elements.generateFamily.hidden = id !== "random";
-  const branchCount = clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9);
-  elements.nFoldCount.value = String(branchCount);
-  elements.nFoldCountValue.value = String(branchCount);
-  elements.nFoldCountValue.textContent = String(branchCount);
+  syncNFoldCountReadout();
   updatePitchforkReadouts();
 }
 
 function familyCreationOptions(id) {
   if (id === "n-fold") {
-    return { branchCount: clamp(Math.round(Number(elements.nFoldCount.value) || 5), 3, 9) };
+    return { branchCount: syncNFoldCountReadout() };
   }
   if (familyIsPitchfork(id)) {
     const [couplingSign, cubicSign] = elements.pitchforkSigns.value.split(",").map(Number);
@@ -2656,6 +2729,7 @@ function applyCustomFamily(options = {}) {
 
 function loadFamily(id, options = {}) {
   window.clearTimeout(reloadConfiguredFamily.timeout);
+  if (id !== "n-fold") setNFoldPlayer(false, { announce: false });
   cancelPitchforkMorph();
   updateFamilySpecificControls(id);
   const seed = id === "random" ? state.seed : undefined;
@@ -3479,6 +3553,7 @@ function handleDiagramKey(event) {
 
 elements.familySelect.addEventListener("change", () => {
   const id = elements.familySelect.value;
+  setNFoldPlayer(false, { announce: false });
   stopPitchforkPlayers({ finalize: false });
   updateFamilySpecificControls(id);
   if (id === "random") {
@@ -3489,10 +3564,15 @@ elements.familySelect.addEventListener("change", () => {
 });
 elements.generateFamily.addEventListener("click", generateFamily);
 elements.nFoldCount.addEventListener("input", () => {
+  setNFoldPlayer(false, { announce: false });
   updateFamilySpecificControls("n-fold");
   scheduleConfiguredFamilyReload();
 });
-elements.nFoldCount.addEventListener("change", () => reloadConfiguredFamily(true));
+elements.nFoldCount.addEventListener("change", () => {
+  setNFoldPlayer(false, { announce: false });
+  reloadConfiguredFamily(true);
+});
+elements.playNFoldCount.addEventListener("click", toggleNFoldPlayer);
 elements.pitchforkCase.addEventListener("change", () => {
   stopPitchforkPlayers({ finalize: false });
   applyPitchforkCase(elements.pitchforkCase.value);
@@ -3764,6 +3844,7 @@ function animate(now) {
   const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
   state.lastFrameTime = now;
   state.elapsed += delta;
+  updateNFoldPlayer(now);
   updatePitchforkPlayers(now);
   updatePitchforkMorph(now);
   updateSweep(delta);
@@ -3820,6 +3901,7 @@ if (typeof ResizeObserver === "function") {
 
 motionQuery.addEventListener?.("change", (event) => {
   if (event.matches) {
+    setNFoldPlayer(false, { announce: false });
     stopSweep();
     stopHysteresis(false);
     stopPitchforkPlayers({ finalize: true });
@@ -3836,6 +3918,7 @@ elements.toggleParticles.textContent = state.particlesPaused ? "Resume trajector
 elements.sweepSpeedValue.value = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 elements.sweepSpeed.setAttribute("aria-valuetext", `${state.sweepSpeed.toFixed(2)} times`);
+syncNFoldPlayerButton();
 syncPitchforkPlayerButton("alpha");
 syncPitchforkPlayerButton("beta");
 loadFamily("random", { announce: true });

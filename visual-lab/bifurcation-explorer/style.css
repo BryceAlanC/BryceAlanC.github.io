@@ -44,13 +44,25 @@
   min-height: 44px;
 }
 
-.imperfection-readout {
+.parameter-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.parameter-label label {
+  min-width: 0;
+}
+
+.parameter-readout {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.42rem;
 }
 
-.bifurcation-app .imperfection-play {
+.bifurcation-app .parameter-play {
   display: inline-grid;
   width: 1.8rem;
   min-width: 1.8rem;
@@ -67,13 +79,13 @@
   line-height: 1;
 }
 
-.bifurcation-app .imperfection-play:hover,
-.bifurcation-app .imperfection-play[aria-pressed="true"] {
+.bifurcation-app .parameter-play:hover,
+.bifurcation-app .parameter-play[aria-pressed="true"] {
   background: var(--forest);
   color: var(--white);
 }
 
-.bifurcation-app .imperfection-play:focus-visible {
+.bifurcation-app .parameter-play:focus-visible {
   outline: 3px solid rgba(217, 167, 63, 0.7);
   outline-offset: 2px;
 }

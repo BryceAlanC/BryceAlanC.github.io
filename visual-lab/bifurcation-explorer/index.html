@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261002-7" />
-    <script type="module" src="./demo.js?v=20261002-7"></script>
+    <link rel="stylesheet" href="./style.css?v=20261006-1" />
+    <script type="module" src="./demo.js?v=20261006-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -107,9 +107,21 @@
               </select>
 
               <div class="family-parameter-control" id="n-fold-control" hidden>
-                <div class="field-label">
+                <div class="field-label parameter-label">
                   <label for="n-fold-count">Number of branches <span class="math-symbol">n</span></label>
-                  <output id="n-fold-count-value" for="n-fold-count">5</output>
+                  <span class="parameter-readout">
+                    <output id="n-fold-count-value" for="n-fold-count">5</output>
+                    <button
+                      class="parameter-play"
+                      id="play-n-fold-count"
+                      type="button"
+                      aria-controls="n-fold-count"
+                      aria-pressed="false"
+                      aria-label="Play number of branches animation"
+                    >
+                      <span aria-hidden="true">▶</span>
+                    </button>
+                  </span>
                 </div>
                 <input
                   id="n-fold-count"
@@ -200,22 +212,22 @@
                 <option value="-1">Reverse time · stability swaps</option>
               </select>
 
-              <div class="field-label field-label-spaced">
+              <div class="field-label field-label-spaced parameter-label">
                 <label for="pitchfork-alpha"><span class="math-symbol">α</span> · constant imperfection</label>
-                <span class="imperfection-readout">
+                <span class="parameter-readout">
                   <output id="pitchfork-alpha-value" for="pitchfork-alpha">0.000</output>
-                  <button class="imperfection-play" id="play-pitchfork-alpha" type="button" aria-controls="pitchfork-alpha" aria-pressed="false" aria-label="Play alpha imperfection animation">
+                  <button class="parameter-play" id="play-pitchfork-alpha" type="button" aria-controls="pitchfork-alpha" aria-pressed="false" aria-label="Play alpha imperfection animation">
                     <span aria-hidden="true">▶</span>
                   </button>
                 </span>
               </div>
               <input id="pitchfork-alpha" type="range" min="-0.4" max="0.4" value="0" step="0.001" aria-label="Alpha, constant imperfection" aria-describedby="pitchfork-unfolding-help" />
 
-              <div class="field-label field-label-spaced">
+              <div class="field-label field-label-spaced parameter-label">
                 <label for="pitchfork-beta"><span class="math-symbol">β</span> · quadratic imperfection</label>
-                <span class="imperfection-readout">
+                <span class="parameter-readout">
                   <output id="pitchfork-beta-value" for="pitchfork-beta">0.000</output>
-                  <button class="imperfection-play" id="play-pitchfork-beta" type="button" aria-controls="pitchfork-beta" aria-pressed="false" aria-label="Play beta imperfection animation">
+                  <button class="parameter-play" id="play-pitchfork-beta" type="button" aria-controls="pitchfork-beta" aria-pressed="false" aria-label="Play beta imperfection animation">
                     <span aria-hidden="true">▶</span>
                   </button>
                 </span>

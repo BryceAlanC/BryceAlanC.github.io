@@ -26,7 +26,7 @@
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
     <link rel="stylesheet" href="./style.css?v=20261005-1" />
-    <script type="module" src="./demo.js?v=20261005-1"></script>
+    <script type="module" src="./demo.js?v=20261006-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -138,7 +138,17 @@
               <div class="parameter-control" id="parameter-a-control">
                 <div class="field-label">
                   <label for="parameter-a"><span id="parameter-a-label">Restoring strength a</span></label>
-                  <output id="parameter-a-value" for="parameter-a">1.00</output>
+                  <span class="parameter-readout">
+                    <output id="parameter-a-value" for="parameter-a">1.00</output>
+                    <button
+                      class="parameter-play"
+                      id="play-parameter-a"
+                      type="button"
+                      aria-controls="parameter-a"
+                      aria-pressed="false"
+                      aria-label="Animate the restoring-strength parameter"
+                    ><span aria-hidden="true">▶</span></button>
+                  </span>
                 </div>
                 <input id="parameter-a" type="range" min="0" max="2" value="1" step="0.002" />
               </div>
@@ -146,7 +156,17 @@
               <div class="parameter-control" id="parameter-b-control" hidden>
                 <div class="field-label">
                   <label for="parameter-b"><span id="parameter-b-label">Second harmonic b</span></label>
-                  <output id="parameter-b-value" for="parameter-b">0.35</output>
+                  <span class="parameter-readout">
+                    <output id="parameter-b-value" for="parameter-b">0.35</output>
+                    <button
+                      class="parameter-play"
+                      id="play-parameter-b"
+                      type="button"
+                      aria-controls="parameter-b"
+                      aria-pressed="false"
+                      aria-label="Animate the second-harmonic parameter"
+                    ><span aria-hidden="true">▶</span></button>
+                  </span>
                 </div>
                 <input id="parameter-b" type="range" min="-1.5" max="1.5" value="0.35" step="0.002" />
               </div>
@@ -154,7 +174,17 @@
               <div class="parameter-control" id="parameter-phase-control" hidden>
                 <div class="field-label">
                   <label for="parameter-phase"><span id="parameter-phase-label">Phase shift φ</span></label>
-                  <output id="parameter-phase-value" for="parameter-phase">0.00π</output>
+                  <span class="parameter-readout">
+                    <output id="parameter-phase-value" for="parameter-phase">0.00π</output>
+                    <button
+                      class="parameter-play"
+                      id="play-parameter-phase"
+                      type="button"
+                      aria-controls="parameter-phase"
+                      aria-pressed="false"
+                      aria-label="Animate the phase-shift parameter"
+                    ><span aria-hidden="true">▶</span></button>
+                  </span>
                 </div>
                 <input id="parameter-phase" type="range" min="-3.141593" max="3.141593" value="0" step="0.002" />
               </div>
@@ -162,7 +192,17 @@
               <div class="parameter-control" id="parameter-n-control" hidden>
                 <div class="field-label">
                   <label for="parameter-n"><span id="parameter-n-label">Number of locking sites n</span></label>
-                  <output id="parameter-n-value" for="parameter-n">3</output>
+                  <span class="parameter-readout">
+                    <output id="parameter-n-value" for="parameter-n">3</output>
+                    <button
+                      class="parameter-play"
+                      id="play-parameter-n"
+                      type="button"
+                      aria-controls="parameter-n"
+                      aria-pressed="false"
+                      aria-label="Animate the number-of-locking-sites parameter"
+                    ><span aria-hidden="true">▶</span></button>
+                  </span>
                 </div>
                 <input id="parameter-n" type="range" min="1" max="8" value="3" step="1" />
               </div>

@@ -27,18 +27,22 @@ const elements = {
   aLabel: byId("parameter-a-label"),
   a: byId("parameter-a"),
   aValue: byId("parameter-a-value"),
+  playA: byId("play-parameter-a"),
   bControl: byId("parameter-b-control"),
   bLabel: byId("parameter-b-label"),
   b: byId("parameter-b"),
   bValue: byId("parameter-b-value"),
+  playB: byId("play-parameter-b"),
   phaseControl: byId("parameter-phase-control"),
   phaseLabel: byId("parameter-phase-label"),
   phase: byId("parameter-phase"),
   phaseValue: byId("parameter-phase-value"),
+  playPhase: byId("play-parameter-phase"),
   nControl: byId("parameter-n-control"),
   nLabel: byId("parameter-n-label"),
   n: byId("parameter-n"),
   nValue: byId("parameter-n-value"),
+  playN: byId("play-parameter-n"),
   parameterHelp: byId("parameter-help"),
   toggleAnimation: byId("toggle-animation"),
   resetParticles: byId("reset-particles"),
@@ -157,8 +161,13 @@ const state = {
   lastFrameTime: performance.now(),
   lastRenderTime: 0,
   lastTrailTime: 0,
-  parameterPlaying: false,
-  parameterDirection: 1,
+  parameterPlayers: {
+    omega: { playing: false, direction: 1, position: null },
+    a: { playing: false, direction: 1, position: null },
+    b: { playing: false, direction: 1, position: null },
+    phase: { playing: false, direction: 1, position: null },
+    n: { playing: false, direction: 1, position: null }
+  },
   parameterAccumulator: 0,
   pointer: null,
   circleGeometry: null,
@@ -168,6 +177,40 @@ const state = {
   lastAnnouncement: "",
   dirty: true
 };
+
+const PARAMETER_PLAYER_CONFIG = Object.freeze({
+  omega: Object.freeze({
+    control: elements.omega,
+    wrapper: elements.omegaControl,
+    label: elements.omegaLabel,
+    button: elements.playOmega
+  }),
+  a: Object.freeze({
+    control: elements.a,
+    wrapper: elements.aControl,
+    label: elements.aLabel,
+    button: elements.playA
+  }),
+  b: Object.freeze({
+    control: elements.b,
+    wrapper: elements.bControl,
+    label: elements.bLabel,
+    button: elements.playB
+  }),
+  phase: Object.freeze({
+    control: elements.phase,
+    wrapper: elements.phaseControl,
+    label: elements.phaseLabel,
+    button: elements.playPhase
+  }),
+  n: Object.freeze({
+    control: elements.n,
+    wrapper: elements.nControl,
+    label: elements.nLabel,
+    button: elements.playN,
+    discrete: true
+  })
+});
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -287,6 +330,7 @@ function configureFamilyControls(id, resetValues = true) {
   });
   elements.parameterHelp.textContent = config.help;
   updateParameterOutputs();
+  syncParameterPlayButtons();
 }
 
 function makeParticle(angle, options = {}) {
@@ -1149,34 +1193,96 @@ function toggleAnimation(options = {}) {
   if (options.announce !== false) announce(state.running ? "Particle motion resumed." : "Particle motion paused.");
 }
 
-function syncParameterPlayButton() {
-  elements.playOmega.setAttribute("aria-pressed", String(state.parameterPlaying));
-  elements.playOmega.setAttribute("aria-label", state.parameterPlaying ? "Pause the main parameter animation" : "Animate the main parameter");
-  const icon = elements.playOmega.querySelector("span");
-  if (icon) icon.textContent = state.parameterPlaying ? "Ⅱ" : "▶";
+function parameterPlayerLabel(name) {
+  return PARAMETER_PLAYER_CONFIG[name]?.label?.textContent?.trim() || "Parameter";
 }
 
-function toggleParameterPlay() {
-  state.parameterPlaying = !state.parameterPlaying;
-  syncParameterPlayButton();
-  announce(state.parameterPlaying ? "Main parameter animation started." : "Main parameter animation paused.");
+function syncParameterPlayButton(name) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const player = state.parameterPlayers[name];
+  if (!config?.button || !player) return;
+  const label = parameterPlayerLabel(name);
+  config.button.setAttribute("aria-pressed", String(player.playing));
+  config.button.setAttribute(
+    "aria-label",
+    `${player.playing ? "Pause" : "Animate"} the ${label} parameter`
+  );
+  const icon = config.button.querySelector("span");
+  if (icon) icon.textContent = player.playing ? "Ⅱ" : "▶";
 }
 
-function updateParameterSweep(delta) {
-  if (!state.parameterPlaying || delta <= 0) return;
-  const minimum = Number(elements.omega.min);
-  const maximum = Number(elements.omega.max);
-  const span = maximum - minimum;
-  let next = Number(elements.omega.value) + state.parameterDirection * span * delta / 9;
-  if (next >= maximum) {
-    next = maximum;
-    state.parameterDirection = -1;
-  } else if (next <= minimum) {
-    next = minimum;
-    state.parameterDirection = 1;
+function syncParameterPlayButtons() {
+  Object.keys(PARAMETER_PLAYER_CONFIG).forEach(syncParameterPlayButton);
+}
+
+function setParameterPlayer(name, playing, options = {}) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const player = state.parameterPlayers[name];
+  if (!config || !player || (playing && config.wrapper.hidden) || player.playing === playing) return false;
+  player.playing = playing;
+  if (playing) {
+    player.position = Number(config.control.value);
+    const minimum = Number(config.control.min);
+    const maximum = Number(config.control.max);
+    const edgeTolerance = Math.max(Number(config.control.step) || 0, (maximum - minimum) * 0.01);
+    if (player.position >= maximum - edgeTolerance) player.direction = -1;
+    else if (player.position <= minimum + edgeTolerance) player.direction = 1;
+  } else {
+    player.position = null;
   }
-  elements.omega.value = String(next);
+  syncParameterPlayButton(name);
+  if (options.announce) {
+    announce(`${parameterPlayerLabel(name)} animation ${playing ? "started" : "paused"}.`);
+  }
+  return true;
+}
+
+function stopParameterPlayers() {
+  Object.keys(PARAMETER_PLAYER_CONFIG).forEach((name) => {
+    setParameterPlayer(name, false);
+  });
+  state.parameterAccumulator = 0;
+}
+
+function toggleParameterPlayer(name) {
+  const player = state.parameterPlayers[name];
+  if (!player) return;
+  setParameterPlayer(name, !player.playing, { announce: true });
+}
+
+function updateParameterPlayers(delta) {
+  if (delta <= 0) return;
+  let active = false;
+  let changed = false;
+  for (const [name, config] of Object.entries(PARAMETER_PLAYER_CONFIG)) {
+    const player = state.parameterPlayers[name];
+    if (!player.playing) continue;
+    if (config.wrapper.hidden) {
+      setParameterPlayer(name, false);
+      continue;
+    }
+    active = true;
+    const minimum = Number(config.control.min);
+    const maximum = Number(config.control.max);
+    const span = maximum - minimum;
+    let position = Number.isFinite(player.position) ? player.position : Number(config.control.value);
+    position += player.direction * span * delta / 9;
+    if (position >= maximum) {
+      position = maximum - (position - maximum);
+      player.direction = -1;
+    } else if (position <= minimum) {
+      position = minimum + (minimum - position);
+      player.direction = 1;
+    }
+    player.position = clamp(position, minimum, maximum);
+    const previousValue = Number(config.control.value);
+    const nextValue = config.discrete ? Math.round(player.position) : player.position;
+    config.control.value = String(clamp(nextValue, minimum, maximum));
+    changed = Number(config.control.value) !== previousValue || changed;
+  }
+  if (!active) return;
   state.parameterAccumulator += delta;
+  if (!changed) return;
   if (state.parameterAccumulator >= 0.045) {
     state.parameterAccumulator = 0;
     refreshFlow();
@@ -1317,24 +1423,26 @@ function scheduleFlowRefresh(options = {}) {
 
 function installEvents() {
   elements.familySelect.addEventListener("change", () => {
-    state.parameterPlaying = false;
-    syncParameterPlayButton();
+    stopParameterPlayers();
     configureFamilyControls(elements.familySelect.value, true);
     refreshFlow({ resetParticles: true, announce: true });
   });
-  [elements.omega, elements.a, elements.b, elements.phase, elements.n].forEach((input) => {
-    input.addEventListener("input", () => scheduleFlowRefresh());
-    input.addEventListener("change", () => {
-      refreshFlow();
-      announce(`${input.previousElementSibling?.textContent?.trim() || "Parameter"} set to ${input.getAttribute("aria-valuetext") || input.value}.`);
+  Object.entries(PARAMETER_PLAYER_CONFIG).forEach(([name, config]) => {
+    config.control.addEventListener("input", () => {
+      setParameterPlayer(name, false);
+      scheduleFlowRefresh();
     });
+    config.control.addEventListener("change", () => {
+      refreshFlow();
+      announce(`${parameterPlayerLabel(name)} set to ${config.control.getAttribute("aria-valuetext") || config.control.value}.`);
+    });
+    config.button.addEventListener("click", () => toggleParameterPlayer(name));
   });
   [elements.showArrows, elements.showTrails, elements.showLabels, elements.showEquilibriumParticles].forEach((input) => {
     input.addEventListener("change", () => {
       state.dirty = true;
     });
   });
-  elements.playOmega.addEventListener("click", toggleParameterPlay);
   elements.toggleAnimation.addEventListener("click", () => toggleAnimation());
   elements.resetParticles.addEventListener("click", () => resetParticles());
   elements.animationSpeed.addEventListener("input", () => {
@@ -1358,9 +1466,8 @@ function installEvents() {
   motionQuery.addEventListener?.("change", (event) => {
     if (event.matches) {
       state.running = false;
-      state.parameterPlaying = false;
+      stopParameterPlayers();
       syncAnimationButton();
-      syncParameterPlayButton();
       announce("Motion paused because reduced motion is enabled.");
     }
   });
@@ -1369,7 +1476,7 @@ function installEvents() {
 function animate(now) {
   const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
   state.lastFrameTime = now;
-  updateParameterSweep(delta);
+  updateParameterPlayers(delta);
   updateParticles(delta);
   if (state.dirty && !document.hidden && now - state.lastRenderTime >= 30) {
     drawAll();
@@ -1387,7 +1494,7 @@ function initialize() {
   updateSelectedReadout();
   refreshFlow({ resetParticles: true });
   syncAnimationButton();
-  syncParameterPlayButton();
+  syncParameterPlayButtons();
   installEvents();
   if (elements.fullscreenToggle) elements.fullscreenToggle.hidden = !fullscreenSupported();
   syncFullscreen({ announce: false });
