@@ -121,6 +121,7 @@
 
 .parameter-control .field-label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
@@ -131,10 +132,48 @@
   min-width: 0;
 }
 
-.parameter-control .field-label output {
-  float: none;
+.parameter-value-input,
+.parameter-value-unit {
   font-family: var(--mono);
   font-size: 0.72rem;
+}
+
+.parameter-value-input {
+  width: 5.5rem;
+  min-height: 1.8rem;
+  box-sizing: border-box;
+  padding: 0.2rem 0.34rem;
+  border: 1px solid rgba(11, 87, 72, 0.24);
+  border-radius: 0.35rem;
+  background: rgba(255, 253, 247, 0.62);
+  color: var(--ink);
+  text-align: right;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.parameter-value-input-integer {
+  width: 4.25rem;
+}
+
+.parameter-value-input:hover {
+  border-color: rgba(11, 87, 72, 0.5);
+  background: var(--white);
+}
+
+.parameter-value-input:focus-visible {
+  border-color: var(--forest);
+  outline: none;
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(217, 167, 63, 0.35);
+}
+
+.parameter-value-with-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.parameter-value-unit {
   white-space: nowrap;
 }
 
@@ -143,6 +182,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 0.42rem;
+  margin-left: auto;
 }
 
 .parameter-play {
@@ -932,6 +972,7 @@
 }
 
 @media (forced-colors: active) {
+  .parameter-value-input,
   .parameter-play,
   .workspace-fullscreen-toggle,
   .equilibrium-card,

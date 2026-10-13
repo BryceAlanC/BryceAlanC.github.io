@@ -181,30 +181,36 @@ const state = {
 const PARAMETER_PLAYER_CONFIG = Object.freeze({
   omega: Object.freeze({
     control: elements.omega,
+    valueInput: elements.omegaValue,
     wrapper: elements.omegaControl,
     label: elements.omegaLabel,
     button: elements.playOmega
   }),
   a: Object.freeze({
     control: elements.a,
+    valueInput: elements.aValue,
     wrapper: elements.aControl,
     label: elements.aLabel,
     button: elements.playA
   }),
   b: Object.freeze({
     control: elements.b,
+    valueInput: elements.bValue,
     wrapper: elements.bControl,
     label: elements.bLabel,
     button: elements.playB
   }),
   phase: Object.freeze({
     control: elements.phase,
+    valueInput: elements.phaseValue,
     wrapper: elements.phaseControl,
     label: elements.phaseLabel,
-    button: elements.playPhase
+    button: elements.playPhase,
+    scale: Math.PI
   }),
   n: Object.freeze({
     control: elements.n,
+    valueInput: elements.nValue,
     wrapper: elements.nControl,
     label: elements.nLabel,
     button: elements.playN,
@@ -289,22 +295,45 @@ function currentParameters() {
   };
 }
 
-function updateParameterOutputs() {
+function parameterInputValue(name) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const value = Number(config.control.value) / (config.scale || 1);
+  return config.discrete ? String(Math.round(value)) : formatNumber(value, 3);
+}
+
+function syncParameterValueInput(name, options = {}) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const input = config?.valueInput;
+  if (!input || (!options.force && input.dataset.dirty === "true")) return;
+  const scale = config.scale || 1;
+  input.min = String(Number(config.control.min) / scale);
+  input.max = String(Number(config.control.max) / scale);
+  input.step = config.discrete ? "1" : config.scale ? "0.001" : config.control.step;
+  input.value = parameterInputValue(name);
+  input.dataset.dirty = "false";
+  input.removeAttribute("aria-invalid");
+  const label = parameterPlayerLabel(name);
+  input.setAttribute(
+    "aria-label",
+    config.scale
+      ? `Set ${label} directly, in multiples of pi`
+      : `Set ${label} directly`
+  );
+  input.setAttribute("aria-describedby", "parameter-help");
+  input.title = config.scale
+    ? `Enter a value from ${input.min}π to ${input.max}π`
+    : `Enter a value from ${input.min} to ${input.max}`;
+}
+
+function updateParameterOutputs(options = {}) {
   const omega = Number(elements.omega.value);
   const amplitude = Number(elements.a.value);
   const secondAmplitude = Number(elements.b.value);
   const phase = Number(elements.phase.value);
   const harmonics = Math.round(Number(elements.n.value));
-  elements.omegaValue.value = formatNumber(omega, 3);
-  elements.omegaValue.textContent = formatNumber(omega, 3);
-  elements.aValue.value = formatNumber(amplitude, 3);
-  elements.aValue.textContent = formatNumber(amplitude, 3);
-  elements.bValue.value = formatNumber(secondAmplitude, 3);
-  elements.bValue.textContent = formatNumber(secondAmplitude, 3);
-  elements.phaseValue.value = `${formatNumber(phase / Math.PI, 2)}π`;
-  elements.phaseValue.textContent = `${formatNumber(phase / Math.PI, 2)}π`;
-  elements.nValue.value = String(harmonics);
-  elements.nValue.textContent = String(harmonics);
+  Object.keys(PARAMETER_PLAYER_CONFIG).forEach((name) => {
+    syncParameterValueInput(name, options);
+  });
   elements.omega.setAttribute("aria-valuetext", `${formatNumber(omega, 3)} radians per unit time`);
   elements.a.setAttribute("aria-valuetext", formatNumber(amplitude, 3));
   elements.b.setAttribute("aria-valuetext", formatNumber(secondAmplitude, 3));
@@ -329,7 +358,7 @@ function configureFamilyControls(id, resetValues = true) {
     if (resetValues && config.defaults[key] != null) input.value = String(config.defaults[key]);
   });
   elements.parameterHelp.textContent = config.help;
-  updateParameterOutputs();
+  updateParameterOutputs({ force: true });
   syncParameterPlayButtons();
 }
 
@@ -1197,6 +1226,42 @@ function parameterPlayerLabel(name) {
   return PARAMETER_PLAYER_CONFIG[name]?.label?.textContent?.trim() || "Parameter";
 }
 
+function cancelParameterValueEdit(name) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const input = config?.valueInput;
+  if (!input) return;
+  input.dataset.dirty = "false";
+  input.value = parameterInputValue(name);
+  input.removeAttribute("aria-invalid");
+}
+
+function commitParameterValue(name, options = {}) {
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const input = config?.valueInput;
+  if (!config || !input || input.dataset.dirty !== "true") return false;
+  const rawValue = input.value.trim();
+  const typedValue = Number(rawValue);
+  if (!rawValue || !Number.isFinite(typedValue)) {
+    cancelParameterValueEdit(name);
+    announce(`${parameterPlayerLabel(name)} needs a finite number.`);
+    return false;
+  }
+
+  setParameterPlayer(name, false);
+  const minimum = Number(config.control.min);
+  const maximum = Number(config.control.max);
+  let nextValue = typedValue * (config.scale || 1);
+  if (config.discrete) nextValue = Math.round(nextValue);
+  config.control.value = String(clamp(nextValue, minimum, maximum));
+  input.dataset.dirty = "false";
+  input.removeAttribute("aria-invalid");
+  refreshFlow();
+  if (options.announce !== false) {
+    announce(`${parameterPlayerLabel(name)} set to ${config.control.getAttribute("aria-valuetext") || config.control.value}.`);
+  }
+  return true;
+}
+
 function syncParameterPlayButton(name) {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const player = state.parameterPlayers[name];
@@ -1430,13 +1495,43 @@ function installEvents() {
   Object.entries(PARAMETER_PLAYER_CONFIG).forEach(([name, config]) => {
     config.control.addEventListener("input", () => {
       setParameterPlayer(name, false);
+      cancelParameterValueEdit(name);
       scheduleFlowRefresh();
     });
     config.control.addEventListener("change", () => {
       refreshFlow();
       announce(`${parameterPlayerLabel(name)} set to ${config.control.getAttribute("aria-valuetext") || config.control.value}.`);
     });
-    config.button.addEventListener("click", () => toggleParameterPlayer(name));
+    config.valueInput.addEventListener("focus", () => {
+      setParameterPlayer(name, false);
+      config.valueInput.removeAttribute("aria-invalid");
+    });
+    config.valueInput.addEventListener("input", () => {
+      setParameterPlayer(name, false);
+      config.valueInput.dataset.dirty = "true";
+      config.valueInput.removeAttribute("aria-invalid");
+    });
+    config.valueInput.addEventListener("change", () => {
+      commitParameterValue(name);
+    });
+    config.valueInput.addEventListener("blur", () => {
+      commitParameterValue(name);
+    });
+    config.valueInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitParameterValue(name);
+        config.valueInput.blur();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        cancelParameterValueEdit(name);
+        config.valueInput.blur();
+      }
+    });
+    config.button.addEventListener("click", () => {
+      commitParameterValue(name);
+      toggleParameterPlayer(name);
+    });
   });
   [elements.showArrows, elements.showTrails, elements.showLabels, elements.showEquilibriumParticles].forEach((input) => {
     input.addEventListener("change", () => {

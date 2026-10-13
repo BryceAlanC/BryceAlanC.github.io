@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261005-1" />
-    <script type="module" src="./demo.js?v=20261006-1"></script>
+    <link rel="stylesheet" href="./style.css?v=20261013-1" />
+    <script type="module" src="./demo.js?v=20261013-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -121,7 +121,14 @@
                 <div class="field-label">
                   <label for="parameter-omega"><span id="parameter-omega-label">Drive ω</span></label>
                   <span class="parameter-readout">
-                    <output id="parameter-omega-value" for="parameter-omega">0.70</output>
+                    <input
+                      class="parameter-value-input"
+                      id="parameter-omega-value"
+                      type="number"
+                      inputmode="decimal"
+                      value="0.700"
+                      aria-label="Set the drive parameter directly"
+                    />
                     <button
                       class="parameter-play"
                       id="play-parameter-omega"
@@ -139,7 +146,14 @@
                 <div class="field-label">
                   <label for="parameter-a"><span id="parameter-a-label">Restoring strength a</span></label>
                   <span class="parameter-readout">
-                    <output id="parameter-a-value" for="parameter-a">1.00</output>
+                    <input
+                      class="parameter-value-input"
+                      id="parameter-a-value"
+                      type="number"
+                      inputmode="decimal"
+                      value="1.000"
+                      aria-label="Set the restoring-strength parameter directly"
+                    />
                     <button
                       class="parameter-play"
                       id="play-parameter-a"
@@ -157,7 +171,14 @@
                 <div class="field-label">
                   <label for="parameter-b"><span id="parameter-b-label">Second harmonic b</span></label>
                   <span class="parameter-readout">
-                    <output id="parameter-b-value" for="parameter-b">0.35</output>
+                    <input
+                      class="parameter-value-input"
+                      id="parameter-b-value"
+                      type="number"
+                      inputmode="decimal"
+                      value="0.350"
+                      aria-label="Set the second-harmonic parameter directly"
+                    />
                     <button
                       class="parameter-play"
                       id="play-parameter-b"
@@ -175,7 +196,17 @@
                 <div class="field-label">
                   <label for="parameter-phase"><span id="parameter-phase-label">Phase shift φ</span></label>
                   <span class="parameter-readout">
-                    <output id="parameter-phase-value" for="parameter-phase">0.00π</output>
+                    <span class="parameter-value-with-unit">
+                      <input
+                        class="parameter-value-input parameter-value-input-phase"
+                        id="parameter-phase-value"
+                        type="number"
+                        inputmode="decimal"
+                        value="0.000"
+                        aria-label="Set the phase-shift parameter directly, in multiples of pi"
+                      />
+                      <span class="parameter-value-unit" aria-hidden="true">π</span>
+                    </span>
                     <button
                       class="parameter-play"
                       id="play-parameter-phase"
@@ -193,7 +224,15 @@
                 <div class="field-label">
                   <label for="parameter-n"><span id="parameter-n-label">Number of locking sites n</span></label>
                   <span class="parameter-readout">
-                    <output id="parameter-n-value" for="parameter-n">3</output>
+                    <input
+                      class="parameter-value-input parameter-value-input-integer"
+                      id="parameter-n-value"
+                      type="number"
+                      inputmode="numeric"
+                      value="3"
+                      step="1"
+                      aria-label="Set the number-of-locking-sites parameter directly"
+                    />
                     <button
                       class="parameter-play"
                       id="play-parameter-n"
