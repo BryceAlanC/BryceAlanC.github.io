@@ -605,6 +605,17 @@
   background: #dffaf4;
 }
 
+.graph-legend .legend-path {
+  background: #62d8c2;
+  box-shadow: 0 0 0 2px rgba(98, 216, 194, 0.28);
+}
+
+.graph-legend .legend-dim {
+  border: 1px solid rgba(223, 248, 240, 0.3);
+  background: #35514a;
+  opacity: 0.48;
+}
+
 .graph-legend .legend-losing {
   border: 2px solid #efb08a;
   background: #7f3f29;
@@ -633,21 +644,31 @@
   color: var(--ink);
 }
 
-.nim-workspace:fullscreen {
+.nim-workspace.is-fullscreen {
   width: 100%;
   height: 100dvh;
-  padding: 0.55rem;
+  padding:
+    max(0.55rem, env(safe-area-inset-top))
+    max(0.55rem, env(safe-area-inset-right))
+    max(0.55rem, env(safe-area-inset-bottom))
+    max(0.55rem, env(safe-area-inset-left));
   overflow: hidden;
-  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  grid-template-columns: minmax(235px, 285px) minmax(0, 1fr);
+  gap: 0.55rem;
   background: var(--paper-deep);
 }
 
-.nim-workspace:fullscreen .nim-controls {
-  display: none;
+.nim-workspace.is-fullscreen .nim-controls {
+  position: static;
+  display: block;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
-.nim-workspace:fullscreen .nim-experience {
-  height: calc(100dvh - 1.1rem);
+.nim-workspace.is-fullscreen .nim-experience {
+  height: 100%;
   min-height: 0;
   grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
@@ -656,35 +677,39 @@
     "telemetry telemetry";
 }
 
-.nim-workspace:fullscreen .nim-board-panel,
-.nim-workspace:fullscreen .nim-graph-panel {
+.nim-workspace.is-fullscreen .nim-board-panel,
+.nim-workspace.is-fullscreen .nim-graph-panel {
   min-height: 0;
 }
 
-.nim-workspace:fullscreen .nim-board-panel {
+.nim-workspace.is-fullscreen .nim-board-panel {
   overflow-y: auto;
 }
 
-.nim-workspace:fullscreen .nim-graph-panel {
+.nim-workspace.is-fullscreen .nim-graph-panel {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-.nim-workspace:fullscreen .nim-graph-viewport {
+.nim-workspace.is-fullscreen .nim-graph-viewport {
   min-height: 0;
   height: auto;
 }
 
-.nim-workspace:fullscreen .nim-graph-renderer canvas {
+.nim-workspace.is-fullscreen .nim-graph-renderer canvas {
   touch-action: none !important;
 }
 
-.nim-workspace:fullscreen .nim-position {
+.nim-workspace.is-fullscreen .nim-position {
   min-height: 210px;
 }
 
-.nim-workspace:fullscreen .nim-note {
+.nim-workspace.is-fullscreen .nim-note {
   display: none;
+}
+
+.nim-workspace:fullscreen::backdrop {
+  background: var(--paper-deep);
 }
 
 @media (max-width: 1220px) {
@@ -714,10 +739,6 @@
 }
 
 @media (max-width: 920px) {
-  #nim-fullscreen {
-    display: none;
-  }
-
   .nim-experience {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -735,12 +756,19 @@
     min-height: 560px;
   }
 
-  .nim-workspace:fullscreen {
+  .nim-workspace.is-fullscreen {
     height: 100dvh;
+    grid-template-columns: 1fr;
+    align-content: start;
     overflow-y: auto;
   }
 
-  .nim-workspace:fullscreen .nim-experience {
+  .nim-workspace.is-fullscreen .nim-controls {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .nim-workspace.is-fullscreen .nim-experience {
     height: auto;
     grid-template-columns: 1fr;
     grid-template-rows: auto;
@@ -750,8 +778,17 @@
       "telemetry";
   }
 
-  .nim-workspace:fullscreen .nim-graph-viewport {
+  .nim-workspace.is-fullscreen .nim-graph-viewport {
     min-height: 58svh;
+  }
+
+  .nim-workspace.is-fullscreen #nim-fullscreen {
+    position: fixed;
+    z-index: 20;
+    top: max(0.55rem, env(safe-area-inset-top));
+    right: max(0.55rem, env(safe-area-inset-right));
+    background: #0b2824;
+    box-shadow: 0 4px 18px rgba(5, 25, 22, 0.28);
   }
 }
 

@@ -13,9 +13,10 @@ import {
   nodeId,
   legalMoves,
   optimalMove,
-  buildStateGraph
-} from "./model.js?v=20261014-1";
-import { createNimGraphRenderer } from "./graph-renderer.js?v=20261014-1";
+  buildStateGraph,
+  directedReachability
+} from "./model.js?v=20261014-2";
+import { createNimGraphRenderer } from "./graph-renderer.js?v=20261014-2";
 
 const GRAPH_NODE_CAP = Math.min(DEFAULT_NODE_CAP, 1400);
 const GRAPH_EDGE_CAP = Math.min(DEFAULT_EDGE_CAP, 9000);
@@ -70,10 +71,14 @@ const game = {
   roundHistory: [],
   moveLog: [],
   pathEdgeIds: [],
+  pathNodeIds: [],
+  reachabilityCache: new Map(),
   lastEdgeId: null,
   previewId: null,
   restoreMoveFocus: false,
-  resizeObserver: null
+  resizeObserver: null,
+  fullscreenActive: false,
+  fullscreenInitialized: false
 };
 
 function prefersReducedMotion() {
@@ -205,12 +210,12 @@ function nodeTooltipText(node) {
   return `[${node.piles.join(", ")}] · ${mover} · nim-sum ${node.nimSum} · ${classification}`;
 }
 
-function clearBoardPreview() {
+function clearBoardPreview({ updateGraph = true } = {}) {
   elements.position.querySelectorAll(".nim-stone.is-remove").forEach((stone) => {
     stone.classList.remove("is-remove");
   });
   game.previewId = null;
-  updateGraphHighlights();
+  if (updateGraph) updateGraphHighlights();
   if (game.outcome === VICTORY) {
     elements.movePreview.textContent = "You reached the Victory node by taking the final counter.";
   } else if (game.outcome === DEFEAT) {
@@ -374,13 +379,22 @@ function renderStatus() {
 
 function updateGraphHighlights() {
   if (!game.renderer || !game.graph?.ok) return;
+  const activeId = currentNodeId();
+  let reachability = game.reachabilityCache.get(activeId);
+  if (!reachability) {
+    reachability = directedReachability(game.graph, activeId);
+    game.reachabilityCache.set(activeId, reachability);
+  }
   const legalIds = game.turn === HUMAN_TURN && !game.locked && !game.outcome
     ? legalMoves(game.piles).map((move) => nodeId(move.successor, COMPUTER_TURN))
     : [];
   game.renderer.setHighlights({
-    currentId: currentNodeId(),
+    currentId: activeId,
     legalIds,
     pathEdgeIds: game.pathEdgeIds,
+    pathNodeIds: game.pathNodeIds,
+    reachableNodeIds: reachability.nodeIds,
+    reachableEdgeIds: reachability.edgeIds,
     lastEdgeId: game.lastEdgeId,
     previewId: game.previewId
   });
@@ -391,8 +405,8 @@ function render() {
   renderLegalMoves();
   renderMoveLog();
   renderStatus();
+  clearBoardPreview({ updateGraph: false });
   updateGraphHighlights();
-  clearBoardPreview();
 }
 
 function snapshotRound() {
@@ -402,6 +416,7 @@ function snapshotRound() {
     outcome: game.outcome,
     moveLogLength: game.moveLog.length,
     pathLength: game.pathEdgeIds.length,
+    pathNodeLength: game.pathNodeIds.length,
     lastEdgeId: game.lastEdgeId
   });
 }
@@ -410,6 +425,7 @@ function recordTransition(sourceId, targetId) {
   const traversed = edgeId(sourceId, targetId);
   game.lastEdgeId = traversed;
   game.pathEdgeIds.push(traversed);
+  game.pathNodeIds.push(targetId);
   return traversed;
 }
 
@@ -547,6 +563,8 @@ function startGame(piles, firstTurn, { announceStart = true } = {}) {
   game.roundHistory = [];
   game.moveLog = [];
   game.pathEdgeIds = [];
+  game.pathNodeIds = [candidate.initialNodeId];
+  game.reachabilityCache = new Map();
   game.lastEdgeId = null;
   game.previewId = null;
   game.restoreMoveFocus = false;
@@ -573,6 +591,7 @@ function undoRound() {
   game.locked = false;
   game.moveLog.splice(snapshot.moveLogLength);
   game.pathEdgeIds.splice(snapshot.pathLength);
+  game.pathNodeIds.splice(snapshot.pathNodeLength);
   game.lastEdgeId = snapshot.lastEdgeId;
   game.previewId = null;
   render();
@@ -629,6 +648,49 @@ function resizeGraph() {
   game.renderer.resize(elements.graphPanel.clientWidth, elements.graphPanel.clientHeight);
 }
 
+function currentFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function fullscreenSupported() {
+  const enter = elements.workspace?.requestFullscreen || elements.workspace?.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const explicitlyDisabled = document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true;
+  return typeof enter === "function" && typeof exit === "function" && !explicitlyDisabled;
+}
+
+function syncFullscreen({ announceChange = true } = {}) {
+  const wasActive = game.fullscreenActive;
+  game.fullscreenActive = currentFullscreenElement() === elements.workspace;
+  elements.workspace.classList.toggle("is-fullscreen", game.fullscreenActive);
+  elements.fullscreen.textContent = game.fullscreenActive
+    ? "Exit fullscreen workspace"
+    : "Enter fullscreen workspace";
+  elements.fullscreen.setAttribute("aria-pressed", String(game.fullscreenActive));
+  if (game.fullscreenInitialized && game.fullscreenActive !== wasActive && announceChange) {
+    announce(game.fullscreenActive ? "Fullscreen Nim workspace opened." : "Fullscreen Nim workspace closed.");
+  }
+  game.fullscreenInitialized = true;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(resizeGraph));
+}
+
+async function toggleFullscreen() {
+  if (!fullscreenSupported()) {
+    announce("Fullscreen is unavailable in this browser.");
+    return;
+  }
+  try {
+    if (currentFullscreenElement() === elements.workspace) {
+      await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      await (elements.workspace.requestFullscreen || elements.workspace.webkitRequestFullscreen).call(elements.workspace);
+    }
+  } catch (error) {
+    announce("Fullscreen is unavailable in this browser.");
+    window.console.warn(error);
+  }
+}
+
 function bindControls() {
   elements.preset.addEventListener("change", () => {
     if (elements.preset.value === "custom") return;
@@ -673,20 +735,11 @@ function bindControls() {
 
   elements.resetView.addEventListener("click", () => game.renderer?.resetView());
   elements.fitView.addEventListener("click", () => game.renderer?.fitView?.(350));
-  elements.fullscreen.addEventListener("click", async () => {
-    try {
-      if (document.fullscreenElement === elements.workspace) await document.exitFullscreen();
-      else await elements.workspace.requestFullscreen();
-    } catch (error) {
-      announce("Fullscreen is unavailable in this browser.");
-      window.console.warn(error);
-    }
-  });
-  document.addEventListener("fullscreenchange", () => {
-    elements.fullscreen.textContent = document.fullscreenElement === elements.workspace ? "Exit fullscreen" : "Fullscreen";
-    window.requestAnimationFrame(resizeGraph);
-  });
-  if (!elements.workspace.requestFullscreen) elements.fullscreen.hidden = true;
+  elements.fullscreen.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", syncFullscreen);
+  document.addEventListener("webkitfullscreenchange", syncFullscreen);
+  elements.fullscreen.hidden = !fullscreenSupported();
+  syncFullscreen({ announceChange: false });
 }
 
 async function initialize() {

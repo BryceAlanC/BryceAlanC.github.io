@@ -25,14 +25,14 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261014-1" />
+    <link rel="stylesheet" href="./style.css?v=20261014-2" />
     <script
       src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"
       integrity="sha384-Y7bC2PBKu8ujxtvo5+Z61OeGdSVRzFsYWBK4i5dnL/U6aFDTodk61qOUkTfInaxS"
       crossorigin="anonymous"
       defer
     ></script>
-    <script type="module" src="./demo.js?v=20261014-1"></script>
+    <script type="module" src="./demo.js?v=20261014-2"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -207,8 +207,8 @@
               <div class="graph-toolbar" aria-label="Graph view controls">
                 <button class="graph-tool" id="nim-reset-view" type="button">Reset view</button>
                 <button class="graph-tool" id="nim-fit-view" type="button">Fit graph</button>
-                <button class="graph-tool" id="nim-fullscreen" type="button">Fullscreen</button>
-                <span id="nim-graph-help">Drag to rotate · scroll to zoom · click a glowing neighbor</span>
+                <button class="graph-tool" id="nim-fullscreen" type="button" aria-pressed="false">Enter fullscreen workspace</button>
+                <span id="nim-graph-help">Drag and scroll to explore · dimmed nodes lie outside the future cone</span>
               </div>
 
               <div class="nim-graph-viewport" id="nim-graph-viewport">
@@ -226,6 +226,8 @@
                 <div class="graph-legend" aria-label="Graph legend">
                   <span><i class="legend-current" aria-hidden="true"></i>Current</span>
                   <span><i class="legend-legal" aria-hidden="true"></i>Legal move</span>
+                  <span><i class="legend-path" aria-hidden="true"></i>Played path</span>
+                  <span><i class="legend-dim" aria-hidden="true"></i>Outside future cone</span>
                   <span><i class="legend-winning" aria-hidden="true"></i>Winning for mover</span>
                   <span><i class="legend-losing" aria-hidden="true"></i>Nim-sum zero</span>
                   <span><i class="legend-victory" aria-hidden="true"></i>Victory</span>
@@ -233,7 +235,7 @@
                 </div>
               </div>
               <p class="sr-only" id="nim-graph-description">
-                Arrow keys rotate the view, plus and minus zoom, and R resets it. Only highlighted neighboring nodes can be chosen as moves.
+                Arrow keys rotate the view, plus and minus zoom, and R resets it. The bright trail records the played path. Nodes outside the directed future cone are dimmed, with past states dimmed most strongly. Only highlighted neighboring nodes can be chosen as moves.
               </p>
             </section>
 
@@ -268,10 +270,9 @@
               share a node without changing the game.
             </p>
           </div>
+          <div class="sr-only" id="nim-announcer" aria-live="polite" aria-atomic="true"></div>
         </div>
       </section>
-
-      <div class="sr-only" id="nim-announcer" aria-live="polite" aria-atomic="true"></div>
 
       <footer class="site-footer">
         <div>

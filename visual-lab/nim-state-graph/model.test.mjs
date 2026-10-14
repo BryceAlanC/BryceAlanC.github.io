@@ -122,6 +122,29 @@ assert.equal(model.isLegalSuccessor([2, 1], [2, -1]), false);
   assert.equal(model.terminalOutcome([1, 0, 0], model.HUMAN_TURN), null);
 }
 
+// Reachability follows directed moves and keeps the two turn copies distinct.
+// From [1] on the human turn, Victory is reachable but Defeat is not.
+{
+  const graph = model.buildStateGraph([1]);
+  const start = model.nodeId([1], model.HUMAN_TURN);
+  const reachability = model.directedReachability(graph, start);
+  assert.deepEqual(
+    new Set(reachability.nodeIds),
+    new Set([start, graph.victoryNodeId])
+  );
+  assert.deepEqual(
+    new Set(reachability.edgeIds),
+    new Set([`edge:${start}->${graph.victoryNodeId}`])
+  );
+  assert.equal(reachability.nodeIds.includes(model.nodeId([1], model.COMPUTER_TURN)), false);
+  assert.equal(reachability.nodeIds.includes(graph.defeatNodeId), false);
+
+  const terminalReachability = model.directedReachability(graph, graph.victoryNodeId);
+  assert.deepEqual(terminalReachability.nodeIds, [graph.victoryNodeId]);
+  assert.deepEqual(terminalReachability.edgeIds, []);
+  assert.deepEqual(model.directedReachability(graph, "missing"), { nodeIds: [], edgeIds: [] });
+}
+
 // Oversized graphs produce a structured, non-throwing failure and no partial
 // graph. The same graph succeeds when the exact required cap is available.
 {
@@ -208,5 +231,6 @@ assert.equal(model.isLegalSuccessor([2, 1], [2, -1]), false);
 
 assert.equal(model.default.buildStateGraph, model.buildStateGraph);
 assert.equal(model.default.optimalMove, model.optimalMove);
+assert.equal(model.default.directedReachability, model.directedReachability);
 
 console.log("nim-state-graph model tests passed");
