@@ -1,14 +1,16 @@
 import {
   TWO_PI,
   analyzeCircleFlow,
+  canonicalCircleParameterKey,
   circularDifference,
   createCircleFlow,
   evaluateFlow,
+  sampleCircleBifurcation,
   sampleFlow,
   seamCrossings,
   stepLiftedRK4,
   wrapAngle
-} from "./model.js";
+} from "./model.js?v=20261014-1";
 
 const byId = (id) => document.getElementById(id);
 
@@ -66,6 +68,9 @@ const elements = {
   circleCanvas: byId("circle-canvas"),
   velocityCanvas: byId("velocity-canvas"),
   liftCanvas: byId("lift-canvas"),
+  bifurcationParameter: byId("bifurcation-parameter"),
+  bifurcationCurrentValue: byId("bifurcation-current-value"),
+  bifurcationCanvas: byId("bifurcation-canvas"),
   elapsedTime: byId("elapsed-time"),
   selectedAngleReadout: byId("selected-angle-readout"),
   lapCount: byId("lap-count"),
@@ -93,6 +98,7 @@ const COLORS = Object.freeze({
 const FAMILY_UI = Object.freeze({
   uniform: {
     visible: ["omega"],
+    bifurcationDefault: "omega",
     defaults: { omega: 1.1 },
     ranges: { omega: [-2.5, 2.5, 0.002] },
     labels: { omega: "Angular velocity ω" },
@@ -100,6 +106,7 @@ const FAMILY_UI = Object.freeze({
   },
   nonuniform: {
     visible: ["omega", "a", "phase"],
+    bifurcationDefault: "a",
     defaults: { omega: 1, a: 0.65, phase: 0.35 },
     ranges: { omega: [-2.2, 2.2, 0.002], a: [0, 1.4, 0.002], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Base angular velocity ω", a: "Speed modulation a", phase: "Wave phase φ" },
@@ -107,6 +114,7 @@ const FAMILY_UI = Object.freeze({
   },
   "overdamped-pendulum": {
     visible: ["omega", "a"],
+    bifurcationDefault: "omega",
     defaults: { omega: 0.55, a: 1 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0.15, 1.6, 0.002] },
     labels: { omega: "Drive ω", a: "Restoring strength a" },
@@ -114,6 +122,7 @@ const FAMILY_UI = Object.freeze({
   },
   "firefly-locking": {
     visible: ["omega", "a", "phase"],
+    bifurcationDefault: "omega",
     defaults: { omega: 0.45, a: 1, phase: 0.25 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0.15, 1.6, 0.002], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Frequency mismatch Δω", a: "Coupling K", phase: "Preferred phase φ₀" },
@@ -121,6 +130,7 @@ const FAMILY_UI = Object.freeze({
   },
   "josephson-junction": {
     visible: ["omega", "a"],
+    bifurcationDefault: "omega",
     defaults: { omega: 1.25, a: 1 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0.15, 1.6, 0.002] },
     labels: { omega: "Applied current I", a: "Critical current I_c" },
@@ -128,6 +138,7 @@ const FAMILY_UI = Object.freeze({
   },
   "repeated-locking-sites": {
     visible: ["omega", "a", "n", "phase"],
+    bifurcationDefault: "omega",
     defaults: { omega: 0.2, a: 1, n: 3, phase: 0 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0.15, 1.6, 0.002], n: [1, 8, 1], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Drive ω", a: "Wave amplitude a", n: "Number of locking sites n", phase: "Phase shift φ" },
@@ -135,6 +146,7 @@ const FAMILY_UI = Object.freeze({
   },
   "fourier-workshop": {
     visible: ["omega", "a", "b", "n", "phase"],
+    bifurcationDefault: "omega",
     defaults: { omega: 0.1, a: 0.7, b: 0.42, n: 2, phase: 0.65 },
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0, 1.5, 0.002], b: [-1.2, 1.2, 0.002], n: [2, 6, 1], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Bias ω", a: "First harmonic a", b: "Higher harmonic b", n: "Higher harmonic n", phase: "Phase shift φ" },
@@ -173,6 +185,14 @@ const state = {
   circleGeometry: null,
   velocityPlot: null,
   liftPhaseLine: null,
+  bifurcation: {
+    data: null,
+    cacheKey: "",
+    pending: false,
+    lastSampleTime: -Infinity,
+    plot: null,
+    pointerId: null
+  },
   fullscreenInitialized: false,
   lastAnnouncement: "",
   dirty: true
@@ -360,6 +380,133 @@ function configureFamilyControls(id, resetValues = true) {
   elements.parameterHelp.textContent = config.help;
   updateParameterOutputs({ force: true });
   syncParameterPlayButtons();
+  configureBifurcationControls(id, resetValues);
+}
+
+function bifurcationParameterNames(id = elements.familySelect.value) {
+  const config = FAMILY_UI[id];
+  return config ? config.visible.filter((name) => !PARAMETER_PLAYER_CONFIG[name]?.discrete) : [];
+}
+
+function configureBifurcationControls(id, resetSelection = true) {
+  const config = FAMILY_UI[id];
+  if (!config || !elements.bifurcationParameter) return;
+  const previous = elements.bifurcationParameter.value;
+  const names = bifurcationParameterNames(id);
+  elements.bifurcationParameter.replaceChildren(...names.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = config.labels[name] || name;
+    return option;
+  }));
+  elements.bifurcationParameter.value = !resetSelection && names.includes(previous)
+    ? previous
+    : config.bifurcationDefault;
+  state.bifurcation.data = null;
+  state.bifurcation.cacheKey = "";
+  state.bifurcation.pending = false;
+  state.bifurcation.plot = null;
+  updateBifurcationAccessibility();
+}
+
+function selectedBifurcationParameter() {
+  const family = FAMILY_UI[elements.familySelect.value];
+  const selected = elements.bifurcationParameter?.value;
+  return family?.visible.includes(selected) && !PARAMETER_PLAYER_CONFIG[selected]?.discrete
+    ? selected
+    : family?.bifurcationDefault;
+}
+
+function formatBifurcationParameterValue(name, value) {
+  return name === "phase"
+    ? `${formatNumber(value / Math.PI, 3)}π`
+    : formatNumber(value, 3);
+}
+
+function updateBifurcationAccessibility() {
+  const name = selectedBifurcationParameter();
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  if (!config?.control || !elements.bifurcationCanvas) return;
+  const value = Number(config.control.value);
+  const formatted = formatBifurcationParameterValue(name, value);
+  elements.bifurcationCurrentValue.value = formatted;
+  elements.bifurcationCurrentValue.textContent = formatted;
+  elements.bifurcationCanvas.setAttribute("aria-label", `${parameterPlayerLabel(name)} bifurcation parameter`);
+  elements.bifurcationCanvas.setAttribute("aria-valuemin", config.control.min);
+  elements.bifurcationCanvas.setAttribute("aria-valuemax", config.control.max);
+  elements.bifurcationCanvas.setAttribute("aria-valuenow", String(value));
+  elements.bifurcationCanvas.setAttribute(
+    "aria-valuetext",
+    name === "phase" ? `${formatNumber(value / Math.PI, 3)} pi radians` : formatted
+  );
+}
+
+function bifurcationCacheKey() {
+  const familyId = elements.familySelect.value;
+  const selected = selectedBifurcationParameter();
+  const family = FAMILY_UI[familyId];
+  const fixed = family.visible
+    .filter((name) => name !== selected)
+    .map((name) => [name, Number(PARAMETER_PLAYER_CONFIG[name].control.value)]);
+  return JSON.stringify({ familyId, selected, fixed });
+}
+
+function bifurcationAnchors(familyId, name) {
+  const amplitude = Math.abs(Number(elements.a.value));
+  const omega = Math.abs(Number(elements.omega.value));
+  if (familyId === "nonuniform" && name === "a") return [1];
+  const lockingFamilies = [
+    "overdamped-pendulum",
+    "firefly-locking",
+    "josephson-junction",
+    "repeated-locking-sites"
+  ];
+  if (lockingFamilies.includes(familyId) && name === "omega") return [-amplitude, amplitude];
+  if (lockingFamilies.includes(familyId) && name === "a") return [omega];
+  return [];
+}
+
+function rebuildBifurcationData(options = {}) {
+  const name = selectedBifurcationParameter();
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  if (!name || !config?.control) return false;
+  const key = bifurcationCacheKey();
+  if (key === state.bifurcation.cacheKey && state.bifurcation.data) {
+    state.bifurcation.pending = false;
+    return false;
+  }
+  const now = performance.now();
+  if (!options.force && now - state.bifurcation.lastSampleTime < 140) {
+    state.bifurcation.pending = true;
+    return false;
+  }
+  const familyId = elements.familySelect.value;
+  try {
+    state.bifurcation.data = sampleCircleBifurcation(
+      familyId,
+      currentParameters(),
+      canonicalCircleParameterKey(name),
+      [Number(config.control.min), Number(config.control.max)],
+      {
+        parameterSamples: 181,
+        equilibriumSamples: 512,
+        anchors: bifurcationAnchors(familyId, name)
+      }
+    );
+    state.bifurcation.cacheKey = key;
+    state.bifurcation.pending = false;
+    state.bifurcation.lastSampleTime = performance.now();
+    state.dirty = true;
+    return true;
+  } catch (error) {
+    console.warn("The bifurcation diagram could not be sampled.", error);
+    state.bifurcation.data = null;
+    state.bifurcation.cacheKey = key;
+    state.bifurcation.pending = false;
+    state.bifurcation.lastSampleTime = performance.now();
+    state.dirty = true;
+    return false;
+  }
 }
 
 function makeParticle(angle, options = {}) {
@@ -542,9 +689,11 @@ function refreshFlow(options = {}) {
     : "Angular velocity f(θ)";
   updateSelectedReadout();
   updateParameterOutputs();
+  updateBifurcationAccessibility();
   updateEquilibriumList();
   updateTelemetry();
   updateRegimeCopy();
+  rebuildBifurcationData({ force: Boolean(options.forceBifurcation) });
   state.dirty = true;
   if (options.resetParticles) resetParticles({ announce: false });
   if (previousRegime && previousRegime !== state.analysis.regime && !options.announce) {
@@ -1164,10 +1313,292 @@ function drawLiftedFlow() {
   context.restore();
 }
 
+function bifurcationPlotBox(width, height) {
+  return {
+    left: Math.min(64, Math.max(52, width * 0.13)),
+    right: Math.max(76, width - 20),
+    top: Math.min(72, Math.max(58, height * 0.2)),
+    bottom: Math.max(100, height - 48)
+  };
+}
+
+function niceTicks(minimum, maximum, target = 6) {
+  const span = maximum - minimum;
+  if (!(span > 0)) return [minimum];
+  const rough = span / Math.max(2, target - 1);
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const normalized = rough / power;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = factor * power;
+  const ticks = [];
+  const epsilon = span * 1e-10;
+  for (let value = Math.ceil((minimum - epsilon) / step) * step; value <= maximum + epsilon; value += step) {
+    ticks.push(Math.abs(value) < epsilon ? 0 : value);
+  }
+  if (!ticks.some((value) => Math.abs(value - minimum) <= epsilon)) ticks.unshift(minimum);
+  if (!ticks.some((value) => Math.abs(value - maximum) <= epsilon)) ticks.push(maximum);
+  return ticks;
+}
+
+function formatAxisNumber(value, span) {
+  const digits = span < 0.25 ? 2 : span < 3 ? 1 : 0;
+  return formatNumber(value, digits);
+}
+
+function formatPhaseAxisTick(value) {
+  const ratio = value / Math.PI;
+  if (Math.abs(ratio) < 1e-8) return "0";
+  const sign = ratio < 0 ? "−" : "";
+  const magnitude = Math.abs(ratio);
+  if (Math.abs(magnitude - 1) < 1e-8) return `${sign}π`;
+  if (Math.abs(magnitude - 0.5) < 1e-8) return `${sign}π/2`;
+  return `${formatNumber(ratio, 2)}π`;
+}
+
+function bifurcationHorizontalTicks(name, minimum, maximum) {
+  if (name !== "phase") return niceTicks(minimum, maximum, 7);
+  const phaseTicks = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  const ticks = phaseTicks.filter((value) => value >= minimum - 1e-8 && value <= maximum + 1e-8);
+  if (!ticks.some((value) => Math.abs(value - minimum) < 1e-8)) ticks.unshift(minimum);
+  if (!ticks.some((value) => Math.abs(value - maximum) < 1e-8)) ticks.push(maximum);
+  return ticks;
+}
+
+function drawBifurcationAxes(context, box, name, minimum, maximum) {
+  const mapX = (value) => lerp(box.left, box.right, inverseLerp(minimum, maximum, value));
+  const mapY = (angle) => lerp(box.bottom, box.top, angle / TWO_PI);
+  const yTicks = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2, TWO_PI];
+  const yTickLabels = ["0", "π/2", "π", "3π/2", "2π"];
+  context.save();
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.fillStyle = COLORS.muted;
+  context.strokeStyle = "rgba(23, 33, 29, 0.12)";
+  context.lineWidth = 1;
+  context.textBaseline = "middle";
+  context.textAlign = "right";
+  yTicks.forEach((angle, index) => {
+    const y = mapY(angle);
+    context.beginPath();
+    context.moveTo(box.left, y);
+    context.lineTo(box.right, y);
+    context.stroke();
+    context.fillText(yTickLabels[index], box.left - 8, y);
+  });
+
+  context.textBaseline = "top";
+  context.textAlign = "center";
+  const xTicks = bifurcationHorizontalTicks(name, minimum, maximum);
+  for (const value of xTicks) {
+    const x = mapX(value);
+    context.beginPath();
+    context.moveTo(x, box.top);
+    context.lineTo(x, box.bottom);
+    context.stroke();
+    const label = name === "phase"
+      ? formatPhaseAxisTick(value)
+      : formatAxisNumber(value, maximum - minimum);
+    context.fillText(label, x, box.bottom + 8);
+  }
+
+  context.strokeStyle = "rgba(23, 33, 29, 0.34)";
+  context.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  const stateSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "φ*" : "θ*";
+  context.fillStyle = COLORS.ink;
+  context.textAlign = "left";
+  context.textBaseline = "alphabetic";
+  context.fillText(stateSymbol, 10, box.top + 7);
+  context.textAlign = "right";
+  context.fillText(parameterPlayerLabel(name), box.right, box.bottom + 31);
+  context.fillStyle = COLORS.muted;
+  context.font = "9px 'IBM Plex Mono', monospace";
+  context.fillText("0 ≡ 2π seam", box.right, box.top - 8);
+  context.restore();
+}
+
+function drawBifurcationMessage(context, box, title, detail) {
+  const centerX = (box.left + box.right) / 2;
+  const centerY = (box.top + box.bottom) / 2;
+  const width = Math.min(430, Math.max(180, box.right - box.left - 32));
+  const height = 54;
+  context.save();
+  context.fillStyle = "rgba(244, 241, 231, 0.94)";
+  context.strokeStyle = "rgba(23, 33, 29, 0.16)";
+  context.fillRect(centerX - width / 2, centerY - height / 2, width, height);
+  context.strokeRect(centerX - width / 2, centerY - height / 2, width, height);
+  context.fillStyle = COLORS.ink;
+  context.font = "500 16px Georgia, serif";
+  context.textAlign = "center";
+  context.fillText(title, centerX, centerY - 5);
+  context.fillStyle = COLORS.muted;
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.fillText(detail, centerX, centerY + 16);
+  context.restore();
+}
+
+function drawBifurcationDiagram() {
+  if (!state.flow || !elements.bifurcationCanvas) return;
+  const { context, width, height } = canvasSurface(elements.bifurcationCanvas);
+  context.fillStyle = COLORS.paper;
+  context.fillRect(0, 0, width, height);
+
+  const data = state.bifurcation.data;
+  const name = selectedBifurcationParameter();
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  const minimum = Number(config?.control.min);
+  const maximum = Number(config?.control.max);
+  const box = bifurcationPlotBox(width, height);
+  state.bifurcation.plot = { box, minimum, maximum };
+  drawBifurcationAxes(context, box, name, minimum, maximum);
+  if (!data) {
+    drawBifurcationMessage(context, box, "Diagram unavailable", "The other linked views remain active.");
+    return;
+  }
+
+  const mapX = (value) => lerp(box.left, box.right, inverseLerp(minimum, maximum, value));
+  const mapY = (angle) => lerp(box.bottom, box.top, angle / TWO_PI);
+  const continuumCount = data.slices.filter((slice) => slice.continuum).length;
+  const equilibriumCount = data.slices.reduce((total, slice) => total + slice.equilibria.length, 0);
+  const sliceWidth = (box.right - box.left) / Math.max(1, data.slices.length - 1);
+
+  context.save();
+  context.beginPath();
+  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  context.clip();
+  if (continuumCount === data.slices.length) {
+    context.fillStyle = "rgba(242, 201, 105, 0.18)";
+    context.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  } else {
+    const stableSegments = [];
+    const unstableSegments = [];
+    const thresholdPoints = [];
+    const continuumColumns = [];
+    for (const slice of data.slices) {
+      const x = mapX(slice.parameter);
+      if (slice.continuum) {
+        continuumColumns.push(x);
+        continue;
+      }
+      for (const equilibrium of slice.equilibria) {
+        const angles = Math.abs(circularDifference(equilibrium.angle, 0)) < 2e-6
+          ? [0, TWO_PI]
+          : [wrapAngle(equilibrium.angle)];
+        for (const angle of angles) {
+          const y = mapY(angle);
+          if (equilibrium.stability === "stable") {
+            stableSegments.push([x, y]);
+          } else if (equilibrium.stability === "unstable") {
+            unstableSegments.push([x, y]);
+          } else {
+            thresholdPoints.push([x, y]);
+          }
+        }
+      }
+    }
+
+    if (continuumColumns.length) {
+      context.strokeStyle = "rgba(138, 98, 0, 0.72)";
+      context.lineWidth = Math.max(1.2, sliceWidth * 0.7);
+      context.setLineDash([4, 4]);
+      context.beginPath();
+      for (const x of continuumColumns) {
+        context.moveTo(x, box.top);
+        context.lineTo(x, box.bottom);
+      }
+      context.stroke();
+    }
+    if (stableSegments.length) {
+      const halfWidth = Math.max(1.2, sliceWidth * 0.58);
+      context.strokeStyle = "rgba(11, 87, 72, 0.92)";
+      context.lineWidth = 2.25;
+      context.setLineDash([]);
+      context.beginPath();
+      for (const [x, y] of stableSegments) {
+        context.moveTo(x - halfWidth, y);
+        context.lineTo(x + halfWidth, y);
+      }
+      context.stroke();
+    }
+    if (unstableSegments.length) {
+      const halfWidth = Math.max(1.3, sliceWidth * 0.7);
+      context.strokeStyle = "rgba(168, 79, 36, 0.92)";
+      context.lineWidth = 2;
+      context.setLineDash([2.2, 2.2]);
+      context.beginPath();
+      for (const [x, y] of unstableSegments) {
+        context.moveTo(x - halfWidth, y);
+        context.lineTo(x + halfWidth, y);
+      }
+      context.stroke();
+    }
+    if (thresholdPoints.length) {
+      context.setLineDash([]);
+      context.fillStyle = COLORS.paper;
+      context.strokeStyle = COLORS.goldDark;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      for (const [x, y] of thresholdPoints) {
+        context.moveTo(x + 2.8, y);
+        context.arc(x, y, 2.8, 0, TWO_PI);
+      }
+      context.fill();
+      context.stroke();
+    }
+  }
+
+  const currentValue = clamp(Number(config.control.value), minimum, maximum);
+  const currentX = mapX(currentValue);
+  context.setLineDash([5, 4]);
+  context.strokeStyle = "rgba(138, 98, 0, 0.88)";
+  context.lineWidth = state.analysis.equilibriumCount === Infinity ? 2.6 : 1.6;
+  context.beginPath();
+  context.moveTo(currentX, box.top);
+  context.lineTo(currentX, box.bottom);
+  context.stroke();
+  context.setLineDash([]);
+
+  if (state.analysis.equilibriumCount !== Infinity) {
+    for (const equilibrium of state.analysis.equilibria) {
+      const angles = Math.abs(circularDifference(equilibrium.angle, 0)) < 2e-6
+        ? [0, TWO_PI]
+        : [wrapAngle(equilibrium.angle)];
+      for (const angle of angles) {
+        drawEquilibriumMarker(context, currentX, mapY(angle), equilibrium, { dark: false, radius: 4.6 });
+      }
+    }
+  }
+  for (const particle of state.particles) {
+    const angle = wrapAngle(particle.lifted);
+    const radius = particle.id === state.activeParticleId ? 3.2 : 2;
+    const alpha = particle.id === state.activeParticleId ? 0.96 : 0.5;
+    drawParticle(context, currentX, mapY(angle), radius, alpha);
+    if (Math.min(angle, TWO_PI - angle) < 0.035) {
+      drawParticle(context, currentX, mapY(angle < Math.PI ? TWO_PI : 0), radius, alpha * 0.45);
+    }
+  }
+  context.restore();
+
+  context.save();
+  context.fillStyle = COLORS.goldDark;
+  context.beginPath();
+  context.moveTo(currentX, box.top);
+  context.lineTo(currentX - 5, box.top - 8);
+  context.lineTo(currentX + 5, box.top - 8);
+  context.closePath();
+  context.fill();
+  context.restore();
+
+  if (continuumCount === data.slices.length) {
+    drawBifurcationMessage(context, box, "Every angle is fixed", "The vector field vanishes throughout this sweep.");
+  } else if (equilibriumCount === 0 && continuumCount === 0) {
+    drawBifurcationMessage(context, box, "No equilibrium branches", "The flow circulates throughout this sweep.");
+  }
+}
+
 function drawAll() {
   drawCirclePortrait();
   drawVelocityGraph();
   drawLiftedFlow();
+  drawBifurcationDiagram();
   elements.elapsedTime.textContent = formatNumber(state.elapsed, 1);
   elements.lapCount.textContent = String(state.totalLaps);
   state.dirty = false;
@@ -1443,6 +1874,101 @@ function handleCanvasKey(event) {
   }
 }
 
+function bifurcationValueFromPointer(event) {
+  const rectangle = elements.bifurcationCanvas.getBoundingClientRect();
+  const plot = state.bifurcation.plot || {
+    box: bifurcationPlotBox(rectangle.width, rectangle.height),
+    minimum: Number(PARAMETER_PLAYER_CONFIG[selectedBifurcationParameter()].control.min),
+    maximum: Number(PARAMETER_PLAYER_CONFIG[selectedBifurcationParameter()].control.max)
+  };
+  const x = event.clientX - rectangle.left;
+  return lerp(
+    plot.minimum,
+    plot.maximum,
+    clamp(inverseLerp(plot.box.left, plot.box.right, x), 0, 1)
+  );
+}
+
+function setBifurcationParameterValue(value, options = {}) {
+  const name = selectedBifurcationParameter();
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  if (!config?.control) return;
+  setParameterPlayer(name, false);
+  cancelParameterValueEdit(name);
+  const minimum = Number(config.control.min);
+  const maximum = Number(config.control.max);
+  config.control.value = String(clamp(Number(value), minimum, maximum));
+  updateParameterOutputs();
+  updateBifurcationAccessibility();
+  state.dirty = true;
+  if (options.immediate) refreshFlow();
+  else scheduleFlowRefresh();
+  if (options.announce) {
+    announce(`${parameterPlayerLabel(name)} set to ${formatBifurcationParameterValue(name, Number(config.control.value))}.`);
+  }
+}
+
+function beginBifurcationPointer(event) {
+  if (event.button !== 0 || event.isPrimary === false) return;
+  elements.bifurcationCanvas.focus({ preventScroll: true });
+  state.bifurcation.pointerId = event.pointerId;
+  elements.bifurcationCanvas.dataset.dragging = "true";
+  elements.bifurcationCanvas.setPointerCapture?.(event.pointerId);
+  setBifurcationParameterValue(bifurcationValueFromPointer(event));
+}
+
+function moveBifurcationPointer(event) {
+  if (state.bifurcation.pointerId !== event.pointerId) return;
+  setBifurcationParameterValue(bifurcationValueFromPointer(event));
+}
+
+function endBifurcationPointer(event) {
+  if (state.bifurcation.pointerId !== event.pointerId) return;
+  const value = bifurcationValueFromPointer(event);
+  state.bifurcation.pointerId = null;
+  delete elements.bifurcationCanvas.dataset.dragging;
+  try {
+    if (elements.bifurcationCanvas.hasPointerCapture?.(event.pointerId)) {
+      elements.bifurcationCanvas.releasePointerCapture(event.pointerId);
+    }
+  } catch {
+    // The browser may already have released capture after a touch gesture.
+  }
+  setBifurcationParameterValue(value, { immediate: true, announce: true });
+}
+
+function cancelBifurcationPointer(event) {
+  if (state.bifurcation.pointerId !== event.pointerId) return;
+  state.bifurcation.pointerId = null;
+  delete elements.bifurcationCanvas.dataset.dragging;
+}
+
+function handleBifurcationKey(event) {
+  const name = selectedBifurcationParameter();
+  const config = PARAMETER_PLAYER_CONFIG[name];
+  if (!config?.control) return;
+  const minimum = Number(config.control.min);
+  const maximum = Number(config.control.max);
+  const current = Number(config.control.value);
+  let value = current;
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    const step = (maximum - minimum) * (event.shiftKey ? 0.025 : 0.005);
+    value += event.key === "ArrowRight" ? step : -step;
+  } else if (event.key === "Home") {
+    value = minimum;
+  } else if (event.key === "End") {
+    value = maximum;
+  } else if (event.key === " ") {
+    event.preventDefault();
+    toggleParameterPlayer(name);
+    return;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  setBifurcationParameterValue(value, { immediate: true, announce: true });
+}
+
 function currentFullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
@@ -1490,7 +2016,16 @@ function installEvents() {
   elements.familySelect.addEventListener("change", () => {
     stopParameterPlayers();
     configureFamilyControls(elements.familySelect.value, true);
-    refreshFlow({ resetParticles: true, announce: true });
+    refreshFlow({ resetParticles: true, announce: true, forceBifurcation: true });
+  });
+  elements.bifurcationParameter.addEventListener("change", () => {
+    state.bifurcation.data = null;
+    state.bifurcation.cacheKey = "";
+    state.bifurcation.plot = null;
+    rebuildBifurcationData({ force: true });
+    updateBifurcationAccessibility();
+    state.dirty = true;
+    announce(`${parameterPlayerLabel(selectedBifurcationParameter())} is now the horizontal bifurcation parameter.`);
   });
   Object.entries(PARAMETER_PLAYER_CONFIG).forEach(([name, config]) => {
     config.control.addEventListener("input", () => {
@@ -1558,6 +2093,12 @@ function installEvents() {
     canvas.addEventListener("lostpointercapture", (event) => cancelCanvasPointer(canvas, event));
     canvas.addEventListener("keydown", handleCanvasKey);
   });
+  elements.bifurcationCanvas.addEventListener("pointerdown", beginBifurcationPointer);
+  elements.bifurcationCanvas.addEventListener("pointermove", moveBifurcationPointer);
+  elements.bifurcationCanvas.addEventListener("pointerup", endBifurcationPointer);
+  elements.bifurcationCanvas.addEventListener("pointercancel", cancelBifurcationPointer);
+  elements.bifurcationCanvas.addEventListener("lostpointercapture", cancelBifurcationPointer);
+  elements.bifurcationCanvas.addEventListener("keydown", handleBifurcationKey);
   motionQuery.addEventListener?.("change", (event) => {
     if (event.matches) {
       state.running = false;
@@ -1573,6 +2114,9 @@ function animate(now) {
   state.lastFrameTime = now;
   updateParameterPlayers(delta);
   updateParticles(delta);
+  if (state.bifurcation.pending && now - state.bifurcation.lastSampleTime >= 140) {
+    rebuildBifurcationData();
+  }
   if (state.dirty && !document.hidden && now - state.lastRenderTime >= 30) {
     drawAll();
     state.lastRenderTime = now;
@@ -1601,6 +2145,7 @@ function initialize() {
     observer.observe(elements.circleCanvas);
     observer.observe(elements.velocityCanvas);
     observer.observe(elements.liftCanvas);
+    observer.observe(elements.bifurcationCanvas);
   }
   announce(`${state.flow.name} loaded. ${state.running ? "Particles are moving." : "Motion is paused for reduced motion."}`);
   window.requestAnimationFrame(animate);

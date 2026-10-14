@@ -446,6 +446,11 @@
   background: #f4f1e7;
 }
 
+.bifurcation-panel {
+  border-top: 1px solid rgba(23, 33, 29, 0.16);
+  background: #f4f1e7;
+}
+
 .circle-panel-heading {
   display: flex;
   min-height: 68px;
@@ -487,6 +492,47 @@
   text-align: right;
 }
 
+.bifurcation-panel-heading {
+  min-height: 72px;
+}
+
+.circle-panel-heading > .bifurcation-heading-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.bifurcation-heading-controls label {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bifurcation-heading-controls select {
+  min-width: min(240px, 34vw);
+  max-width: 100%;
+  padding: 0.48rem 2rem 0.48rem 0.65rem;
+  border: 1px solid rgba(11, 87, 72, 0.28);
+  border-radius: 3px;
+  background: #fffdf7;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.bifurcation-heading-controls output {
+  min-width: 4.7rem;
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: right;
+}
+
 .circle-panel-heading-dark {
   border-bottom-color: rgba(235, 247, 243, 0.16);
   background: #0d2b25;
@@ -520,6 +566,12 @@
   background: #f4f1e7;
 }
 
+.bifurcation-frame {
+  height: clamp(310px, 31vw, 420px);
+  min-height: 290px;
+  background: #f4f1e7;
+}
+
 .canvas-frame canvas {
   position: absolute;
   inset: 0;
@@ -536,15 +588,21 @@
 
 #circle-canvas:focus-visible,
 #velocity-canvas:focus-visible,
-#lift-canvas:focus-visible {
+#lift-canvas:focus-visible,
+#bifurcation-canvas:focus-visible {
   z-index: 3;
   outline: 3px solid #f2c969;
   outline-offset: -5px;
 }
 
 #velocity-canvas:focus-visible,
-#lift-canvas:focus-visible {
+#lift-canvas:focus-visible,
+#bifurcation-canvas:focus-visible {
   outline-color: var(--forest);
+}
+
+#bifurcation-canvas {
+  cursor: ew-resize;
 }
 
 .portrait-readout {
@@ -649,6 +707,78 @@
   background: rgba(193, 105, 71, 0.72);
 }
 
+.bifurcation-legend {
+  position: absolute;
+  z-index: 2;
+  top: 0.6rem;
+  right: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.42rem 0.7rem;
+  max-width: calc(100% - 5rem);
+  padding: 0.3rem 0.42rem;
+  background: rgba(244, 241, 231, 0.88);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.bifurcation-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-family: var(--mono);
+  font-size: 0.56rem;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.bifurcation-legend i {
+  position: relative;
+  display: inline-block;
+  width: 17px;
+  height: 8px;
+}
+
+.legend-stable-branch::before,
+.legend-unstable-branch::before,
+.legend-current-parameter::before {
+  position: absolute;
+  top: 3px;
+  right: 0;
+  left: 0;
+  border-top: 2px solid var(--forest);
+  content: "";
+}
+
+.legend-unstable-branch::before {
+  border-top-color: var(--rust);
+  border-top-style: dashed;
+}
+
+.legend-current-parameter::before {
+  border-top-color: #8a6200;
+  border-top-style: dashed;
+}
+
+.legend-threshold-branch::before,
+.legend-trajectory-point::before {
+  position: absolute;
+  top: 1px;
+  left: 6px;
+  width: 5px;
+  height: 5px;
+  border: 1.5px solid #8a6200;
+  border-radius: 50%;
+  background: var(--paper);
+  content: "";
+}
+
+.legend-trajectory-point::before {
+  border-color: var(--gold);
+  background: var(--gold);
+}
+
 .seam-labels {
   position: absolute;
   z-index: 2;
@@ -728,7 +858,7 @@
 
 .notes-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   padding: 0 1rem 1rem;
 }
@@ -846,6 +976,10 @@
     height: 285px;
   }
 
+  .bifurcation-frame {
+    height: 350px;
+  }
+
   .regime-note {
     top: 132px;
     right: 0.85rem;
@@ -917,6 +1051,19 @@
     height: 255px;
   }
 
+  .bifurcation-frame {
+    height: 325px;
+    min-height: 0;
+  }
+
+  .bifurcation-panel-heading {
+    align-items: flex-start;
+  }
+
+  .circle-panel-heading > .bifurcation-heading-controls {
+    flex-wrap: wrap;
+  }
+
   .portrait-legend,
   .velocity-legend {
     left: 0.75rem;
@@ -950,6 +1097,29 @@
   .circle-panel-heading p {
     max-width: none;
     text-align: left;
+  }
+
+  .circle-panel-heading > .bifurcation-heading-controls {
+    justify-content: flex-start;
+  }
+
+  .bifurcation-heading-controls label {
+    width: 100%;
+  }
+
+  .bifurcation-heading-controls select {
+    min-width: 0;
+    flex: 1 1 170px;
+  }
+
+  .bifurcation-frame {
+    height: 310px;
+  }
+
+  .bifurcation-legend {
+    right: 0.4rem;
+    left: 3.4rem;
+    max-width: none;
   }
 
   .portrait-frame {
@@ -990,6 +1160,27 @@
     background: Canvas;
   }
 
+  .legend-stable-branch,
+  .legend-unstable-branch,
+  .legend-threshold-branch,
+  .legend-current-parameter,
+  .legend-trajectory-point {
+    color: CanvasText;
+  }
+
+  .legend-stable-branch::before,
+  .legend-unstable-branch::before,
+  .legend-threshold-branch::before,
+  .legend-current-parameter::before,
+  .legend-trajectory-point::before {
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .legend-trajectory-point::before {
+    background: CanvasText;
+  }
+
   .legend-stable,
   .legend-particle {
     background: CanvasText;
@@ -997,7 +1188,8 @@
 
   #circle-canvas,
   #velocity-canvas,
-  #lift-canvas {
+  #lift-canvas,
+  #bifurcation-canvas {
     border: 2px solid CanvasText;
   }
 }
@@ -1059,7 +1251,7 @@
 #circle-flow-workspace.is-fullscreen .stage-panel {
   display: grid;
   height: 100dvh;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(340px, 1fr) minmax(230px, 0.52fr);
   border: 0;
 }
 
@@ -1074,6 +1266,17 @@
   min-height: 0;
   height: 100%;
   grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+#circle-flow-workspace:fullscreen .bifurcation-panel,
+#circle-flow-workspace.is-fullscreen .bifurcation-panel {
+  min-height: 0;
+}
+
+#circle-flow-workspace:fullscreen .bifurcation-frame,
+#circle-flow-workspace.is-fullscreen .bifurcation-frame {
+  height: calc(100% - 72px);
+  min-height: 0;
 }
 
 #circle-flow-workspace:fullscreen .portrait-frame,
@@ -1104,6 +1307,20 @@
   #circle-flow-workspace:fullscreen .stage-mini-telemetry,
   #circle-flow-workspace.is-fullscreen .stage-mini-telemetry {
     display: none;
+  }
+}
+
+@media (min-width: 940px) and (max-height: 720px) {
+  #circle-flow-workspace:fullscreen .stage-stack,
+  #circle-flow-workspace.is-fullscreen .stage-stack {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  #circle-flow-workspace:fullscreen .stage-panel,
+  #circle-flow-workspace.is-fullscreen .stage-panel {
+    height: auto;
+    grid-template-rows: auto 540px 300px;
   }
 }
 
@@ -1151,6 +1368,11 @@
   #circle-flow-workspace:fullscreen .lift-frame,
   #circle-flow-workspace.is-fullscreen .lift-frame {
     height: 270px;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-frame,
+  #circle-flow-workspace.is-fullscreen .bifurcation-frame {
+    height: 320px;
   }
 }
 

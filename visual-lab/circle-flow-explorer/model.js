@@ -117,6 +117,33 @@ function normalizedParameter(source, key, fallback, aliases = []) {
   return fallback;
 }
 
+const PARAMETER_KEY_ALIASES = Object.freeze({
+  omega: "omega",
+  drive: "omega",
+  frequency: "omega",
+  deltaOmega: "omega",
+  current: "omega",
+  a: "amplitude",
+  amplitude: "amplitude",
+  coupling: "amplitude",
+  criticalCurrent: "amplitude",
+  b: "secondAmplitude",
+  secondAmplitude: "secondAmplitude",
+  phase: "phase",
+  phi: "phase",
+  phaseShift: "phase",
+  n: "harmonics",
+  harmonics: "harmonics",
+  repeats: "harmonics"
+});
+
+export function canonicalCircleParameterKey(key) {
+  const requested = String(key);
+  const canonical = PARAMETER_KEY_ALIASES[requested];
+  if (!canonical) throw new RangeError(`Unknown circle-flow parameter: ${requested}`);
+  return canonical;
+}
+
 function normalizeParameters(definition, overrides = {}) {
   const source = overrides && typeof overrides === "object" ? overrides : {};
   const result = {};
@@ -542,7 +569,6 @@ export function findEquilibria(flowOrId, options = {}) {
     const right = left + spacing;
     const leftValue = values[index];
     const rightValue = values[index + 1];
-    if (Math.abs(leftValue) <= valueTolerance) candidates.push(left);
     if (leftValue * rightValue < 0) {
       candidates.push(bisectRoot(
         flow,
@@ -562,7 +588,14 @@ export function findEquilibria(flowOrId, options = {}) {
     const previous = values[(index - 1 + samples) % samples];
     const current = values[index];
     const next = values[(index + 1) % samples];
-    if (Math.abs(current) <= Math.abs(previous) && Math.abs(current) <= Math.abs(next)) {
+    const currentAbsolute = Math.abs(current);
+    const previousAbsolute = Math.abs(previous);
+    const nextAbsolute = Math.abs(next);
+    if (
+      currentAbsolute <= previousAbsolute &&
+      currentAbsolute <= nextAbsolute &&
+      (currentAbsolute < previousAbsolute || currentAbsolute < nextAbsolute)
+    ) {
       const center = origin + spacing * index;
       const minimum = minimizeAbsoluteVelocity(flow, center - spacing, center + spacing);
       if (minimum.value <= tangencyTolerance) candidates.push(minimum.angle);
@@ -576,6 +609,72 @@ export function findEquilibria(flowOrId, options = {}) {
     probe: config.probe,
     sideTolerance: config.sideTolerance
   })));
+}
+
+/**
+ * Sample the equilibrium set of a circle-flow family while one continuous
+ * parameter varies. Each slice keeps the other parameters fixed. A continuum
+ * slice is represented explicitly rather than as one artificial branch point.
+ */
+export function sampleCircleBifurcation(
+  id,
+  baseParameters,
+  parameterKey,
+  range,
+  options = {}
+) {
+  const canonicalKey = canonicalCircleParameterKey(parameterKey);
+  const baseFlow = createCircleFlow(id, baseParameters);
+  const descriptor = baseFlow.parameters.find((parameterDescriptor) => parameterDescriptor.key === canonicalKey);
+  if (!descriptor) {
+    throw new RangeError(`${baseFlow.name} does not use the ${canonicalKey} parameter`);
+  }
+  if (descriptor.integer) {
+    throw new RangeError(`${descriptor.label} is discrete and cannot be used as a continuous bifurcation parameter`);
+  }
+  if (!Array.isArray(range) || range.length < 2) {
+    throw new TypeError("The bifurcation parameter range must be [minimum, maximum]");
+  }
+  const minimum = finiteNumber(range[0], "bifurcation parameter minimum");
+  const maximum = finiteNumber(range[1], "bifurcation parameter maximum");
+  if (!(maximum > minimum)) throw new RangeError("The bifurcation parameter maximum must exceed its minimum");
+
+  const parameterSamples = clamp(Math.round(Number(options.parameterSamples) || 181), 9, 801);
+  const equilibriumSamples = clamp(Math.round(Number(options.equilibriumSamples) || 512), MIN_SAMPLES, MAX_SAMPLES);
+  const values = Array.from(
+    { length: parameterSamples },
+    (_, index) => minimum + (maximum - minimum) * index / (parameterSamples - 1)
+  );
+  const anchors = [
+    ...(minimum < 0 && maximum > 0 ? [0] : []),
+    ...(Array.isArray(options.anchors) ? options.anchors : [])
+  ];
+  const anchorTolerance = (maximum - minimum) * 1e-11;
+  for (const anchor of anchors) {
+    const value = Number(anchor);
+    if (!Number.isFinite(value) || value < minimum || value > maximum) continue;
+    if (!values.some((candidate) => Math.abs(candidate - value) <= anchorTolerance)) values.push(value);
+  }
+  values.sort((left, right) => left - right);
+
+  const base = { ...baseFlow.params };
+  const slices = values.map((value) => {
+    const flow = createCircleFlow(baseFlow.id, { ...base, [canonicalKey]: value });
+    const equilibria = findEquilibria(flow, { samples: equilibriumSamples });
+    const continuum = Boolean(equilibria[0]?.continuum);
+    return Object.freeze({
+      parameter: value,
+      continuum,
+      equilibria: continuum ? Object.freeze([]) : equilibria
+    });
+  });
+
+  return Object.freeze({
+    familyId: baseFlow.id,
+    parameterKey: canonicalKey,
+    range: Object.freeze([minimum, maximum]),
+    slices: Object.freeze(slices)
+  });
 }
 
 export function sampleFlow(flowOrId, options = {}) {
@@ -743,9 +842,11 @@ export default Object.freeze({
   turnsBetween,
   lapCount,
   seamCrossings,
+  canonicalCircleParameterKey,
   derivativeAt,
   classifyEquilibrium,
   findEquilibria,
+  sampleCircleBifurcation,
   sampleFlow,
   stepLiftedRK4,
   rk4LiftedStep,

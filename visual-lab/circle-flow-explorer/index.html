@@ -6,7 +6,7 @@
     <title>Flows on the Circle | Bryce Christopherson</title>
     <meta
       name="description"
-      content="Explore autonomous flows on the circle through a linked phase portrait, angular-velocity graph, and cut-open phase line."
+      content="Explore autonomous flows on the circle through a linked phase portrait, angular-velocity graph, cut-open phase line, and bifurcation diagram."
     />
     <meta name="author" content="Bryce A. Christopherson" />
     <meta name="theme-color" content="#0b5748" />
@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261013-1" />
-    <script type="module" src="./demo.js?v=20261013-1"></script>
+    <link rel="stylesheet" href="./style.css?v=20261014-1" />
+    <script type="module" src="./demo.js?v=20261014-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -74,10 +74,11 @@
             <p class="section-kicker">Nonlinear dynamics · flows on the circle</p>
             <h1>Flows on the circle</h1>
             <p class="app-hero-copy">
-              See one periodic differential equation three ways: as motion around a
-              circle, as an angular-velocity graph, and as a phase line whose endpoints
-              are joined. Follow the transition between phase locking and continual
-              rotation without losing sight of the underlying equation.
+              See one periodic differential equation four linked ways: as motion around
+              a circle, as an angular-velocity graph, as a phase line whose endpoints are
+              joined, and as equilibrium branches traced while a parameter varies.
+              Follow the transition between phase locking and continual rotation without
+              losing sight of the underlying equation.
             </p>
           </div>
         </div>
@@ -266,7 +267,8 @@
               </div>
               <input id="animation-speed" type="range" min="0.2" max="2" value="1" step="0.05" />
               <p class="control-help">
-                Click any view to add the same initial condition to all three views.
+                Click any of the first three views to add the same initial condition;
+                click the bifurcation diagram to change its horizontal parameter.
               </p>
             </fieldset>
 
@@ -307,7 +309,8 @@
             <p class="keyboard-help">
               In a plot: ←/→ moves the selected angle · Enter adds a particle · Space
               pauses or resumes · 0 restarts. The angular-velocity plot also accepts
-              click-and-drag.
+              click-and-drag. In the bifurcation diagram, click or drag to set the
+              horizontal parameter; ←/→ moves it and Space animates it.
             </p>
           </aside>
 
@@ -315,8 +318,8 @@
             <section class="stage-panel" aria-labelledby="visualizer-title">
               <div class="stage-heading circle-stage-heading">
                 <div>
-                  <p class="section-kicker">One periodic equation · three linked views</p>
-                  <h2 id="visualizer-title">Phase portrait, velocity graph, and lifted flow</h2>
+                  <p class="section-kicker">One periodic equation · four linked views</p>
+                  <h2 id="visualizer-title">Phase portrait, velocity graph, lifted flow, and bifurcations</h2>
                 </div>
                 <div class="stage-heading-status">
                   <div class="stage-heading-toolbar">
@@ -440,6 +443,44 @@
                   </p>
                 </aside>
               </div>
+
+              <section class="circle-panel bifurcation-panel" aria-labelledby="bifurcation-title">
+                <div class="circle-panel-heading bifurcation-panel-heading">
+                  <div><span>04</span><h3 id="bifurcation-title">Bifurcation diagram</h3></div>
+                  <div class="bifurcation-heading-controls">
+                    <label for="bifurcation-parameter">Horizontal parameter</label>
+                    <select id="bifurcation-parameter" aria-controls="bifurcation-canvas"></select>
+                    <output id="bifurcation-current-value" for="bifurcation-parameter">—</output>
+                  </div>
+                </div>
+                <div class="canvas-frame bifurcation-frame">
+                  <canvas
+                    id="bifurcation-canvas"
+                    tabindex="0"
+                    role="slider"
+                    aria-orientation="horizontal"
+                    aria-label="Bifurcation parameter"
+                    aria-describedby="bifurcation-description"
+                    aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End Space"
+                  ></canvas>
+                  <div class="bifurcation-legend" aria-hidden="true">
+                    <span><i class="legend-stable-branch"></i>Stable</span>
+                    <span><i class="legend-unstable-branch"></i>Unstable</span>
+                    <span><i class="legend-threshold-branch"></i>Threshold</span>
+                    <span><i class="legend-current-parameter"></i>Current slice</span>
+                    <span><i class="legend-trajectory-point"></i>Trajectory</span>
+                  </div>
+                </div>
+                <p class="sr-only" id="bifurcation-description">
+                  Equilibrium angle is plotted vertically from zero to two pi while the
+                  selected parameter varies horizontally. The top and bottom edges are
+                  the same point on the circle. Solid green traces are stable, dashed
+                  rust traces are unstable, and gold marks thresholds and the current
+                  parameter slice. Click or drag horizontally to set the parameter. Use
+                  the left and right arrow keys to adjust it, Home and End for its bounds,
+                  and Space to start or pause its animation.
+                </p>
+              </section>
             </section>
 
             <details class="method-notes">
@@ -466,6 +507,13 @@
                   <span class="nowrap">|ω| ≤ |a|</span>. At equality, a stable–unstable
                   pair collides. Just beyond the collision the orbit rotates, but lingers
                   near the vanished pair: the infinite-period bottleneck.
+                </p>
+                <p class="app-note">
+                  <strong>The bifurcation cylinder.</strong> The diagram plots each
+                  equilibrium angle against one chosen parameter while holding the other
+                  parameters fixed. Its top and bottom edges both represent the circle
+                  seam <span class="nowrap">0 = 2π</span>. The gold vertical slice is the
+                  parameter value used by the other three views.
                 </p>
               </div>
             </details>
