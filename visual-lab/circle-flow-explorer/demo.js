@@ -68,9 +68,11 @@ const elements = {
   circleCanvas: byId("circle-canvas"),
   velocityCanvas: byId("velocity-canvas"),
   liftCanvas: byId("lift-canvas"),
+  trajectoryViewReset: byId("trajectory-view-reset"),
   bifurcationParameter: byId("bifurcation-parameter"),
   bifurcationRollToggle: byId("bifurcation-roll-toggle"),
   bifurcationRollLabel: byId("bifurcation-roll-label"),
+  bifurcationViewReset: byId("bifurcation-view-reset"),
   bifurcationCurrentValue: byId("bifurcation-current-value"),
   bifurcationCanvas: byId("bifurcation-canvas"),
   bifurcationDescription: byId("bifurcation-description"),
@@ -196,13 +198,18 @@ const state = {
   circleGeometry: null,
   velocityPlot: null,
   trajectoryTube: null,
+  tubeViews: {
+    trajectory: { rotation: 0, zoom: 1 },
+    bifurcation: { rotation: 0, zoom: 1 }
+  },
   bifurcation: {
     data: null,
     cacheKey: "",
     pending: false,
     lastSampleTime: -Infinity,
     plot: null,
-    pointerId: null,
+    pointer: null,
+    tubeGeometry: null,
     view: "plane"
   },
   fullscreenInitialized: false,
@@ -460,9 +467,20 @@ function syncBifurcationViewControl() {
   if (elements.bifurcationRollLabel) {
     elements.bifurcationRollLabel.textContent = rolled ? "Unroll" : "Roll";
   }
+  if (elements.bifurcationViewReset) {
+    elements.bifurcationViewReset.hidden = !rolled;
+  }
+  if (elements.bifurcationCanvas) {
+    elements.bifurcationCanvas.setAttribute(
+      "aria-keyshortcuts",
+      rolled
+        ? "ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End Space [ ] + - R"
+        : "ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End Space"
+    );
+  }
   if (elements.bifurcationDescription) {
     elements.bifurcationDescription.textContent = rolled
-      ? "The selected parameter runs along a transparent cylinder while equilibrium angle wraps around its circumference. Solid green traces are stable, dashed rust traces are unstable, and gold marks nonhyperbolic critical points and the current parameter slice. Faint traces pass behind the tube. Click or drag horizontally to set the parameter. Use the left and right arrow keys to adjust it, Home and End for its bounds, and Space to start or pause its animation."
+      ? "The selected parameter runs along a transparent cylinder while equilibrium angle wraps around its circumference. Solid green traces are stable, dashed rust traces are unstable, and gold marks nonhyperbolic critical points and the current parameter slice. Faint traces pass behind the tube. Click to set the parameter, drag horizontally to scrub it, drag vertically to rotate the tube, or drag sideways on a touch screen to rotate it while vertical swipes continue to scroll the page. Scroll while over the tube to zoom the circular direction. These view gestures do not change the sampled bifurcation data. Use the left and right arrow keys to adjust the parameter, Home and End for its bounds, Space to animate it, the left and right brackets to rotate, plus and minus to zoom, and R to reset the view."
       : "Equilibrium angle is plotted vertically from zero to two pi while the selected parameter varies horizontally. The top and bottom edges are the same point on the circle. Solid green traces are stable, dashed rust traces are unstable, and gold marks nonhyperbolic critical points and the current parameter slice. Click or drag horizontally to set the parameter. Use the left and right arrow keys to adjust it, Home and End for its bounds, and Space to start or pause its animation.";
   }
 }
@@ -1206,18 +1224,33 @@ function drawVelocityGraph() {
   drawParticle(context, selectedX, selectedY, 4.5, 1);
 }
 
+function cylinderViewAngle(geometry, angle) {
+  return angle + (geometry.rotation || 0);
+}
+
+function cylinderFacing(geometry, angle) {
+  return Math.cos(cylinderViewAngle(geometry, angle));
+}
+
 function cylinderPoint(geometry, position, angle) {
+  const viewAngle = cylinderViewAngle(geometry, angle);
+  const zoom = geometry.zoom || 1;
   return {
-    x: lerp(geometry.startX, geometry.endX, position) + geometry.radiusX * Math.cos(angle),
-    y: geometry.centerY - geometry.radiusY * Math.sin(angle),
-    depth: Math.cos(angle)
+    x: lerp(geometry.startX, geometry.endX, position) + geometry.radiusX * zoom * Math.cos(viewAngle),
+    y: geometry.centerY - geometry.radiusY * zoom * Math.sin(viewAngle),
+    depth: Math.cos(viewAngle),
+    viewAngle
   };
 }
 
-function traceCylinderRing(context, geometry, position, startAngle, endAngle, steps = 36) {
+function cylinderPointFromView(geometry, position, viewAngle) {
+  return cylinderPoint(geometry, position, viewAngle - (geometry.rotation || 0));
+}
+
+function traceCylinderRing(context, geometry, position, startViewAngle, endViewAngle, steps = 36) {
   for (let index = 0; index <= steps; index += 1) {
-    const angle = lerp(startAngle, endAngle, index / steps);
-    const point = cylinderPoint(geometry, position, angle);
+    const viewAngle = lerp(startViewAngle, endViewAngle, index / steps);
+    const point = cylinderPointFromView(geometry, position, viewAngle);
     if (index === 0) context.moveTo(point.x, point.y);
     else context.lineTo(point.x, point.y);
   }
@@ -1225,20 +1258,20 @@ function traceCylinderRing(context, geometry, position, startAngle, endAngle, st
 
 function traceCylinderShell(context, geometry) {
   const steps = 28;
-  const topStart = cylinderPoint(geometry, 0, Math.PI / 2);
-  const topEnd = cylinderPoint(geometry, 1, Math.PI / 2);
+  const topStart = cylinderPointFromView(geometry, 0, Math.PI / 2);
+  const topEnd = cylinderPointFromView(geometry, 1, Math.PI / 2);
   context.moveTo(topStart.x, topStart.y);
   context.lineTo(topEnd.x, topEnd.y);
   for (let index = 1; index <= steps; index += 1) {
-    const angle = lerp(Math.PI / 2, -Math.PI / 2, index / steps);
-    const point = cylinderPoint(geometry, 1, angle);
+    const viewAngle = lerp(Math.PI / 2, -Math.PI / 2, index / steps);
+    const point = cylinderPointFromView(geometry, 1, viewAngle);
     context.lineTo(point.x, point.y);
   }
-  const bottomStart = cylinderPoint(geometry, 0, -Math.PI / 2);
+  const bottomStart = cylinderPointFromView(geometry, 0, -Math.PI / 2);
   context.lineTo(bottomStart.x, bottomStart.y);
   for (let index = 1; index <= steps; index += 1) {
-    const angle = lerp(-Math.PI / 2, -3 * Math.PI / 2, index / steps);
-    const point = cylinderPoint(geometry, 0, angle);
+    const viewAngle = lerp(-Math.PI / 2, -3 * Math.PI / 2, index / steps);
+    const point = cylinderPointFromView(geometry, 0, viewAngle);
     context.lineTo(point.x, point.y);
   }
   context.closePath();
@@ -1323,7 +1356,7 @@ function drawTrajectorySegments(context, geometry, series, startTime, endTime, f
     for (let index = 1; index < trail.length; index += 1) {
       const previous = trail[index - 1];
       const current = trail[index];
-      const midpointDepth = Math.cos((previous.lifted + current.lifted) / 2);
+      const midpointDepth = cylinderFacing(geometry, (previous.lifted + current.lifted) / 2);
       const belongs = front ? midpointDepth >= -1e-8 : midpointDepth < -1e-8;
       if (!belongs) {
         drawing = false;
@@ -1348,6 +1381,42 @@ function drawTrajectorySegments(context, geometry, series, startTime, endTime, f
   }
 }
 
+function drawTrajectoryArrows(context, geometry, series, startTime, endTime, front) {
+  if (!elements.showArrows.checked) return;
+  for (const { particle, trail } of series) {
+    if (trail.length < 2 || (particle.ambient && particle.id !== state.activeParticleId)) continue;
+    const previous = trail[Math.max(0, trail.length - 2)];
+    const current = trail[trail.length - 1];
+    const midpointDepth = cylinderFacing(geometry, (previous.lifted + current.lifted) / 2);
+    const belongs = front ? midpointDepth >= -1e-8 : midpointDepth < -1e-8;
+    if (!belongs) continue;
+    const start = cylinderPoint(
+      geometry,
+      clamp(inverseLerp(startTime, endTime, previous.t), 0, 1),
+      previous.lifted
+    );
+    const end = cylinderPoint(
+      geometry,
+      clamp(inverseLerp(startTime, endTime, current.t), 0, 1),
+      current.lifted
+    );
+    if (Math.hypot(end.x - start.x, end.y - start.y) <= 2.5) continue;
+    const highlighted = particle.id === state.activeParticleId;
+    drawArrow(
+      context,
+      start.x,
+      start.y,
+      end.x,
+      end.y,
+      highlighted
+        ? front ? COLORS.goldDark : "rgba(138, 98, 0, 0.34)"
+        : front ? COLORS.forest : "rgba(11, 87, 72, 0.25)",
+      front ? 1.2 : 0.9,
+      front ? 3.5 : 2.8
+    );
+  }
+}
+
 function drawTrajectoryTube() {
   if (!state.flow) return;
   const { context, width, height } = canvasSurface(elements.liftCanvas);
@@ -1363,7 +1432,9 @@ function drawTrajectoryTube() {
     endX: Math.max(24 + radiusX + 54, width - 24 - radiusX),
     centerY: (top + bottom) / 2,
     radiusX,
-    radiusY
+    radiusY,
+    rotation: state.tubeViews.trajectory.rotation,
+    zoom: state.tubeViews.trajectory.zoom
   };
   state.trajectoryTube = geometry;
 
@@ -1381,14 +1452,21 @@ function drawTrajectoryTube() {
       dash: [3, 4]
     });
   }
-  drawCylinderGenerator(context, geometry, Math.PI, {
-    strokeStyle: "rgba(11, 87, 72, 0.1)",
-    dash: [3, 5]
-  });
+  const guideAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+  for (const angle of guideAngles) {
+    const facing = cylinderFacing(geometry, angle);
+    if (facing >= 0) continue;
+    drawCylinderGenerator(context, geometry, angle, {
+      strokeStyle: Math.abs(facing) < 0.1
+        ? "rgba(11, 87, 72, 0.2)"
+        : "rgba(11, 87, 72, 0.1)",
+      dash: [3, 5]
+    });
+  }
 
   if (state.analysis.equilibriumCount !== Infinity) {
     for (const equilibrium of state.analysis.equilibria) {
-      if (Math.cos(equilibrium.angle) < 0) {
+      if (cylinderFacing(geometry, equilibrium.angle) < 0) {
         if (elements.showEquilibriumParticles.checked) {
           drawCylinderGenerator(context, geometry, equilibrium.angle, equilibriumTubeStyle(equilibrium, false));
         }
@@ -1406,8 +1484,9 @@ function drawTrajectoryTube() {
   if (elements.showTrails.checked) {
     drawTrajectorySegments(context, geometry, series, startTime, endTime, false);
   }
+  drawTrajectoryArrows(context, geometry, series, startTime, endTime, false);
   for (const particle of state.particles) {
-    if (Math.cos(particle.lifted) >= 0) continue;
+    if (cylinderFacing(geometry, particle.lifted) >= 0) continue;
     const point = cylinderPoint(geometry, 1, particle.lifted);
     drawParticle(context, point.x, point.y, particle.ambient ? 2.5 : 3.8, particle.ambient ? 0.25 : 0.4);
   }
@@ -1423,9 +1502,11 @@ function drawTrajectoryTube() {
       lineWidth: position === 1 ? 1.4 : 1
     });
   }
-  for (const angle of [0, Math.PI / 2, 3 * Math.PI / 2]) {
+  for (const angle of guideAngles) {
+    const facing = cylinderFacing(geometry, angle);
+    if (facing < 0) continue;
     drawCylinderGenerator(context, geometry, angle, {
-      strokeStyle: Math.abs(Math.cos(angle)) < 0.1
+      strokeStyle: Math.abs(facing) < 0.1
         ? "rgba(11, 87, 72, 0.28)"
         : "rgba(11, 87, 72, 0.18)"
     });
@@ -1433,7 +1514,7 @@ function drawTrajectoryTube() {
 
   if (state.analysis.equilibriumCount !== Infinity) {
     for (const equilibrium of state.analysis.equilibria) {
-      if (Math.cos(equilibrium.angle) >= 0) {
+      if (cylinderFacing(geometry, equilibrium.angle) >= 0) {
         if (elements.showEquilibriumParticles.checked) {
           drawCylinderGenerator(context, geometry, equilibrium.angle, equilibriumTubeStyle(equilibrium, true));
         }
@@ -1448,39 +1529,10 @@ function drawTrajectoryTube() {
   if (elements.showTrails.checked) {
     drawTrajectorySegments(context, geometry, series, startTime, endTime, true);
   }
-
-  if (elements.showArrows.checked) {
-    for (const { particle, trail } of series) {
-      if (trail.length < 2 || (particle.ambient && particle.id !== state.activeParticleId)) continue;
-      const previous = trail[Math.max(0, trail.length - 2)];
-      const current = trail[trail.length - 1];
-      const start = cylinderPoint(
-        geometry,
-        clamp(inverseLerp(startTime, endTime, previous.t), 0, 1),
-        previous.lifted
-      );
-      const end = cylinderPoint(
-        geometry,
-        clamp(inverseLerp(startTime, endTime, current.t), 0, 1),
-        current.lifted
-      );
-      if (Math.hypot(end.x - start.x, end.y - start.y) > 2.5) {
-        drawArrow(
-          context,
-          start.x,
-          start.y,
-          end.x,
-          end.y,
-          particle.id === state.activeParticleId ? COLORS.goldDark : COLORS.forest,
-          1.2,
-          3.5
-        );
-      }
-    }
-  }
+  drawTrajectoryArrows(context, geometry, series, startTime, endTime, true);
 
   for (const particle of state.particles) {
-    if (Math.cos(particle.lifted) < 0) continue;
+    if (cylinderFacing(geometry, particle.lifted) < 0) continue;
     const point = cylinderPoint(geometry, 1, particle.lifted);
     drawParticle(context, point.x, point.y, particle.ambient ? 2.8 : 4.2, particle.ambient ? 0.72 : 1);
   }
@@ -1489,7 +1541,7 @@ function drawTrajectoryTube() {
   context.save();
   context.strokeStyle = COLORS.goldDark;
   context.lineWidth = 1.35;
-  context.setLineDash(Math.cos(state.selectedAngle) < 0 ? [3, 3] : []);
+  context.setLineDash(cylinderFacing(geometry, state.selectedAngle) < 0 ? [3, 3] : []);
   context.beginPath();
   context.moveTo(geometry.endX, geometry.centerY);
   context.lineTo(selected.x, selected.y);
@@ -1507,7 +1559,7 @@ function drawTrajectoryTube() {
   context.font = "9px 'IBM Plex Mono', monospace";
   context.textBaseline = "middle";
   context.textAlign = "center";
-  const arrowY = geometry.centerY + geometry.radiusY + 22;
+  const arrowY = geometry.centerY + geometry.radiusY * (geometry.zoom || 1) + 22;
   drawArrow(context, geometry.startX, arrowY, geometry.endX, arrowY, "rgba(23, 33, 29, 0.42)", 1, 4);
   context.fillText("time t", (geometry.startX + geometry.endX) / 2, arrowY - 7);
   context.textAlign = "left";
@@ -1520,8 +1572,8 @@ function drawTrajectoryTube() {
     context.textAlign = "center";
     labelAngles.forEach((angle, index) => {
       const point = cylinderPoint(geometry, 1, angle);
-      const offsetX = 10 * Math.cos(angle);
-      const offsetY = -10 * Math.sin(angle);
+      const offsetX = 10 * Math.cos(point.viewAngle);
+      const offsetY = -10 * Math.sin(point.viewAngle);
       context.fillText(labels[index], point.x + offsetX, point.y + offsetY);
     });
   }
@@ -1656,16 +1708,26 @@ function drawBifurcationMessage(context, box, title, detail) {
 function bifurcationTubeGeometry(width, height) {
   const top = Math.min(78, Math.max(60, height * 0.13));
   const bottom = Math.max(top + 120, height - 64);
-  const radiusY = Math.min(170, Math.max(46, (bottom - top) * 0.37));
+  const topLabelReserve = 26;
+  const bottomAxisReserve = 64;
+  const centerY = (topLabelReserve + height - bottomAxisReserve) / 2;
+  const naturalRadiusY = Math.min(170, Math.max(46, (bottom - top) * 0.37));
+  const maximumRadiusY = Math.max(
+    30,
+    Math.min(centerY - 24, height - centerY - bottomAxisReserve) / TUBE_MAX_ZOOM
+  );
+  const radiusY = Math.min(naturalRadiusY, maximumRadiusY);
   const radiusX = Math.min(38, Math.max(15, radiusY * 0.23));
   const startX = Math.min(width * 0.22, 54) + radiusX;
-  const endX = Math.max(startX + 90, width - 24 - radiusX);
+  const endX = Math.max(startX + 90, width - 34 - radiusX);
   return {
     startX,
     endX,
-    centerY: (top + bottom) / 2,
+    centerY,
     radiusX,
-    radiusY
+    radiusY,
+    rotation: state.tubeViews.bifurcation.rotation,
+    zoom: state.tubeViews.bifurcation.zoom
   };
 }
 
@@ -1684,7 +1746,8 @@ function drawBifurcationTubeBranches(context, geometry, data, minimum, maximum, 
     }
     for (const equilibrium of slice.equilibria) {
       const angle = wrapAngle(equilibrium.angle);
-      const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+      const facing = cylinderFacing(geometry, angle);
+      const belongs = front ? facing >= -1e-8 : facing < -1e-8;
       if (!belongs) continue;
       const halfStep = parameterStep * 0.62;
       const startParameter = clamp(slice.parameter - halfStep, minimum, maximum);
@@ -1769,7 +1832,8 @@ function drawBifurcationTubeCurrentState(context, geometry, currentPosition, fro
   if (state.analysis.equilibriumCount !== Infinity) {
     for (const equilibrium of state.analysis.equilibria) {
       const angle = wrapAngle(equilibrium.angle);
-      const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+      const facing = cylinderFacing(geometry, angle);
+      const belongs = front ? facing >= -1e-8 : facing < -1e-8;
       if (!belongs) continue;
       const point = cylinderPoint(geometry, currentPosition, angle);
       drawEquilibriumMarker(context, point.x, point.y, equilibrium, { dark: false, radius: 4.6 });
@@ -1777,7 +1841,8 @@ function drawBifurcationTubeCurrentState(context, geometry, currentPosition, fro
   }
   for (const particle of state.particles) {
     const angle = wrapAngle(particle.lifted);
-    const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+    const facing = cylinderFacing(geometry, angle);
+    const belongs = front ? facing >= -1e-8 : facing < -1e-8;
     if (!belongs) continue;
     const point = cylinderPoint(geometry, currentPosition, angle);
     drawParticle(
@@ -1793,7 +1858,8 @@ function drawBifurcationTubeCurrentState(context, geometry, currentPosition, fro
 
 function drawBifurcationTubeAxes(context, geometry, name, minimum, maximum) {
   const ticks = bifurcationHorizontalTicks(name, minimum, maximum);
-  const baselineY = geometry.centerY + geometry.radiusY + 30;
+  const displayedRadiusY = geometry.radiusY * (geometry.zoom || 1);
+  const baselineY = geometry.centerY + displayedRadiusY + 30;
   context.save();
   context.font = "9px 'IBM Plex Mono', monospace";
   context.fillStyle = COLORS.muted;
@@ -1832,25 +1898,42 @@ function drawBifurcationTubeAxes(context, geometry, name, minimum, maximum) {
   context.textBaseline = "middle";
   for (const [angle, label] of labels) {
     const point = cylinderPoint(geometry, 0, angle);
-    context.textAlign = Math.cos(angle) > 0.2 ? "left" : Math.cos(angle) < -0.2 ? "right" : "center";
-    context.fillText(label, point.x + 9 * Math.cos(angle), point.y - 10 * Math.sin(angle));
+    context.textAlign = Math.cos(point.viewAngle) > 0.2
+      ? "left"
+      : Math.cos(point.viewAngle) < -0.2 ? "right" : "center";
+    context.fillText(
+      label,
+      point.x + 9 * Math.cos(point.viewAngle),
+      point.y - 10 * Math.sin(point.viewAngle)
+    );
   }
   const stateSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "φ*" : "θ*";
   context.fillStyle = COLORS.ink;
   context.textAlign = "left";
-  context.fillText(`${stateSymbol} wraps around`, geometry.startX - geometry.radiusX, geometry.centerY - geometry.radiusY - 18);
+  context.fillText(
+    `${stateSymbol} wraps around`,
+    geometry.startX - geometry.radiusX * (geometry.zoom || 1),
+    geometry.centerY - displayedRadiusY - 18
+  );
   context.restore();
 }
 
 function drawCylindricalBifurcation(context, width, height, data, name, config, minimum, maximum) {
   const geometry = bifurcationTubeGeometry(width, height);
+  state.bifurcation.tubeGeometry = geometry;
+  const zoom = geometry.zoom || 1;
   const box = {
-    left: geometry.startX,
-    right: geometry.endX,
-    top: geometry.centerY - geometry.radiusY,
-    bottom: geometry.centerY + geometry.radiusY
+    left: geometry.startX - geometry.radiusX * zoom,
+    right: geometry.endX + geometry.radiusX * zoom,
+    top: geometry.centerY - geometry.radiusY * zoom,
+    bottom: geometry.centerY + geometry.radiusY * zoom
   };
-  state.bifurcation.plot = { box, minimum, maximum, mode: "tube" };
+  state.bifurcation.plot = {
+    box: { ...box, left: geometry.startX, right: geometry.endX },
+    minimum,
+    maximum,
+    mode: "tube"
+  };
   const ticks = bifurcationHorizontalTicks(name, minimum, maximum);
 
   for (const value of ticks) {
@@ -1860,10 +1943,17 @@ function drawCylindricalBifurcation(context, width, height, data, name, config, 
       dash: [3, 4]
     });
   }
-  drawCylinderGenerator(context, geometry, Math.PI, {
-    strokeStyle: "rgba(23, 33, 29, 0.09)",
-    dash: [3, 5]
-  });
+  const guideAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+  for (const angle of guideAngles) {
+    const facing = cylinderFacing(geometry, angle);
+    if (facing >= 0) continue;
+    drawCylinderGenerator(context, geometry, angle, {
+      strokeStyle: Math.abs(facing) < 0.1
+        ? "rgba(23, 33, 29, 0.18)"
+        : "rgba(23, 33, 29, 0.09)",
+      dash: [3, 5]
+    });
+  }
 
   const currentValue = clamp(Number(config.control.value), minimum, maximum);
   const currentPosition = clamp(inverseLerp(minimum, maximum, currentValue), 0, 1);
@@ -1884,9 +1974,11 @@ function drawCylindricalBifurcation(context, width, height, data, name, config, 
       strokeStyle: "rgba(23, 33, 29, 0.17)"
     });
   }
-  for (const angle of [0, Math.PI / 2, 3 * Math.PI / 2]) {
+  for (const angle of guideAngles) {
+    const facing = cylinderFacing(geometry, angle);
+    if (facing < 0) continue;
     drawCylinderGenerator(context, geometry, angle, {
-      strokeStyle: Math.abs(Math.cos(angle)) < 0.1
+      strokeStyle: Math.abs(facing) < 0.1
         ? "rgba(23, 33, 29, 0.28)"
         : "rgba(23, 33, 29, 0.15)"
     });
@@ -1906,7 +1998,7 @@ function drawCylindricalBifurcation(context, width, height, data, name, config, 
   });
   drawBifurcationTubeAxes(context, geometry, name, minimum, maximum);
 
-  const currentTop = cylinderPoint(geometry, currentPosition, Math.PI / 2);
+  const currentTop = cylinderPointFromView(geometry, currentPosition, Math.PI / 2);
   context.save();
   context.fillStyle = COLORS.goldDark;
   context.beginPath();
@@ -1945,6 +2037,7 @@ function drawBifurcationDiagram() {
     drawCylindricalBifurcation(context, width, height, data, name, config, minimum, maximum);
     return;
   }
+  state.bifurcation.tubeGeometry = null;
   const box = bifurcationPlotBox(width, height);
   state.bifurcation.plot = { box, minimum, maximum, mode: "plane" };
   drawBifurcationAxes(context, box, name, minimum, maximum);
@@ -2286,6 +2379,81 @@ function updateParameterPlayers(delta) {
   }
 }
 
+const TUBE_DRAG_THRESHOLD = 6;
+const TUBE_ROTATION_SCALE = 0.012;
+const TUBE_MIN_ZOOM = 0.65;
+const TUBE_MAX_ZOOM = 1.45;
+
+function tubeViewLabel(kind) {
+  return kind === "bifurcation" ? "Bifurcation tube" : "Trajectory tube";
+}
+
+function syncTubeGeometry(kind) {
+  const view = state.tubeViews[kind];
+  const geometry = kind === "bifurcation"
+    ? state.bifurcation.tubeGeometry
+    : state.trajectoryTube;
+  if (!view || !geometry) return;
+  geometry.rotation = view.rotation;
+  geometry.zoom = view.zoom;
+}
+
+function setTubeView(kind, next, options = {}) {
+  const view = state.tubeViews[kind];
+  if (!view) return;
+  if (Number.isFinite(next.rotation)) view.rotation = wrapAngle(next.rotation);
+  if (Number.isFinite(next.zoom)) view.zoom = clamp(next.zoom, TUBE_MIN_ZOOM, TUBE_MAX_ZOOM);
+  syncTubeGeometry(kind);
+  state.dirty = true;
+  if (options.announce) {
+    const degrees = Math.round(view.rotation * 180 / Math.PI) % 360;
+    announce(`${tubeViewLabel(kind)} view: ${degrees} degree rotation, ${Math.round(view.zoom * 100)} percent zoom.`);
+  }
+}
+
+function resetTubeView(kind, options = {}) {
+  setTubeView(kind, { rotation: 0, zoom: 1 }, { announce: options.announce !== false });
+}
+
+function handleTubeCameraKey(event, kind) {
+  if (kind === "bifurcation" && state.bifurcation.view !== "tube") return false;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  const view = state.tubeViews[kind];
+  if (!view) return false;
+  const key = event.key.toLowerCase();
+  if (event.key === "[") {
+    setTubeView(kind, { rotation: view.rotation - Math.PI / 12 }, { announce: true });
+  } else if (event.key === "]") {
+    setTubeView(kind, { rotation: view.rotation + Math.PI / 12 }, { announce: true });
+  } else if (event.key === "+" || event.key === "=") {
+    setTubeView(kind, { zoom: view.zoom * 1.1 }, { announce: true });
+  } else if (event.key === "-" || event.key === "_") {
+    setTubeView(kind, { zoom: view.zoom / 1.1 }, { announce: true });
+  } else if (key === "r") {
+    resetTubeView(kind);
+  } else {
+    return false;
+  }
+  event.preventDefault();
+  return true;
+}
+
+function normalizedWheelDelta(event) {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * Math.max(1, window.innerHeight || 800);
+  return event.deltaY;
+}
+
+function handleTubeWheel(kind, event) {
+  if (event.ctrlKey || event.metaKey) return;
+  if (kind === "bifurcation" && state.bifurcation.view !== "tube") return;
+  event.preventDefault();
+  const view = state.tubeViews[kind];
+  const delta = clamp(normalizedWheelDelta(event), -240, 240);
+  if (!delta) return;
+  setTubeView(kind, { zoom: view.zoom * Math.exp(-delta * 0.0015) });
+}
+
 function pointerPosition(canvas, event) {
   const rectangle = canvas.getBoundingClientRect();
   return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
@@ -2306,21 +2474,37 @@ function angleFromCanvas(canvas, event) {
   }
   if (canvas === elements.liftCanvas && state.trajectoryTube) {
     const geometry = state.trajectoryTube;
-    const normalizedX = (position.x - geometry.endX) / geometry.radiusX;
-    const normalizedY = (geometry.centerY - position.y) / geometry.radiusY;
+    const zoom = geometry.zoom || 1;
+    const normalizedX = (position.x - geometry.endX) / (geometry.radiusX * zoom);
+    const normalizedY = (geometry.centerY - position.y) / (geometry.radiusY * zoom);
     const distance = Math.hypot(normalizedX, normalizedY);
     if (distance < 0.3 || distance > 1.7) return null;
-    return wrapAngle(Math.atan2(normalizedY, normalizedX));
+    return wrapAngle(Math.atan2(normalizedY, normalizedX) - (geometry.rotation || 0));
   }
   return state.selectedAngle;
 }
 
 function beginCanvasPointer(canvas, event) {
   if (event.button !== 0 || event.isPrimary === false) return;
+  canvas.focus({ preventScroll: true });
+  if (canvas === elements.liftCanvas) {
+    const position = pointerPosition(canvas, event);
+    state.pointer = {
+      canvas,
+      pointerId: event.pointerId,
+      mode: "pending",
+      axis: null,
+      pointerType: event.pointerType || "mouse",
+      startX: position.x,
+      startY: position.y,
+      startRotation: state.tubeViews.trajectory.rotation
+    };
+    canvas.setPointerCapture?.(event.pointerId);
+    return;
+  }
   const angle = angleFromCanvas(canvas, event);
   if (!Number.isFinite(angle)) return;
-  canvas.focus({ preventScroll: true });
-  state.pointer = { canvas, pointerId: event.pointerId, moved: false };
+  state.pointer = { canvas, pointerId: event.pointerId, mode: "select", moved: false };
   state.selectedAngle = angle;
   updateSelectedReadout();
   state.dirty = true;
@@ -2330,6 +2514,31 @@ function beginCanvasPointer(canvas, event) {
 
 function moveCanvasPointer(canvas, event) {
   if (!state.pointer || state.pointer.canvas !== canvas || state.pointer.pointerId !== event.pointerId) return;
+  if (canvas === elements.liftCanvas) {
+    const pointer = state.pointer;
+    const position = pointerPosition(canvas, event);
+    const deltaX = position.x - pointer.startX;
+    const deltaY = position.y - pointer.startY;
+    if (pointer.mode === "pending") {
+      if (pointer.pointerType === "touch") {
+        if (Math.abs(deltaX) < TUBE_DRAG_THRESHOLD) return;
+        pointer.axis = "x";
+      } else {
+        if (Math.hypot(deltaX, deltaY) < TUBE_DRAG_THRESHOLD) return;
+        pointer.axis = Math.abs(deltaX) >= Math.abs(deltaY) ? "x" : "y";
+      }
+      pointer.mode = "rotate";
+      canvas.dataset.dragging = "rotate";
+    }
+    if (pointer.mode === "rotate") {
+      event.preventDefault?.();
+      const dragDelta = pointer.axis === "x" ? deltaX : -deltaY;
+      setTubeView("trajectory", {
+        rotation: pointer.startRotation + dragDelta * TUBE_ROTATION_SCALE
+      });
+    }
+    return;
+  }
   const angle = angleFromCanvas(canvas, event);
   if (!Number.isFinite(angle)) return;
   state.pointer.moved = true;
@@ -2340,6 +2549,23 @@ function moveCanvasPointer(canvas, event) {
 
 function endCanvasPointer(canvas, event) {
   if (!state.pointer || state.pointer.canvas !== canvas || state.pointer.pointerId !== event.pointerId) return;
+  if (canvas === elements.liftCanvas) {
+    const pointer = state.pointer;
+    if (pointer.mode === "pending") {
+      const angle = angleFromCanvas(canvas, event);
+      if (Number.isFinite(angle)) addParticle(angle);
+    } else if (pointer.mode === "rotate") {
+      setTubeView("trajectory", {}, { announce: true });
+    }
+    delete canvas.dataset.dragging;
+    try {
+      if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    } catch {
+      // The browser may already have released capture after a touch gesture.
+    }
+    state.pointer = null;
+    return;
+  }
   const angle = angleFromCanvas(canvas, event);
   if (Number.isFinite(angle)) state.selectedAngle = angle;
   delete canvas.dataset.dragging;
@@ -2359,6 +2585,8 @@ function cancelCanvasPointer(canvas, event) {
 }
 
 function handleCanvasKey(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.currentTarget === elements.liftCanvas && handleTubeCameraKey(event, "trajectory")) return;
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     const increment = event.shiftKey ? Math.PI / 6 : Math.PI / 24;
@@ -2416,21 +2644,60 @@ function setBifurcationParameterValue(value, options = {}) {
 function beginBifurcationPointer(event) {
   if (event.button !== 0 || event.isPrimary === false) return;
   elements.bifurcationCanvas.focus({ preventScroll: true });
-  state.bifurcation.pointerId = event.pointerId;
-  elements.bifurcationCanvas.dataset.dragging = "true";
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  const tube = state.bifurcation.view === "tube";
+  state.bifurcation.pointer = {
+    pointerId: event.pointerId,
+    mode: tube ? "pending" : "parameter",
+    axis: null,
+    pointerType: event.pointerType || "mouse",
+    startX: position.x,
+    startY: position.y,
+    startRotation: state.tubeViews.bifurcation.rotation
+  };
+  if (!tube) elements.bifurcationCanvas.dataset.dragging = "parameter";
   elements.bifurcationCanvas.setPointerCapture?.(event.pointerId);
-  setBifurcationParameterValue(bifurcationValueFromPointer(event));
+  if (!tube) setBifurcationParameterValue(bifurcationValueFromPointer(event));
 }
 
 function moveBifurcationPointer(event) {
-  if (state.bifurcation.pointerId !== event.pointerId) return;
-  setBifurcationParameterValue(bifurcationValueFromPointer(event));
+  const pointer = state.bifurcation.pointer;
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  if (pointer.mode === "parameter") {
+    setBifurcationParameterValue(bifurcationValueFromPointer(event));
+    return;
+  }
+  const position = pointerPosition(elements.bifurcationCanvas, event);
+  const deltaX = position.x - pointer.startX;
+  const deltaY = position.y - pointer.startY;
+  if (pointer.mode === "pending") {
+    if (pointer.pointerType === "touch") {
+      if (Math.abs(deltaX) < TUBE_DRAG_THRESHOLD) return;
+      pointer.mode = "rotate";
+      pointer.axis = "x";
+    } else {
+      if (Math.hypot(deltaX, deltaY) < TUBE_DRAG_THRESHOLD) return;
+      pointer.mode = Math.abs(deltaY) > Math.abs(deltaX) * 1.15 ? "rotate" : "parameter";
+      pointer.axis = pointer.mode === "rotate" ? "y" : "x";
+    }
+    elements.bifurcationCanvas.dataset.dragging = pointer.mode;
+  }
+  if (pointer.mode === "parameter") {
+    setBifurcationParameterValue(bifurcationValueFromPointer(event));
+  } else if (pointer.mode === "rotate") {
+    event.preventDefault?.();
+    const dragDelta = pointer.axis === "x" ? deltaX : -deltaY;
+    setTubeView("bifurcation", {
+      rotation: pointer.startRotation + dragDelta * TUBE_ROTATION_SCALE
+    });
+  }
 }
 
 function endBifurcationPointer(event) {
-  if (state.bifurcation.pointerId !== event.pointerId) return;
-  const value = bifurcationValueFromPointer(event);
-  state.bifurcation.pointerId = null;
+  const pointer = state.bifurcation.pointer;
+  if (!pointer || pointer.pointerId !== event.pointerId) return;
+  const mode = pointer.mode;
+  state.bifurcation.pointer = null;
   delete elements.bifurcationCanvas.dataset.dragging;
   try {
     if (elements.bifurcationCanvas.hasPointerCapture?.(event.pointerId)) {
@@ -2439,16 +2706,25 @@ function endBifurcationPointer(event) {
   } catch {
     // The browser may already have released capture after a touch gesture.
   }
-  setBifurcationParameterValue(value, { immediate: true, announce: true });
+  if (mode === "rotate") {
+    setTubeView("bifurcation", {}, { announce: true });
+  } else {
+    setBifurcationParameterValue(bifurcationValueFromPointer(event), {
+      immediate: true,
+      announce: true
+    });
+  }
 }
 
 function cancelBifurcationPointer(event) {
-  if (state.bifurcation.pointerId !== event.pointerId) return;
-  state.bifurcation.pointerId = null;
+  if (state.bifurcation.pointer?.pointerId !== event.pointerId) return;
+  state.bifurcation.pointer = null;
   delete elements.bifurcationCanvas.dataset.dragging;
 }
 
 function handleBifurcationKey(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (handleTubeCameraKey(event, "bifurcation")) return;
   const name = selectedBifurcationParameter();
   const config = PARAMETER_PLAYER_CONFIG[name];
   if (!config?.control) return;
@@ -2612,13 +2888,25 @@ function installEvents() {
     canvas.addEventListener("lostpointercapture", (event) => cancelCanvasPointer(canvas, event));
     canvas.addEventListener("keydown", handleCanvasKey);
   });
+  elements.liftCanvas.addEventListener(
+    "wheel",
+    (event) => handleTubeWheel("trajectory", event),
+    { passive: false }
+  );
   elements.bifurcationCanvas.addEventListener("pointerdown", beginBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("pointermove", moveBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("pointerup", endBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("pointercancel", cancelBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("lostpointercapture", cancelBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("keydown", handleBifurcationKey);
+  elements.bifurcationCanvas.addEventListener(
+    "wheel",
+    (event) => handleTubeWheel("bifurcation", event),
+    { passive: false }
+  );
   elements.bifurcationRollToggle?.addEventListener("click", toggleBifurcationView);
+  elements.trajectoryViewReset?.addEventListener("click", () => resetTubeView("trajectory"));
+  elements.bifurcationViewReset?.addEventListener("click", () => resetTubeView("bifurcation"));
   motionQuery.addEventListener?.("change", (event) => {
     if (event.matches) {
       state.running = false;

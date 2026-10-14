@@ -493,6 +493,39 @@
   text-align: right;
 }
 
+.circle-panel-heading > .tube-heading-tools {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.tube-view-reset {
+  min-height: 34px;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid rgba(11, 87, 72, 0.3);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--forest);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.035em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.tube-view-reset:hover,
+.tube-view-reset:focus-visible {
+  border-color: var(--forest);
+  background: rgba(11, 87, 72, 0.08);
+}
+
+.tube-view-reset[hidden] {
+  display: none;
+}
+
 .bifurcation-panel-heading {
   min-height: 64px;
 }
@@ -646,6 +679,22 @@
   cursor: ew-resize;
 }
 
+#lift-canvas,
+#bifurcation-canvas[data-view="tube"] {
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+#lift-canvas[data-dragging="rotate"],
+#bifurcation-canvas[data-view="tube"][data-dragging="rotate"] {
+  cursor: grabbing;
+}
+
+#bifurcation-canvas[data-view="plane"],
+#bifurcation-canvas[data-dragging="parameter"] {
+  cursor: ew-resize;
+}
+
 #circle-canvas:focus-visible,
 #velocity-canvas:focus-visible,
 #lift-canvas:focus-visible,
@@ -659,10 +708,6 @@
 #lift-canvas:focus-visible,
 #bifurcation-canvas:focus-visible {
   outline-color: var(--forest);
-}
-
-#bifurcation-canvas {
-  cursor: ew-resize;
 }
 
 .portrait-readout {
@@ -1133,6 +1178,10 @@
     text-align: left;
   }
 
+  .bifurcation-panel-heading > .tube-view-reset {
+    justify-self: end;
+  }
+
   .bifurcation-toolbar {
     display: grid;
     gap: 0.65rem;
@@ -1182,6 +1231,7 @@
   .parameter-play,
   .workspace-fullscreen-toggle,
   .bifurcation-roll-toggle,
+  .tube-view-reset,
   .equilibrium-card,
   .equation-card,
   .regime-note {
@@ -1576,6 +1626,11 @@
 
   #circle-flow-workspace:fullscreen .circle-workbench .circle-panel-heading p,
   #circle-flow-workspace.is-fullscreen .circle-workbench .circle-panel-heading p {
+    display: none;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-workbench .circle-panel-heading > div:first-child > span,
+  #circle-flow-workspace.is-fullscreen .circle-workbench .circle-panel-heading > div:first-child > span {
     display: none;
   }
 
