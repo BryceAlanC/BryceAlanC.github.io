@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nim as a Graph | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Play Nim against an optimal computer while navigating the same game through a rotatable three-dimensional directed state graph."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Nim as a Graph | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Take counters from piles or choose the same move as an arrow in the complete directed state graph."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css?v=20261014-1" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"
+      integrity="sha384-Y7bC2PBKu8ujxtvo5+Z61OeGdSVRzFsYWBK4i5dnL/U6aFDTodk61qOUkTfInaxS"
+      crossorigin="anonymous"
+      defer
+    ></script>
+    <script type="module" src="./demo.js?v=20261014-1"></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../">← Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Combinatorial games · directed state spaces</p>
+            <h1>Nim as a graph</h1>
+            <p class="app-hero-copy">
+              Take counters from one pile—or make the same move by following an arrow.
+              Every node is a position and whose turn it is; every directed edge is one
+              legal move. An optimal computer reveals that the game is really a navigation
+              problem through a finite graph.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-app nim-app" aria-label="Nim game and directed state graph">
+        <div class="lab-stage-shell nim-workspace" id="nim-workspace">
+          <aside class="control-panel nim-controls" aria-labelledby="setup-title">
+            <div class="control-intro">
+              <p class="section-kicker">Starting position</p>
+              <h2 id="setup-title">Build a Nim game</h2>
+              <p>
+                Choose any small collection of piles. The graph folds together positions
+                that differ only by pile order, keeping the complete state space readable.
+              </p>
+            </div>
+
+            <fieldset class="control-group">
+              <legend>Preset</legend>
+              <label class="field-label" for="nim-preset">Starting piles</label>
+              <select id="nim-preset">
+                <option value="3,4,5" selected>Classic · 3, 4, 5</option>
+                <option value="1,3,5,7">Marienbad · 1, 3, 5, 7</option>
+                <option value="1,3,5">Compact · 1, 3, 5</option>
+                <option value="2,3,4">Tactical · 2, 3, 4</option>
+                <option value="custom">Custom</option>
+              </select>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>Piles</legend>
+              <div id="nim-pile-editors" class="pile-editors"></div>
+              <button class="inline-action" id="nim-add-pile" type="button">+ Add pile</button>
+              <p class="control-help">1–6 piles, with 1–12 counters each. Larger complete graphs are declined before they can slow the page.</p>
+            </fieldset>
+
+            <fieldset class="control-group">
+              <legend>First move</legend>
+              <div class="segmented-control" role="radiogroup" aria-label="Who moves first">
+                <label>
+                  <input type="radio" name="nim-first" value="human" checked />
+                  <span>You</span>
+                </label>
+                <label>
+                  <input type="radio" name="nim-first" value="computer" />
+                  <span>Computer</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <p class="setup-feedback" id="nim-setup-feedback" role="status">
+              Ready to build the complete graph.
+            </p>
+
+            <button class="lab-button lab-button-primary nim-wide-button" id="nim-start" type="button">
+              Start new game
+            </button>
+            <div class="control-row nim-secondary-actions">
+              <button class="lab-button" id="nim-restart" type="button">Restart</button>
+              <button class="lab-button" id="nim-undo" type="button" disabled>Undo round</button>
+            </div>
+
+            <details class="strategy-note">
+              <summary>How the computer chooses</summary>
+              <p>
+                XOR all pile sizes to get the <em>nim-sum</em>. A zero nim-sum is losing
+                for whoever moves next. Whenever possible, the computer follows an edge
+                back to zero. From zero, no forced win exists, so every legal move is
+                equally optimal.
+              </p>
+            </details>
+          </aside>
+
+          <div class="nim-experience">
+            <section class="nim-board-panel" aria-labelledby="board-title">
+              <div class="nim-panel-heading">
+                <div>
+                  <p class="section-kicker">01 · Game board</p>
+                  <h2 id="board-title">Take from one pile</h2>
+                </div>
+                <span class="turn-chip" id="nim-turn-chip">Your turn</span>
+              </div>
+
+              <div class="nim-position" id="nim-position" aria-live="off"></div>
+
+              <div class="move-preview" id="nim-move-preview">
+                Choose a counter to remove it and every counter to its right.
+              </div>
+
+              <div class="legal-move-control">
+                <label class="field-label" for="nim-legal-moves">Legal next states</label>
+                <div class="legal-move-row">
+                  <select id="nim-legal-moves" aria-describedby="legal-move-help"></select>
+                  <button class="lab-button" id="nim-make-move" type="button">Make move</button>
+                </div>
+                <p class="control-help" id="legal-move-help">
+                  This is the keyboard-accessible counterpart to clicking a glowing graph node.
+                </p>
+              </div>
+
+              <div class="move-log" aria-labelledby="move-log-title">
+                <div class="move-log-heading">
+                  <h3 id="move-log-title">Path through the graph</h3>
+                  <span id="nim-move-count">0 moves</span>
+                </div>
+                <ol id="nim-move-log">
+                  <li class="is-placeholder">The first move will appear here.</li>
+                </ol>
+              </div>
+            </section>
+
+            <section class="nim-graph-panel" aria-labelledby="graph-title">
+              <div class="nim-panel-heading graph-heading">
+                <div>
+                  <p class="section-kicker">02 · Directed state graph</p>
+                  <h2 id="graph-title">Navigate the game</h2>
+                </div>
+                <p id="nim-graph-status">Building the complete graph…</p>
+              </div>
+
+              <div class="graph-toolbar" aria-label="Graph view controls">
+                <button class="graph-tool" id="nim-reset-view" type="button">Reset view</button>
+                <button class="graph-tool" id="nim-fit-view" type="button">Fit graph</button>
+                <button class="graph-tool" id="nim-fullscreen" type="button">Fullscreen</button>
+                <span id="nim-graph-help">Drag to rotate · scroll to zoom · click a glowing neighbor</span>
+              </div>
+
+              <div class="nim-graph-viewport" id="nim-graph-viewport">
+                <div
+                  class="nim-graph-renderer"
+                  id="nim-graph-renderer"
+                  tabindex="0"
+                  role="img"
+                  aria-label="Rotatable three-dimensional directed graph of Nim positions"
+                  aria-describedby="nim-graph-help nim-graph-description"
+                  aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - R"
+                ></div>
+                <div class="graph-tooltip" id="nim-graph-tooltip" hidden></div>
+                <div class="graph-fallback" id="nim-graph-fallback" hidden role="status"></div>
+                <div class="graph-legend" aria-label="Graph legend">
+                  <span><i class="legend-current" aria-hidden="true"></i>Current</span>
+                  <span><i class="legend-legal" aria-hidden="true"></i>Legal move</span>
+                  <span><i class="legend-winning" aria-hidden="true"></i>Winning for mover</span>
+                  <span><i class="legend-losing" aria-hidden="true"></i>Nim-sum zero</span>
+                  <span><i class="legend-victory" aria-hidden="true"></i>Victory</span>
+                  <span><i class="legend-defeat" aria-hidden="true"></i>Defeat</span>
+                </div>
+              </div>
+              <p class="sr-only" id="nim-graph-description">
+                Arrow keys rotate the view, plus and minus zoom, and R resets it. Only highlighted neighboring nodes can be chosen as moves.
+              </p>
+            </section>
+
+            <section class="telemetry-panel nim-telemetry" aria-label="Current Nim position">
+              <div class="telemetry-item">
+                <span>Turn</span>
+                <strong id="nim-turn">You</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Counters left</span>
+                <strong id="nim-total">12</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Nim-sum</span>
+                <strong id="nim-sum">2</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>Position class</span>
+                <strong id="nim-class">Winning</strong>
+              </div>
+              <div class="telemetry-item">
+                <span>State graph</span>
+                <strong id="nim-graph-size">—</strong>
+              </div>
+            </section>
+
+            <p class="app-note nim-note">
+              The two terminal nodes include whose turn comes next: an empty board with the
+              computer to move means <strong>Victory</strong>, because you took the last counter;
+              an empty board with you to move means <strong>Defeat</strong>. Pile-order symmetries
+              are folded together in the graph, so positions such as [5, 3, 1] and [1, 5, 3]
+              share a node without changing the game.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="sr-only" id="nim-announcer" aria-live="polite" aria-atomic="true"></div>
+
+      <footer class="site-footer">
+        <div>
+          <p>© 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu"
+          >bryce.christopherson@UND.edu <span aria-hidden="true">↗</span></a
+        >
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </body>
+</html>
