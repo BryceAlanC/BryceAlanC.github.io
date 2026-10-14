@@ -15,8 +15,8 @@ import {
   optimalMove,
   buildStateGraph,
   directedReachability
-} from "./model.js?v=20261014-2";
-import { createNimGraphRenderer } from "./graph-renderer.js?v=20261014-2";
+} from "./model.js?v=20261014-3";
+import { createNimGraphRenderer } from "./graph-renderer.js?v=20261014-3";
 
 const GRAPH_NODE_CAP = Math.min(DEFAULT_NODE_CAP, 1400);
 const GRAPH_EDGE_CAP = Math.min(DEFAULT_EDGE_CAP, 9000);
@@ -46,8 +46,12 @@ const elements = {
   graphTooltip: document.getElementById("nim-graph-tooltip"),
   graphFallback: document.getElementById("nim-graph-fallback"),
   graphStatus: document.getElementById("nim-graph-status"),
+  graphHelp: document.getElementById("nim-graph-help"),
   resetView: document.getElementById("nim-reset-view"),
   fitView: document.getElementById("nim-fit-view"),
+  showNimSums: document.getElementById("nim-show-nim-sums"),
+  followCurrent: document.getElementById("nim-follow-current"),
+  nimSumLegend: [...document.querySelectorAll(".nim-sum-legend")],
   fullscreen: document.getElementById("nim-fullscreen"),
   turn: document.getElementById("nim-turn"),
   total: document.getElementById("nim-total"),
@@ -77,6 +81,8 @@ const game = {
   previewId: null,
   restoreMoveFocus: false,
   resizeObserver: null,
+  showNimSums: false,
+  followCurrent: true,
   fullscreenActive: false,
   fullscreenInitialized: false
 };
@@ -203,11 +209,13 @@ function legalBoardMoves() {
 }
 
 function nodeTooltipText(node) {
-  if (node.outcome === VICTORY) return "Victory · you took the final counter";
-  if (node.outcome === DEFEAT) return "Defeat · the computer took the final counter";
+  if (node.outcome === VICTORY) return "End · Victory · zero stones · you took the final counter";
+  if (node.outcome === DEFEAT) return "End · Defeat · zero stones · the computer took the final counter";
   const mover = node.turn === HUMAN_TURN ? "your turn" : "computer turn";
+  const state = `${node.id === game.graph?.initialNodeId ? "Start · " : ""}[${node.piles.join(", ")}]`;
+  if (!game.showNimSums) return `${state} · ${mover}`;
   const classification = node.nimSum === 0 ? "losing for the mover" : "winning for the mover";
-  return `[${node.piles.join(", ")}] · ${mover} · nim-sum ${node.nimSum} · ${classification}`;
+  return `${state} · ${mover} · nim-sum ${node.nimSum} · ${classification}`;
 }
 
 function clearBoardPreview({ updateGraph = true } = {}) {
@@ -372,8 +380,34 @@ function renderStatus() {
       "aria-label",
       `Complete directed Nim state graph with ${game.graph.nodes.length} nodes and ${game.graph.edges.length} edges. ` +
       `Current node [${current.join(", ")}], ${game.outcome ? positionClass : `${mover.toLowerCase()} to move`}, ` +
-      `nim-sum ${sum}, ${legalCount} legal player moves. Distinct Victory and Defeat terminal nodes are shown.`
+      `${game.showNimSums ? `nim-sum ${sum} shown on graph nodes` : "nim-sums hidden on graph nodes"}, ${legalCount} legal player moves. ` +
+      `The starting node and the zero-stone Victory and Defeat end nodes are marked.`
     );
+  }
+}
+
+function syncGraphDisplay({ announceChange = false, changed = null } = {}) {
+  game.showNimSums = Boolean(elements.showNimSums.checked);
+  game.followCurrent = Boolean(elements.followCurrent.checked);
+  elements.nimSumLegend.forEach((item) => {
+    item.hidden = !game.showNimSums;
+  });
+  if (changed !== "follow") game.renderer?.setShowNimSums?.(game.showNimSums);
+  if (changed !== "strategy") game.renderer?.setFollowCurrent?.(game.followCurrent);
+  elements.graphTooltip.hidden = true;
+  elements.graphHelp.textContent = game.followCurrent
+    ? "Moves follow the current node · drag and scroll to explore"
+    : "Camera stays put · drag and scroll to explore";
+  renderStatus();
+  if (!announceChange) return;
+  if (changed === "strategy") {
+    announce(game.showNimSums
+      ? "Nim-sums are now shown on graph nodes."
+      : "Nim-sums are now hidden on graph nodes.");
+  } else if (changed === "follow") {
+    announce(game.followCurrent
+      ? "The graph camera will follow each move."
+      : "The graph camera will stay where you place it.");
   }
 }
 
@@ -665,7 +699,7 @@ function syncFullscreen({ announceChange = true } = {}) {
   elements.workspace.classList.toggle("is-fullscreen", game.fullscreenActive);
   elements.fullscreen.textContent = game.fullscreenActive
     ? "Exit fullscreen workspace"
-    : "Enter fullscreen workspace";
+    : "Fullscreen whole workspace";
   elements.fullscreen.setAttribute("aria-pressed", String(game.fullscreenActive));
   if (game.fullscreenInitialized && game.fullscreenActive !== wasActive && announceChange) {
     announce(game.fullscreenActive ? "Fullscreen Nim workspace opened." : "Fullscreen Nim workspace closed.");
@@ -735,6 +769,12 @@ function bindControls() {
 
   elements.resetView.addEventListener("click", () => game.renderer?.resetView());
   elements.fitView.addEventListener("click", () => game.renderer?.fitView?.(350));
+  elements.showNimSums.addEventListener("change", () => {
+    syncGraphDisplay({ announceChange: true, changed: "strategy" });
+  });
+  elements.followCurrent.addEventListener("change", () => {
+    syncGraphDisplay({ announceChange: true, changed: "follow" });
+  });
   elements.fullscreen.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", syncFullscreen);
   document.addEventListener("webkitfullscreenchange", syncFullscreen);
@@ -757,6 +797,7 @@ async function initialize() {
       onNodeClick: onGraphNodeClick,
       onNodeHover: onGraphNodeHover
     });
+    syncGraphDisplay();
     elements.graphFallback.hidden = true;
   } catch (error) {
     game.renderer = null;

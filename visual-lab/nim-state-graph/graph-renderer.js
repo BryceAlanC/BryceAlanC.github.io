@@ -35,6 +35,10 @@ function colorWithOpacity(color, opacity) {
   return `rgba(${red}, ${green}, ${blue}, ${clamp(opacity, 0, 1)})`;
 }
 
+function finitePoint(point) {
+  return point && [point.x, point.y, point.z].every(Number.isFinite);
+}
+
 function nodeEmphasis(node, renderer) {
   if (
     node.id === renderer.currentId ||
@@ -43,7 +47,7 @@ function nodeEmphasis(node, renderer) {
   ) return 1;
   if (renderer.pathNodeIds.has(node.id)) return PATH_OPACITY;
   if (renderer.reachableNodeIds.has(node.id)) return FUTURE_OPACITY;
-  if (node.outcome) return LANDMARK_OPACITY;
+  if (node.outcome || node.id === renderer.startId) return LANDMARK_OPACITY;
   return node.totalStones > renderer.currentTotal
     ? BEHIND_OPACITY
     : AHEAD_INACCESSIBLE_OPACITY;
@@ -89,6 +93,9 @@ class CanvasNimGraphRenderer {
     this.previewId = null;
     this.hoverId = null;
     this.showLabels = false;
+    this.showNimSums = false;
+    this.followCurrent = true;
+    this.startId = null;
     this.yaw = -0.67;
     this.pitch = 0.28;
     this.zoom = 1;
@@ -96,10 +103,12 @@ class CanvasNimGraphRenderer {
     this.height = 1;
     this.pixelRatio = 1;
     this.center = { x: 0, y: 0, z: 0 };
+    this.viewCenter = { x: 0, y: 0, z: 0 };
     this.radius = 1;
     this.pointer = null;
     this.frame = 0;
     this.animationFrame = 0;
+    this.cameraAnimationFrame = 0;
     this.reducedMotion = prefersReducedMotion();
 
     this.boundPointerDown = this.onPointerDown.bind(this);
@@ -130,7 +139,10 @@ class CanvasNimGraphRenderer {
       : [];
     this.edges = Array.isArray(graph?.edges) ? graph.edges : [];
     this.nodeById = new Map(this.nodes.map((node) => [node.id, node]));
+    this.startId = graph?.initialNodeId ?? null;
+    this.currentId = this.startId;
     this.measureGraph();
+    this.viewCenter = { ...this.center };
     this.draw();
   }
 
@@ -144,6 +156,7 @@ class CanvasNimGraphRenderer {
     lastEdgeId,
     previewId
   } = {}) {
+    const previousCurrentId = this.currentId;
     this.currentId = currentId ?? null;
     this.legalIds = new Set(legalIds || []);
     this.pathEdgeIds = new Set(pathEdgeIds || []);
@@ -153,7 +166,27 @@ class CanvasNimGraphRenderer {
     this.currentTotal = this.nodeById.get(this.currentId)?.totalStones ?? Infinity;
     this.lastEdgeId = lastEdgeId ?? null;
     this.previewId = previewId ?? null;
+    if (this.followCurrent && this.currentId && this.currentId !== previousCurrentId) {
+      this.focusNode(this.currentId);
+    }
     this.draw();
+  }
+
+  setShowNimSums(showNimSums) {
+    this.showNimSums = Boolean(showNimSums);
+    this.draw();
+  }
+
+  setFollowCurrent(followCurrent) {
+    const nextFollowCurrent = Boolean(followCurrent);
+    if (nextFollowCurrent === this.followCurrent) return;
+    this.followCurrent = nextFollowCurrent;
+    if (!this.followCurrent) {
+      if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+      this.cameraAnimationFrame = 0;
+      return;
+    }
+    if (this.currentId) this.focusNode(this.currentId);
   }
 
   setShowLabels(showLabels) {
@@ -177,10 +210,49 @@ class CanvasNimGraphRenderer {
   }
 
   resetView() {
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+    this.cameraAnimationFrame = 0;
     this.yaw = -0.67;
     this.pitch = 0.28;
     this.zoom = 1;
+    this.viewCenter = { ...this.center };
     this.draw();
+  }
+
+  fitView() {
+    this.resetView();
+  }
+
+  focusNode(nodeId, duration = 420) {
+    const node = this.nodeById.get(nodeId);
+    if (!finitePoint(node)) return;
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+    this.cameraAnimationFrame = 0;
+    const from = { ...this.viewCenter };
+    const to = { x: node.x, y: node.y, z: node.z };
+    const animationDuration = this.reducedMotion ? 0 : Math.max(0, duration);
+    if (!animationDuration) {
+      this.viewCenter = to;
+      this.draw();
+      return;
+    }
+    const started = performance.now();
+    const animate = (now) => {
+      const rawProgress = clamp((now - started) / animationDuration, 0, 1);
+      const progress = 1 - (1 - rawProgress) ** 3;
+      this.viewCenter = {
+        x: from.x + (to.x - from.x) * progress,
+        y: from.y + (to.y - from.y) * progress,
+        z: from.z + (to.z - from.z) * progress
+      };
+      this.draw();
+      if (rawProgress < 1) {
+        this.cameraAnimationFrame = requestAnimationFrame(animate);
+      } else {
+        this.cameraAnimationFrame = 0;
+      }
+    };
+    this.cameraAnimationFrame = requestAnimationFrame(animate);
   }
 
   pulse() {
@@ -203,6 +275,7 @@ class CanvasNimGraphRenderer {
 
   destroy() {
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
     this.canvas.removeEventListener("pointerdown", this.boundPointerDown);
     this.canvas.removeEventListener("pointermove", this.boundPointerMove);
     this.canvas.removeEventListener("pointerup", this.boundPointerUp);
@@ -250,9 +323,9 @@ class CanvasNimGraphRenderer {
   }
 
   project(node) {
-    const sourceX = node.x - this.center.x;
-    const sourceY = node.y - this.center.y;
-    const sourceZ = node.z - this.center.z;
+    const sourceX = node.x - this.viewCenter.x;
+    const sourceY = node.y - this.viewCenter.y;
+    const sourceZ = node.z - this.viewCenter.z;
     const cosYaw = Math.cos(this.yaw);
     const sinYaw = Math.sin(this.yaw);
     const yawX = cosYaw * sourceX - sinYaw * sourceZ;
@@ -372,37 +445,45 @@ class CanvasNimGraphRenderer {
     const isHovered = node.id === this.hoverId;
     const isPreview = node.id === this.previewId;
     const isPath = this.pathNodeIds.has(node.id);
+    const isStart = node.id === this.startId;
     let radius = projected.radius;
     if (isLegal) radius += 1.3;
+    if (isStart) radius += 1.8;
     if (isCurrent) radius += 2.6;
 
     context.save();
     context.globalAlpha = nodeEmphasis(node, this);
 
-    if (isCurrent || isLegal || isPreview || isPath) {
+    if (isCurrent || isLegal || isPreview || isPath || isStart) {
       context.save();
       context.beginPath();
       const pulse = isCurrent && this.frame ? Math.sin(this.frame * Math.PI) * 3 : 0;
-      const halo = isCurrent ? 8 : isPath ? 3 : 4;
+      const halo = isCurrent ? 8 : isStart ? 5 : isPath ? 3 : 4;
       context.arc(projected.x, projected.y, radius + halo + pulse, 0, TAU);
       context.strokeStyle = isCurrent
         ? "rgba(255, 209, 102, 0.72)"
+        : isStart
+          ? "rgba(139, 183, 255, 0.82)"
         : isPath
           ? "rgba(107, 224, 204, 0.72)"
           : "rgba(223, 250, 244, 0.62)";
-      context.lineWidth = isCurrent ? 2.2 : isPath ? 1.6 : 1.35;
+      context.lineWidth = isCurrent ? 2.2 : isStart ? 2 : isPath ? 1.6 : 1.35;
       context.stroke();
       context.restore();
     }
 
     let outer = "#7d938a";
     let inner = "#456057";
-    if (node.nimSum === 0) {
+    if (this.showNimSums && node.nimSum === 0) {
       outer = "#efb08a";
       inner = "#7f3f29";
-    } else {
+    } else if (this.showNimSums) {
       outer = "#9be7d7";
       inner = "#167363";
+    }
+    if (isStart) {
+      outer = "#d9e8ff";
+      inner = "#4f75b5";
     }
     if (node.outcome === "victory") {
       outer = "#d9fff5";
@@ -411,7 +492,7 @@ class CanvasNimGraphRenderer {
       outer = "#ffe0d0";
       inner = "#ba5d35";
     }
-    if (isPath && !node.outcome && !isCurrent && !isLegal && !isPreview) {
+    if (isPath && !isStart && !node.outcome && !isCurrent && !isLegal && !isPreview) {
       outer = "#c9fff4";
       inner = "#32a890";
     }
@@ -460,14 +541,16 @@ class CanvasNimGraphRenderer {
 
   drawLabel(context, projected) {
     const node = projected.node;
-    const persistent = node.id === this.currentId || node.outcome || this.legalIds.has(node.id);
+    const persistent = node.id === this.currentId || node.id === this.startId || node.outcome || this.legalIds.has(node.id);
     if (!this.showLabels && !persistent && node.id !== this.hoverId && node.id !== this.previewId) return;
     if (this.showLabels && this.nodes.length > 260 && !persistent && node.id !== this.hoverId) return;
 
-    const label = node.outcome === "victory"
-      ? "VICTORY"
+    const label = node.id === this.startId
+      ? `START · [${node.piles.join(", ")}]`
+      : node.outcome === "victory"
+      ? "END · VICTORY"
       : node.outcome === "defeat"
-        ? "DEFEAT"
+        ? "END · DEFEAT"
         : `[${node.piles.join(", ")}]`;
     context.save();
     context.globalAlpha = nodeEmphasis(node, this);
@@ -484,6 +567,8 @@ class CanvasNimGraphRenderer {
     context.fill();
     context.strokeStyle = node.id === this.currentId
       ? "rgba(255, 209, 102, 0.72)"
+      : node.id === this.startId
+        ? "rgba(169, 201, 255, 0.78)"
       : "rgba(223, 248, 240, 0.24)";
     context.lineWidth = 1;
     context.stroke();
@@ -550,6 +635,8 @@ class CanvasNimGraphRenderer {
 
   onPointerDown(event) {
     if (event.button !== 0 && event.pointerType === "mouse") return;
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+    this.cameraAnimationFrame = 0;
     const point = this.pointerPosition(event);
     this.pointer = {
       id: event.pointerId,
@@ -611,6 +698,8 @@ class CanvasNimGraphRenderer {
 
   onWheel(event) {
     if (event.ctrlKey || event.metaKey) return;
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+    this.cameraAnimationFrame = 0;
     const delta = clamp(event.deltaY, -120, 120);
     const nextZoom = clamp(this.zoom * Math.exp(-delta * 0.0018), 0.55, 2.7);
     if (nextZoom === this.zoom) return;
@@ -621,6 +710,8 @@ class CanvasNimGraphRenderer {
 
   onKeyDown(event) {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (this.cameraAnimationFrame) cancelAnimationFrame(this.cameraAnimationFrame);
+    this.cameraAnimationFrame = 0;
     let handled = true;
     if (event.key === "ArrowLeft") this.yaw -= 0.12;
     else if (event.key === "ArrowRight") this.yaw += 0.12;
@@ -647,8 +738,11 @@ function edgeTargetId(edge) {
 }
 
 function forceNodeColor(node, renderer) {
-  let color = node.nimSum === 0 ? "#a95834" : "#27907b";
+  let color = renderer.showNimSums
+    ? (node.nimSum === 0 ? "#a95834" : "#27907b")
+    : "#607d74";
   if (renderer.pathNodeIds.has(node.id)) color = "#62d8c2";
+  if (node.id === renderer.startId) color = "#6f9de2";
   if (node.outcome === "victory") color = "#56e3c4";
   if (node.outcome === "defeat") color = "#f07f52";
   if (renderer.legalIds.has(node.id)) color = "#dffaf4";
@@ -679,6 +773,10 @@ class ForceNimGraphRenderer {
     this.currentTotal = Infinity;
     this.lastEdgeId = null;
     this.previewId = null;
+    this.showNimSums = false;
+    this.followCurrent = true;
+    this.startId = null;
+    this.pendingFocusId = null;
     this.nodes = [];
     this.edges = [];
     this.nodeById = new Map();
@@ -688,6 +786,10 @@ class ForceNimGraphRenderer {
     this.layoutSettling = false;
     this.pendingReset = false;
     this.resetTimer = 0;
+    this.landmarkLayer = null;
+    this.landmarkLabels = new Map();
+    this.landmarkAnimationFrame = 0;
+    this.landmarkTracking = false;
     this.reducedMotion = prefersReducedMotion();
     this.boundKeyDown = this.onKeyDown.bind(this);
 
@@ -709,8 +811,9 @@ class ForceNimGraphRenderer {
       .nodeOpacity(1)
       .nodeColor((node) => forceNodeColor(node, this))
       .nodeVal((node) => {
-        let value = node.nimSum === 0 ? 1.35 : 1;
+        let value = this.showNimSums && node.nimSum === 0 ? 1.35 : 1;
         if (this.pathNodeIds.has(node.id)) value = 1.8;
+        if (node.id === this.startId) value = 4;
         if (node.outcome) value = 4.8;
         if (this.legalIds.has(node.id)) value = 3.3;
         if (node.id === this.previewId) value = 4.2;
@@ -719,10 +822,10 @@ class ForceNimGraphRenderer {
       })
       .nodeLabel((node) => {
         const outcome = node.outcome === "victory"
-          ? "<strong>Victory</strong><br>Computer to move on an empty board"
+          ? "<strong>End · Victory</strong><br>Zero stones · computer to move"
           : node.outcome === "defeat"
-            ? "<strong>Defeat</strong><br>You to move on an empty board"
-            : `<strong>[${node.piles.join(", ")}]</strong><br>${node.turn === "human" ? "Your turn" : "Computer turn"}<br>Nim-sum ${node.nimSum} · ${node.nimSum === 0 ? "losing" : "winning"} for mover`;
+            ? "<strong>End · Defeat</strong><br>Zero stones · you to move"
+            : `<strong>${node.id === this.startId ? "Start · " : ""}[${node.piles.join(", ")}]</strong><br>${node.turn === "human" ? "Your turn" : "Computer turn"}${this.showNimSums ? `<br>Nim-sum ${node.nimSum} · ${node.nimSum === 0 ? "losing" : "winning"} for mover` : ""}`;
         return `<div class="force-node-label">${outcome}</div>`;
       })
       .linkColor((edge) => forceEdgeColor(edge, this))
@@ -769,6 +872,8 @@ class ForceNimGraphRenderer {
       controls.minDistance = 70;
       controls.maxDistance = 2400;
     }
+    this.createLandmarkLayer();
+    this.startLandmarkTracking();
     window.requestAnimationFrame(() => {
       container.querySelectorAll("canvas").forEach((canvas) => canvas.setAttribute("aria-hidden", "true"));
     });
@@ -787,8 +892,12 @@ class ForceNimGraphRenderer {
       target: edge.targetId || edge.target
     }));
     this.nodeById = new Map(this.nodes.map((node) => [node.id, node]));
+    this.startId = graphData?.initialNodeId ?? null;
+    this.currentId = this.startId;
+    this.pendingFocusId = null;
     this.layoutSettling = true;
     this.pendingReset = true;
+    this.updateLandmarkLabels();
     this.graph.graphData({ nodes: this.nodes, links: this.edges });
   }
 
@@ -802,6 +911,7 @@ class ForceNimGraphRenderer {
     lastEdgeId,
     previewId
   } = {}) {
+    const previousCurrentId = this.currentId;
     this.currentId = currentId ?? null;
     this.legalIds = new Set(legalIds || []);
     this.pathEdgeIds = new Set(pathEdgeIds || []);
@@ -812,20 +922,42 @@ class ForceNimGraphRenderer {
     this.lastEdgeId = lastEdgeId ?? null;
     this.previewId = previewId ?? null;
     this.graph.refresh();
+    if (this.followCurrent && this.currentId && this.currentId !== previousCurrentId) {
+      this.focusNode(this.currentId);
+    }
   }
 
   setShowLabels() {}
 
+  setShowNimSums(showNimSums) {
+    this.showNimSums = Boolean(showNimSums);
+    this.graph.refresh();
+  }
+
+  setFollowCurrent(followCurrent) {
+    const nextFollowCurrent = Boolean(followCurrent);
+    if (nextFollowCurrent === this.followCurrent) return;
+    this.followCurrent = nextFollowCurrent;
+    if (!this.followCurrent) {
+      this.pendingFocusId = null;
+      return;
+    }
+    if (this.currentId) this.focusNode(this.currentId);
+  }
+
   resize(width, height) {
     this.graph.width(Math.max(1, Math.round(width)));
     this.graph.height(Math.max(1, Math.round(height)));
+    this.positionLandmarkLabels();
   }
 
   fitView(duration = 350) {
+    this.pendingFocusId = null;
     this.graph.zoomToFit(this.reducedMotion ? 0 : duration, 56);
   }
 
   resetView() {
+    this.pendingFocusId = null;
     if (this.layoutSettling) {
       this.pendingReset = true;
       return;
@@ -873,6 +1005,14 @@ class ForceNimGraphRenderer {
   handleEngineStop() {
     this.layoutSettling = false;
     this.measureScene();
+    this.positionLandmarkLabels();
+    if (this.pendingFocusId && this.followCurrent) {
+      const pendingFocusId = this.pendingFocusId;
+      this.pendingFocusId = null;
+      this.pendingReset = false;
+      this.focusNode(pendingFocusId);
+      return;
+    }
     if (!this.pendingReset) return;
     this.pendingReset = false;
     this.applyResetView();
@@ -902,8 +1042,103 @@ class ForceNimGraphRenderer {
 
   destroy() {
     window.clearTimeout(this.resetTimer);
+    this.landmarkTracking = false;
+    window.cancelAnimationFrame(this.landmarkAnimationFrame);
+    this.landmarkAnimationFrame = 0;
     this.container.removeEventListener("keydown", this.boundKeyDown);
+    this.landmarkLayer?.remove();
     this.graph._destructor?.();
+  }
+
+  focusNode(nodeId, duration = 420) {
+    const node = this.nodeById.get(nodeId);
+    if (this.layoutSettling || !finitePoint(node)) {
+      this.pendingFocusId = nodeId;
+      return;
+    }
+    const position = this.graph.cameraPosition?.();
+    if (!finitePoint(position)) return;
+    const controlTarget = this.graph.controls?.()?.target;
+    const previousTarget = finitePoint(controlTarget) ? controlTarget : this.sceneCenter;
+    let offset = {
+      x: position.x - previousTarget.x,
+      y: position.y - previousTarget.y,
+      z: position.z - previousTarget.z
+    };
+    if (!finitePoint(offset) || Math.hypot(offset.x, offset.y, offset.z) < 1) {
+      const radius = Math.max(30, this.sceneRadius);
+      offset = { x: radius * 0.92, y: radius * 0.58, z: radius * 2.25 };
+    }
+    window.clearTimeout(this.resetTimer);
+    this.resetTimer = 0;
+    this.pendingFocusId = null;
+    const target = { x: node.x, y: node.y, z: node.z };
+    this.graph.cameraPosition(
+      {
+        x: target.x + offset.x,
+        y: target.y + offset.y,
+        z: target.z + offset.z
+      },
+      target,
+      this.reducedMotion ? 0 : Math.max(0, duration)
+    );
+  }
+
+  createLandmarkLayer() {
+    const layer = document.createElement("div");
+    layer.className = "graph-landmark-layer";
+    layer.setAttribute("aria-hidden", "true");
+    this.container.append(layer);
+    this.landmarkLayer = layer;
+  }
+
+  startLandmarkTracking() {
+    if (this.landmarkTracking) return;
+    this.landmarkTracking = true;
+    const update = () => {
+      if (!this.landmarkTracking) return;
+      this.positionLandmarkLabels();
+      this.landmarkAnimationFrame = window.requestAnimationFrame(update);
+    };
+    this.landmarkAnimationFrame = window.requestAnimationFrame(update);
+  }
+
+  updateLandmarkLabels() {
+    if (!this.landmarkLayer) return;
+    this.landmarkLayer.replaceChildren();
+    this.landmarkLabels.clear();
+    this.nodes.forEach((node) => {
+      const isStart = node.id === this.startId;
+      if (!isStart && !node.outcome) return;
+      const label = document.createElement("span");
+      const kind = isStart ? "start" : node.outcome === "victory" ? "victory" : "defeat";
+      label.className = `graph-landmark graph-landmark-${kind}`;
+      label.textContent = isStart
+        ? "START"
+        : node.outcome === "victory" ? "END · VICTORY" : "END · DEFEAT";
+      label.hidden = true;
+      this.landmarkLayer.append(label);
+      this.landmarkLabels.set(node.id, label);
+    });
+  }
+
+  positionLandmarkLabels() {
+    if (typeof this.graph.graph2ScreenCoords !== "function") return;
+    this.landmarkLabels.forEach((label, nodeId) => {
+      const node = this.nodeById.get(nodeId);
+      if (!finitePoint(node)) {
+        label.hidden = true;
+        return;
+      }
+      const point = this.graph.graph2ScreenCoords(node.x, node.y, node.z);
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        label.hidden = true;
+        return;
+      }
+      label.hidden = false;
+      label.style.left = `${point.x}px`;
+      label.style.top = `${point.y}px`;
+    });
   }
 
   moveCamera({ yaw = 0, pitch = 0, scale = 1 }) {
