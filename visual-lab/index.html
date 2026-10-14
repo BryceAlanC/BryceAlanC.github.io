@@ -674,6 +674,111 @@
               </div>
             </a>
 
+            <a class="lab-card lab-card-nim" href="nim-state-graph/">
+              <div class="lab-card-preview" aria-hidden="true">
+                <svg viewBox="0 0 640 390" focusable="false">
+                  <defs>
+                    <linearGradient id="nim-card-bg" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#071c18" />
+                      <stop offset="0.58" stop-color="#103b36" />
+                      <stop offset="1" stop-color="#171d29" />
+                    </linearGradient>
+                    <radialGradient id="nim-card-node-win">
+                      <stop offset="0" stop-color="#dffaf4" />
+                      <stop offset="1" stop-color="#27907b" />
+                    </radialGradient>
+                    <radialGradient id="nim-card-node-lose">
+                      <stop offset="0" stop-color="#ffe4d4" />
+                      <stop offset="1" stop-color="#a95834" />
+                    </radialGradient>
+                    <pattern id="nim-card-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+                      <path d="M26 0H0V26" fill="none" stroke="#e5f4ee" stroke-opacity="0.055" />
+                    </pattern>
+                    <marker id="nim-card-arrow" viewBox="0 0 8 8" refX="6.6" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                      <path d="M0 0 8 4 0 8Z" fill="#8aa79d" />
+                    </marker>
+                    <marker id="nim-card-arrow-active" viewBox="0 0 8 8" refX="6.6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                      <path d="M0 0 8 4 0 8Z" fill="#ffd166" />
+                    </marker>
+                    <filter id="nim-card-glow" x="-100%" y="-100%" width="300%" height="300%">
+                      <feGaussianBlur stdDeviation="7" />
+                    </filter>
+                  </defs>
+
+                  <rect width="640" height="390" fill="url(#nim-card-bg)" />
+                  <rect width="640" height="390" fill="url(#nim-card-grid)" />
+
+                  <rect x="23" y="24" width="214" height="342" fill="#fffdf7" fill-opacity="0.96" stroke="#dff8f0" stroke-opacity="0.2" />
+                  <g fill="#16352e" font-family="IBM Plex Mono, monospace" font-size="9" letter-spacing="0.8">
+                    <text x="39" y="49">TAKE FROM ONE PILE</text>
+                    <text x="39" y="346" fill="#61756e">POSITION · [3, 4, 5]</text>
+                  </g>
+                  <g transform="translate(42 82)">
+                    <g fill="#67cdbd" stroke="#0b5748" stroke-width="1.5">
+                      <circle cx="14" cy="18" r="11" /><circle cx="43" cy="18" r="11" /><circle cx="72" cy="18" r="11" />
+                    </g>
+                    <g fill="#efbd55" stroke="#9b6519" stroke-width="1.5">
+                      <circle cx="14" cy="85" r="11" /><circle cx="43" cy="85" r="11" /><circle cx="72" cy="85" r="11" /><circle cx="101" cy="85" r="11" />
+                    </g>
+                    <g fill="#67cdbd" stroke="#0b5748" stroke-width="1.5">
+                      <circle cx="14" cy="152" r="11" /><circle cx="43" cy="152" r="11" /><circle cx="72" cy="152" r="11" />
+                    </g>
+                    <g fill="#ef9b74" stroke="#a84f24" stroke-width="2">
+                      <circle cx="101" cy="152" r="11" /><circle cx="130" cy="152" r="11" />
+                    </g>
+                    <path d="M107 122v18m-6-8 6 8 6-8" fill="none" stroke="#a84f24" stroke-width="2" />
+                    <g fill="#61756e" font-family="IBM Plex Mono, monospace" font-size="8">
+                      <text x="0" y="43">PILE 1 · 3</text><text x="0" y="110">PILE 2 · 4</text><text x="0" y="177">PILE 3 · TAKE 2</text>
+                    </g>
+                  </g>
+
+                  <g fill="none" stroke="#8aa79d" stroke-opacity="0.48" stroke-width="1.25" marker-end="url(#nim-card-arrow)">
+                    <path d="M300 86 381 116" /><path d="M300 86 362 185" /><path d="M381 116 461 83" />
+                    <path d="M381 116 448 160" /><path d="M362 185 448 160" /><path d="M362 185 432 232" />
+                    <path d="M461 83 519 139" /><path d="M448 160 519 139" /><path d="M448 160 530 210" />
+                    <path d="M432 232 530 210" /><path d="M432 232 515 283" /><path d="M519 139 582 195" />
+                    <path d="M530 210 582 195" /><path d="M530 210 579 274" /><path d="M515 283 579 274" />
+                  </g>
+                  <path d="M300 86 362 185 448 160 530 210 579 274" fill="none" stroke="#ffd166" stroke-width="3" marker-mid="url(#nim-card-arrow-active)" marker-end="url(#nim-card-arrow-active)" />
+
+                  <g>
+                    <circle cx="300" cy="86" r="26" fill="#ffd166" opacity="0.16" filter="url(#nim-card-glow)" />
+                    <circle cx="300" cy="86" r="10" fill="#ffd166" stroke="#fff6cb" stroke-width="2.5" />
+                    <circle cx="381" cy="116" r="7" fill="url(#nim-card-node-win)" />
+                    <circle cx="362" cy="185" r="9" fill="url(#nim-card-node-lose)" stroke="#ffe4d4" stroke-width="1.4" />
+                    <circle cx="461" cy="83" r="7" fill="url(#nim-card-node-lose)" />
+                    <circle cx="448" cy="160" r="8" fill="url(#nim-card-node-win)" />
+                    <circle cx="432" cy="232" r="7" fill="url(#nim-card-node-win)" />
+                    <circle cx="519" cy="139" r="7" fill="url(#nim-card-node-win)" />
+                    <circle cx="530" cy="210" r="9" fill="url(#nim-card-node-lose)" stroke="#ffe4d4" stroke-width="1.4" />
+                    <circle cx="515" cy="283" r="7" fill="url(#nim-card-node-lose)" />
+                    <circle cx="582" cy="195" r="9" fill="#56e3c4" stroke="#eafffa" stroke-width="2" />
+                    <circle cx="579" cy="274" r="10" fill="#f07f52" stroke="#ffe5d8" stroke-width="2" />
+                  </g>
+
+                  <g font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="0.7">
+                    <text x="268" y="49" fill="#dff8f0">DIRECTED STATE GRAPH · 3D</text>
+                    <text x="538" y="181" fill="#73e3cd">VICTORY</text>
+                    <text x="535" y="303" fill="#f4a27e">DEFEAT</text>
+                    <text x="278" y="72" fill="#ffd166">CURRENT</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="card-topline">
+                <span>07 · Combinatorial games</span><i aria-hidden="true"></i>
+              </div>
+              <h3>Nim as a graph</h3>
+              <p class="lab-card-copy">
+                Play Nim against an optimal computer while the complete directed state
+                graph tracks every move. Take counters on the board or navigate by clicking
+                a neighboring node, then rotate the graph to see strategy as geometry.
+              </p>
+              <div class="card-meta">
+                <span>Interactive · 3D graph</span>
+                <strong>Navigate the game <span aria-hidden="true">→</span></strong>
+              </div>
+            </a>
+
           </div>
         </div>
       </section>
