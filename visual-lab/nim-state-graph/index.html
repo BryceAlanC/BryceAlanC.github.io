@@ -25,14 +25,14 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261014-2" />
+    <link rel="stylesheet" href="./style.css?v=20261014-3" />
     <script
       src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.0/dist/3d-force-graph.min.js"
       integrity="sha384-Y7bC2PBKu8ujxtvo5+Z61OeGdSVRzFsYWBK4i5dnL/U6aFDTodk61qOUkTfInaxS"
       crossorigin="anonymous"
       defer
     ></script>
-    <script type="module" src="./demo.js?v=20261014-2"></script>
+    <script type="module" src="./demo.js?v=20261014-3"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -91,6 +91,29 @@
 
       <section class="lab-app nim-app" aria-label="Nim game and directed state graph">
         <div class="lab-stage-shell nim-workspace" id="nim-workspace">
+          <div class="nim-workspace-toolbar" role="group" aria-label="Workspace display controls">
+            <fieldset class="nim-display-options">
+              <legend>Graph display</legend>
+              <label>
+                <input id="nim-show-nim-sums" type="checkbox" />
+                <span>Show nim-sums on graph nodes</span>
+              </label>
+              <label>
+                <input id="nim-follow-current" type="checkbox" checked />
+                <span>Follow moves</span>
+              </label>
+            </fieldset>
+            <button
+              class="lab-button nim-fullscreen-button"
+              id="nim-fullscreen"
+              type="button"
+              aria-controls="nim-workspace"
+              aria-pressed="false"
+            >
+              Fullscreen whole workspace
+            </button>
+          </div>
+
           <aside class="control-panel nim-controls" aria-labelledby="setup-title">
             <div class="control-intro">
               <p class="section-kicker">Starting position</p>
@@ -207,8 +230,7 @@
               <div class="graph-toolbar" aria-label="Graph view controls">
                 <button class="graph-tool" id="nim-reset-view" type="button">Reset view</button>
                 <button class="graph-tool" id="nim-fit-view" type="button">Fit graph</button>
-                <button class="graph-tool" id="nim-fullscreen" type="button" aria-pressed="false">Enter fullscreen workspace</button>
-                <span id="nim-graph-help">Drag and scroll to explore · dimmed nodes lie outside the future cone</span>
+                <span id="nim-graph-help">Moves follow the current node · drag and scroll to explore</span>
               </div>
 
               <div class="nim-graph-viewport" id="nim-graph-viewport">
@@ -226,16 +248,17 @@
                 <div class="graph-legend" aria-label="Graph legend">
                   <span><i class="legend-current" aria-hidden="true"></i>Current</span>
                   <span><i class="legend-legal" aria-hidden="true"></i>Legal move</span>
+                  <span><i class="legend-start" aria-hidden="true"></i>Start</span>
                   <span><i class="legend-path" aria-hidden="true"></i>Played path</span>
                   <span><i class="legend-dim" aria-hidden="true"></i>Outside future cone</span>
-                  <span><i class="legend-winning" aria-hidden="true"></i>Winning for mover</span>
-                  <span><i class="legend-losing" aria-hidden="true"></i>Nim-sum zero</span>
-                  <span><i class="legend-victory" aria-hidden="true"></i>Victory</span>
-                  <span><i class="legend-defeat" aria-hidden="true"></i>Defeat</span>
+                  <span class="nim-sum-legend" hidden><i class="legend-winning" aria-hidden="true"></i>Nonzero nim-sum</span>
+                  <span class="nim-sum-legend" hidden><i class="legend-losing" aria-hidden="true"></i>Zero nim-sum</span>
+                  <span><i class="legend-victory" aria-hidden="true"></i>End · Victory</span>
+                  <span><i class="legend-defeat" aria-hidden="true"></i>End · Defeat</span>
                 </div>
               </div>
               <p class="sr-only" id="nim-graph-description">
-                Arrow keys rotate the view, plus and minus zoom, and R resets it. The bright trail records the played path. Nodes outside the directed future cone are dimmed, with past states dimmed most strongly. Only highlighted neighboring nodes can be chosen as moves.
+                The starting node and both zero-stone end nodes are marked. Arrow keys rotate the view, plus and minus zoom, and R resets it. The bright trail records the played path. Nodes outside the directed future cone are dimmed, with past states dimmed most strongly. Highlighted neighboring nodes can be clicked as moves; keyboard users can choose the same destinations with the Legal next states control. Nim-sums are hidden on graph nodes unless they are shown with the graph display control.
               </p>
             </section>
 

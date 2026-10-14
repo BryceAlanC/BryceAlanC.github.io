@@ -9,11 +9,71 @@
 .nim-workspace {
   display: grid;
   grid-template-columns: minmax(285px, 325px) minmax(0, 1fr);
+  grid-template-areas:
+    "workspace-toolbar workspace-toolbar"
+    "controls experience";
   align-items: start;
   gap: 1rem;
 }
 
+.nim-workspace-toolbar {
+  grid-area: workspace-toolbar;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--hairline);
+  background: var(--white);
+}
+
+.nim-display-options {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.nim-display-options legend {
+  float: left;
+  margin-right: 0.15rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nim-display-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.nim-display-options input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.nim-fullscreen-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .nim-controls {
+  grid-area: controls;
   max-height: calc(100vh - 104px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -180,6 +240,7 @@
 }
 
 .nim-experience {
+  grid-area: experience;
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(330px, 0.38fr) minmax(430px, 0.62fr);
@@ -483,6 +544,50 @@
   overflow: hidden;
 }
 
+.graph-landmark-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.graph-landmark {
+  position: absolute;
+  display: block;
+  padding: 0.26rem 0.38rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(5, 25, 22, 0.9);
+  color: #fffdf7;
+  font-family: var(--mono);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.045em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 10px));
+  box-shadow: 0 2px 9px rgba(0, 0, 0, 0.28);
+}
+
+.graph-landmark[hidden] {
+  display: none;
+}
+
+.graph-landmark-start {
+  border-color: #a9c9ff;
+  color: #d9e8ff;
+}
+
+.graph-landmark-victory {
+  border-color: #8bf1dd;
+  color: #c9fff4;
+}
+
+.graph-landmark-defeat {
+  border-color: #f7a27d;
+  color: #ffd8c4;
+}
+
 .nim-graph-renderer:focus-visible {
   outline: 3px solid #f4a261;
   outline-offset: -4px;
@@ -587,6 +692,10 @@
   gap: 0.35rem;
 }
 
+.graph-legend .nim-sum-legend[hidden] {
+  display: none;
+}
+
 .graph-legend i {
   display: inline-block;
   width: 10px;
@@ -603,6 +712,12 @@
 .graph-legend .legend-legal {
   border: 2px solid #fffdf7;
   background: #dffaf4;
+}
+
+.graph-legend .legend-start {
+  border: 2px solid #d9e8ff;
+  background: #6f9de2;
+  box-shadow: 0 0 0 2px rgba(111, 157, 226, 0.28);
 }
 
 .graph-legend .legend-path {
@@ -655,6 +770,10 @@
   overflow: hidden;
   align-items: stretch;
   grid-template-columns: minmax(235px, 285px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "workspace-toolbar workspace-toolbar"
+    "controls experience";
   gap: 0.55rem;
   background: var(--paper-deep);
 }
@@ -715,6 +834,10 @@
 @media (max-width: 1220px) {
   .nim-workspace {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "workspace-toolbar"
+      "controls"
+      "experience";
   }
 
   .nim-controls {
@@ -759,6 +882,11 @@
   .nim-workspace.is-fullscreen {
     height: 100dvh;
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "workspace-toolbar"
+      "controls"
+      "experience";
     align-content: start;
     overflow-y: auto;
   }
@@ -782,17 +910,34 @@
     min-height: 58svh;
   }
 
-  .nim-workspace.is-fullscreen #nim-fullscreen {
-    position: fixed;
+  .nim-workspace.is-fullscreen .nim-workspace-toolbar {
+    position: sticky;
     z-index: 20;
     top: max(0.55rem, env(safe-area-inset-top));
-    right: max(0.55rem, env(safe-area-inset-right));
-    background: #0b2824;
     box-shadow: 0 4px 18px rgba(5, 25, 22, 0.28);
   }
 }
 
 @media (max-width: 700px) {
+  .nim-workspace-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nim-display-options {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nim-display-options legend {
+    margin-bottom: 0.2rem;
+  }
+
+  .nim-fullscreen-button {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .nim-controls {
     display: block;
   }
