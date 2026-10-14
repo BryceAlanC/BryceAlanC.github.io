@@ -6,7 +6,7 @@
     <title>Flows on the Circle | Bryce Christopherson</title>
     <meta
       name="description"
-      content="Explore autonomous flows on the circle through a linked phase portrait, angular-velocity graph, cut-open phase line, and bifurcation diagram."
+      content="Explore autonomous flows on the circle through a linked phase portrait, angular-velocity graph, spacetime trajectory tube, and rollable bifurcation diagram."
     />
     <meta name="author" content="Bryce A. Christopherson" />
     <meta name="theme-color" content="#0b5748" />
@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261014-2" />
-    <script type="module" src="./demo.js?v=20261014-3"></script>
+    <link rel="stylesheet" href="./style.css?v=20261014-3" />
+    <script type="module" src="./demo.js?v=20261014-4"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -75,8 +75,8 @@
             <h1>Flows on the circle</h1>
             <p class="app-hero-copy">
               See one periodic differential equation four linked ways: as motion around
-              a circle, as an angular-velocity graph, as a phase line whose endpoints are
-              joined, and as equilibrium branches traced while a parameter varies.
+              a circle, as an angular-velocity graph, as trajectories on a spacetime
+              tube, and as equilibrium branches traced while a parameter varies.
               Follow the transition between phase locking and continual rotation without
               losing sight of the underlying equation.
             </p>
@@ -268,8 +268,9 @@
               </div>
               <input id="animation-speed" type="range" min="0.2" max="2" value="1" step="0.05" />
               <p class="control-help">
-                Click any of the first three views to add the same initial condition;
-                click the bifurcation diagram to change its horizontal parameter.
+                Click the circle or velocity graph to add an initial condition. On the
+                trajectory tube, click its current-time rim. Click the bifurcation
+                diagram to change its horizontal parameter.
               </p>
             </fieldset>
 
@@ -320,7 +321,7 @@
               <div class="stage-heading circle-stage-heading">
                 <div>
                   <p class="section-kicker">One periodic equation · four linked views</p>
-                  <h2 id="visualizer-title">Phase portrait, velocity graph, lifted flow, and bifurcations</h2>
+                  <h2 id="visualizer-title">Phase portrait, velocity graph, trajectory tube, and bifurcations</h2>
                 </div>
                 <div class="stage-heading-status">
                   <div class="stage-heading-toolbar">
@@ -410,29 +411,26 @@
 
                 <section class="circle-panel lift-panel" aria-labelledby="lift-title">
                   <div class="circle-panel-heading">
-                    <div><span>03</span><h3 id="lift-title">Cut the circle open</h3></div>
-                    <p>0 and 2π are the same point</p>
+                    <div><span>03</span><h3 id="lift-title">Trajectory tube</h3></div>
+                    <p>Past → now · each cross-section is the circle</p>
                   </div>
                   <div class="canvas-frame lift-frame">
                     <canvas
                       id="lift-canvas"
                       tabindex="0"
                       role="application"
-                      aria-label="Cut-open phase line and lifted trajectories for the circle flow"
+                      aria-label="Trajectories on a transparent spacetime cylinder for the circle flow"
                       aria-describedby="lift-description"
                       aria-keyshortcuts="ArrowLeft ArrowRight Enter Space 0"
                     ></canvas>
-                    <div class="seam-labels" aria-hidden="true">
-                      <span>0</span>
-                      <span>same point</span>
-                      <span>2π</span>
-                    </div>
                   </div>
                   <p class="sr-only" id="lift-description">
-                    The circle is cut at angle zero and opened into a phase line. Its two
-                    endpoints represent the same point, so a particle leaving one end
-                    immediately returns at the other. Lifted trails keep track of complete
-                    turns while the markers show positions modulo two pi.
+                    Time runs from left to right along a transparent tube, and each
+                    elliptical cross-section is the phase circle. Bright solid curve
+                    segments are on the near side; faint dashed segments pass behind the
+                    tube. Rotating solutions wind around it, while locked solutions
+                    approach a longitudinal equilibrium line. The right rim is the
+                    current time and matches the particles in the circle portrait.
                   </p>
                 </section>
 
@@ -456,6 +454,16 @@
                   </label>
                   <div class="bifurcation-toolbar-input">
                     <select id="bifurcation-parameter" aria-controls="bifurcation-canvas"></select>
+                    <button
+                      class="lab-button bifurcation-roll-toggle"
+                      id="bifurcation-roll-toggle"
+                      type="button"
+                      aria-label="Cylindrical bifurcation view"
+                      aria-pressed="false"
+                      aria-controls="bifurcation-canvas"
+                    >
+                      <span id="bifurcation-roll-label">Roll</span>
+                    </button>
                     <span class="bifurcation-current">
                       Current:
                       <output id="bifurcation-current-value" for="bifurcation-parameter">—</output>
@@ -481,10 +489,11 @@
                   </div>
                 </div>
                 <p class="sr-only" id="bifurcation-description">
-                  Equilibrium angle is plotted vertically from zero to two pi while the
-                  selected parameter varies horizontally. The top and bottom edges are
-                  the same point on the circle. Solid green traces are stable, dashed
-                  rust traces are unstable, and gold marks nonhyperbolic critical points and the current
+                  Equilibrium angle and the selected parameter are shown either on a
+                  plane or on a transparent cylinder. In the cylindrical view, the
+                  parameter runs along the tube and equilibrium angle wraps around its
+                  circumference. Solid green traces are stable, dashed rust traces are
+                  unstable, and gold marks nonhyperbolic critical points and the current
                   parameter slice. Click or drag horizontally to set the parameter. Use
                   the left and right arrow keys to adjust it, Home and End for its bounds,
                   and Space to start or pause its animation.
@@ -518,11 +527,20 @@
                   near the vanished pair: the infinite-period bottleneck.
                 </p>
                 <p class="app-note">
-                  <strong>The bifurcation cylinder.</strong> The diagram plots each
-                  equilibrium angle against one chosen parameter while holding the other
-                  parameters fixed. Its top and bottom edges both represent the circle
-                  seam <span class="nowrap">0 = 2π</span>. The gold vertical slice is the
-                  parameter value used by the other three views.
+                  <strong>The trajectory tube.</strong> The tube is
+                  <span class="nowrap">time × S¹</span>. A solution
+                  <span class="nowrap">t ↦ θ(t)</span> is a curve on its surface.
+                  Rotation winds around the tube, while phase locking approaches a
+                  longitudinal equilibrium line. When a parameter is animated, the tube
+                  records the resulting time-dependent motion.
+                </p>
+                <p class="app-note">
+                  <strong>Rolling the bifurcation diagram.</strong> The plane plots each
+                  equilibrium angle against one chosen parameter while holding the others
+                  fixed; its top and bottom edges represent the same circle seam
+                  <span class="nowrap">0 = 2π</span>. Rolling the plane joins those edges
+                  into a cylinder. The gold slice is the parameter value used by the
+                  other three views.
                 </p>
                 <p class="app-note">
                   <strong>Pitchforks and symmetry.</strong> In the symmetric pitchfork

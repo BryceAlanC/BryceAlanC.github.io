@@ -531,7 +531,7 @@
 
 .bifurcation-toolbar-input {
   display: flex;
-  min-width: min(430px, 52%);
+  min-width: min(520px, 62%);
   align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
@@ -548,6 +548,24 @@
   color: var(--ink);
   font-family: var(--mono);
   font-size: 0.74rem;
+}
+
+.bifurcation-roll-toggle {
+  min-width: 4.8rem;
+  min-height: 44px;
+  border-color: rgba(11, 87, 72, 0.38);
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bifurcation-roll-toggle[aria-pressed="true"] {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: var(--white);
 }
 
 .bifurcation-current {
@@ -821,38 +839,6 @@
   background: var(--gold);
 }
 
-.seam-labels {
-  position: absolute;
-  z-index: 2;
-  right: 1rem;
-  bottom: 0.6rem;
-  left: 1rem;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.04em;
-  pointer-events: none;
-  text-transform: uppercase;
-}
-
-.seam-labels span:nth-child(2) {
-  position: relative;
-  text-align: center;
-}
-
-.seam-labels span:nth-child(2)::before,
-.seam-labels span:nth-child(2)::after {
-  display: inline-block;
-  width: min(18%, 58px);
-  height: 1px;
-  margin: 0 0.45rem 0.18rem;
-  background: rgba(11, 87, 72, 0.28);
-  content: "";
-}
-
 .regime-note {
   position: absolute;
   z-index: 3;
@@ -1090,7 +1076,26 @@
   }
 
   .bifurcation-toolbar {
+    display: grid;
+    gap: 0.65rem;
     padding-inline: 0.75rem;
+  }
+
+  .bifurcation-toolbar-input {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.45rem;
+  }
+
+  .bifurcation-toolbar select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .bifurcation-current {
+    min-width: 0;
   }
 
   .portrait-legend,
@@ -1136,6 +1141,7 @@
   .bifurcation-toolbar-input {
     display: grid;
     min-width: 0;
+    grid-template-columns: 1fr;
     justify-content: stretch;
     gap: 0.45rem;
   }
@@ -1169,16 +1175,13 @@
     display: none;
   }
 
-  .seam-labels span:nth-child(2)::before,
-  .seam-labels span:nth-child(2)::after {
-    display: none;
-  }
 }
 
 @media (forced-colors: active) {
   .parameter-value-input,
   .parameter-play,
   .workspace-fullscreen-toggle,
+  .bifurcation-roll-toggle,
   .equilibrium-card,
   .equation-card,
   .regime-note {
@@ -1443,5 +1446,221 @@
   #circle-flow-workspace.is-fullscreen .circle-workbench {
     display: block;
     height: auto;
+  }
+}
+
+/* On a desktop teaching display, use the second dimension of the screen:
+   the three linked motion views and the bifurcation view sit side by side.
+   The control column may still scroll for parameter-heavy workshop families,
+   but the visualization stage itself always fits in the fullscreen viewport. */
+@media (min-width: 1180px) and (min-height: 700px) {
+  #circle-flow-workspace:fullscreen,
+  #circle-flow-workspace.is-fullscreen {
+    grid-template-columns: clamp(290px, 22vw, 320px) minmax(0, 1fr);
+  }
+
+  #circle-flow-workspace:fullscreen .control-panel,
+  #circle-flow-workspace.is-fullscreen .control-panel {
+    padding: 0.75rem;
+    scrollbar-gutter: stable;
+  }
+
+  #circle-flow-workspace:fullscreen .control-intro h2,
+  #circle-flow-workspace.is-fullscreen .control-intro h2 {
+    font-size: 1.35rem;
+  }
+
+  #circle-flow-workspace:fullscreen .control-intro,
+  #circle-flow-workspace.is-fullscreen .control-intro {
+    display: block;
+    padding-bottom: 0;
+  }
+
+  #circle-flow-workspace:fullscreen .control-intro p,
+  #circle-flow-workspace.is-fullscreen .control-intro p {
+    margin: 0.35rem 0 0.7rem;
+    font-size: 0.76rem;
+  }
+
+  #circle-flow-workspace:fullscreen .control-group,
+  #circle-flow-workspace.is-fullscreen .control-group {
+    padding-block: 0.7rem;
+  }
+
+  #circle-flow-workspace:fullscreen .equation-card,
+  #circle-flow-workspace.is-fullscreen .equation-card {
+    margin-top: 0.5rem;
+    padding: 0.6rem;
+  }
+
+  #circle-flow-workspace:fullscreen .parameter-control + .parameter-control,
+  #circle-flow-workspace.is-fullscreen .parameter-control + .parameter-control {
+    margin-top: 0.55rem;
+  }
+
+  #circle-flow-workspace:fullscreen .equilibrium-card,
+  #circle-flow-workspace.is-fullscreen .equilibrium-card {
+    margin-top: 0.65rem;
+    padding: 0.6rem;
+  }
+
+  #circle-flow-workspace:fullscreen #equilibrium-list,
+  #circle-flow-workspace.is-fullscreen #equilibrium-list {
+    max-height: 102px;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  #circle-flow-workspace:fullscreen .keyboard-help,
+  #circle-flow-workspace.is-fullscreen .keyboard-help {
+    display: none;
+  }
+
+  #circle-flow-workspace:fullscreen .stage-stack,
+  #circle-flow-workspace.is-fullscreen .stage-stack {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  #circle-flow-workspace:fullscreen .stage-panel,
+  #circle-flow-workspace.is-fullscreen .stage-panel {
+    display: grid;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1.25fr) minmax(400px, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-stage-heading,
+  #circle-flow-workspace.is-fullscreen .circle-stage-heading {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    min-height: 80px;
+    padding: 0.65rem 0.85rem;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-stage-heading h2,
+  #circle-flow-workspace.is-fullscreen .circle-stage-heading h2 {
+    font-size: 1.35rem;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-workbench,
+  #circle-flow-workspace.is-fullscreen .circle-workbench {
+    grid-row: 2;
+    grid-column: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1.18fr) minmax(220px, 0.82fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  #circle-flow-workspace:fullscreen .circle-workbench .circle-panel-heading,
+  #circle-flow-workspace.is-fullscreen .circle-workbench .circle-panel-heading,
+  #circle-flow-workspace:fullscreen .bifurcation-panel-heading,
+  #circle-flow-workspace.is-fullscreen .bifurcation-panel-heading {
+    min-height: 52px;
+    padding: 0.55rem 0.7rem;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-workbench .circle-panel-heading h3,
+  #circle-flow-workspace.is-fullscreen .circle-workbench .circle-panel-heading h3,
+  #circle-flow-workspace:fullscreen .bifurcation-panel-heading h3,
+  #circle-flow-workspace.is-fullscreen .bifurcation-panel-heading h3 {
+    font-size: 1.02rem;
+  }
+
+  #circle-flow-workspace:fullscreen .circle-workbench .circle-panel-heading p,
+  #circle-flow-workspace.is-fullscreen .circle-workbench .circle-panel-heading p {
+    display: none;
+  }
+
+  #circle-flow-workspace:fullscreen .portrait-frame,
+  #circle-flow-workspace.is-fullscreen .portrait-frame,
+  #circle-flow-workspace:fullscreen .velocity-frame,
+  #circle-flow-workspace.is-fullscreen .velocity-frame,
+  #circle-flow-workspace:fullscreen .lift-frame,
+  #circle-flow-workspace.is-fullscreen .lift-frame {
+    height: calc(100% - 52px);
+    min-height: 0;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-panel,
+  #circle-flow-workspace.is-fullscreen .bifurcation-panel {
+    display: grid;
+    grid-row: 2;
+    grid-column: 2;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: hidden;
+    border-top: 0;
+    border-left: 1px solid rgba(23, 33, 29, 0.16);
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-toolbar,
+  #circle-flow-workspace.is-fullscreen .bifurcation-toolbar {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.5rem 0.7rem;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-toolbar label small,
+  #circle-flow-workspace.is-fullscreen .bifurcation-toolbar label small {
+    display: none;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-toolbar-input,
+  #circle-flow-workspace.is-fullscreen .bifurcation-toolbar-input {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.45rem;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-toolbar select,
+  #circle-flow-workspace.is-fullscreen .bifurcation-toolbar select {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding-block: 0.4rem;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-roll-toggle,
+  #circle-flow-workspace.is-fullscreen .bifurcation-roll-toggle {
+    min-width: 4.25rem;
+    min-height: 38px;
+    padding: 0.4rem 0.55rem;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-current,
+  #circle-flow-workspace.is-fullscreen .bifurcation-current {
+    min-width: 0;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  #circle-flow-workspace:fullscreen .bifurcation-frame,
+  #circle-flow-workspace.is-fullscreen .bifurcation-frame {
+    width: min(100%, 820px, calc(133.333vh - 340px));
+    width: min(100%, 820px, calc(133.333dvh - 340px));
+    height: auto;
+    min-height: 0;
+    align-self: center;
+    justify-self: center;
+    aspect-ratio: 4 / 3;
+  }
+
+  #circle-flow-workspace:fullscreen .regime-note,
+  #circle-flow-workspace.is-fullscreen .regime-note {
+    width: min(260px, calc(58% - 1.3rem));
+    padding: 0.5rem 0.6rem;
   }
 }

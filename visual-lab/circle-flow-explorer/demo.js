@@ -69,8 +69,11 @@ const elements = {
   velocityCanvas: byId("velocity-canvas"),
   liftCanvas: byId("lift-canvas"),
   bifurcationParameter: byId("bifurcation-parameter"),
+  bifurcationRollToggle: byId("bifurcation-roll-toggle"),
+  bifurcationRollLabel: byId("bifurcation-roll-label"),
   bifurcationCurrentValue: byId("bifurcation-current-value"),
   bifurcationCanvas: byId("bifurcation-canvas"),
+  bifurcationDescription: byId("bifurcation-description"),
   elapsedTime: byId("elapsed-time"),
   selectedAngleReadout: byId("selected-angle-readout"),
   lapCount: byId("lap-count"),
@@ -192,14 +195,15 @@ const state = {
   pointer: null,
   circleGeometry: null,
   velocityPlot: null,
-  liftPhaseLine: null,
+  trajectoryTube: null,
   bifurcation: {
     data: null,
     cacheKey: "",
     pending: false,
     lastSampleTime: -Infinity,
     plot: null,
-    pointerId: null
+    pointerId: null,
+    view: "plane"
   },
   fullscreenInitialized: false,
   lastAnnouncement: "",
@@ -438,6 +442,31 @@ function formatBifurcationParameterValue(name, value) {
     : formatNumber(value, 3);
 }
 
+function syncBifurcationViewControl() {
+  const rolled = state.bifurcation.view === "tube";
+  if (elements.bifurcationCanvas) {
+    elements.bifurcationCanvas.dataset.view = rolled ? "tube" : "plane";
+  }
+  if (elements.bifurcationRollToggle) {
+    elements.bifurcationRollToggle.setAttribute("aria-pressed", String(rolled));
+    elements.bifurcationRollToggle.setAttribute(
+      "aria-label",
+      rolled ? "Unroll bifurcation diagram" : "Roll bifurcation diagram"
+    );
+    elements.bifurcationRollToggle.title = rolled
+      ? "Unroll the bifurcation cylinder into a plane"
+      : "Roll the planar bifurcation diagram into a cylinder";
+  }
+  if (elements.bifurcationRollLabel) {
+    elements.bifurcationRollLabel.textContent = rolled ? "Unroll" : "Roll";
+  }
+  if (elements.bifurcationDescription) {
+    elements.bifurcationDescription.textContent = rolled
+      ? "The selected parameter runs along a transparent cylinder while equilibrium angle wraps around its circumference. Solid green traces are stable, dashed rust traces are unstable, and gold marks nonhyperbolic critical points and the current parameter slice. Faint traces pass behind the tube. Click or drag horizontally to set the parameter. Use the left and right arrow keys to adjust it, Home and End for its bounds, and Space to start or pause its animation."
+      : "Equilibrium angle is plotted vertically from zero to two pi while the selected parameter varies horizontally. The top and bottom edges are the same point on the circle. Solid green traces are stable, dashed rust traces are unstable, and gold marks nonhyperbolic critical points and the current parameter slice. Click or drag horizontally to set the parameter. Use the left and right arrow keys to adjust it, Home and End for its bounds, and Space to start or pause its animation.";
+  }
+}
+
 function updateBifurcationAccessibility() {
   const name = selectedBifurcationParameter();
   const config = PARAMETER_PLAYER_CONFIG[name];
@@ -446,7 +475,11 @@ function updateBifurcationAccessibility() {
   const formatted = formatBifurcationParameterValue(name, value);
   elements.bifurcationCurrentValue.value = formatted;
   elements.bifurcationCurrentValue.textContent = formatted;
-  elements.bifurcationCanvas.setAttribute("aria-label", `${parameterPlayerLabel(name)} bifurcation parameter`);
+  const viewLabel = state.bifurcation.view === "tube" ? "cylindrical" : "planar";
+  elements.bifurcationCanvas.setAttribute(
+    "aria-label",
+    `${parameterPlayerLabel(name)} bifurcation parameter, ${viewLabel} view`
+  );
   elements.bifurcationCanvas.setAttribute("aria-valuemin", config.control.min);
   elements.bifurcationCanvas.setAttribute("aria-valuemax", config.control.max);
   elements.bifurcationCanvas.setAttribute("aria-valuenow", String(value));
@@ -454,6 +487,7 @@ function updateBifurcationAccessibility() {
     "aria-valuetext",
     name === "phase" ? `${formatNumber(value / Math.PI, 3)} pi radians` : formatted
   );
+  syncBifurcationViewControl();
 }
 
 function bifurcationCacheKey() {
@@ -1172,206 +1206,325 @@ function drawVelocityGraph() {
   drawParticle(context, selectedX, selectedY, 4.5, 1);
 }
 
-function liftedRange(recentTrails) {
-  let minimum = Infinity;
-  let maximum = -Infinity;
-  for (const trail of recentTrails) {
-    for (const point of trail) {
-      minimum = Math.min(minimum, point.lifted);
-      maximum = Math.max(maximum, point.lifted);
-    }
-  }
-  if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) {
-    minimum = 0;
-    maximum = TWO_PI;
-  }
-  const padding = Math.max(0.25, (maximum - minimum) * 0.08);
-  minimum -= padding;
-  maximum += padding;
-  if (maximum - minimum < TWO_PI * 0.75) {
-    const center = (minimum + maximum) / 2;
-    minimum = center - TWO_PI * 0.375;
-    maximum = center + TWO_PI * 0.375;
-  }
-  return [minimum, maximum];
+function cylinderPoint(geometry, position, angle) {
+  return {
+    x: lerp(geometry.startX, geometry.endX, position) + geometry.radiusX * Math.cos(angle),
+    y: geometry.centerY - geometry.radiusY * Math.sin(angle),
+    depth: Math.cos(angle)
+  };
 }
 
-function drawLiftedFlow() {
+function traceCylinderRing(context, geometry, position, startAngle, endAngle, steps = 36) {
+  for (let index = 0; index <= steps; index += 1) {
+    const angle = lerp(startAngle, endAngle, index / steps);
+    const point = cylinderPoint(geometry, position, angle);
+    if (index === 0) context.moveTo(point.x, point.y);
+    else context.lineTo(point.x, point.y);
+  }
+}
+
+function traceCylinderShell(context, geometry) {
+  const steps = 28;
+  const topStart = cylinderPoint(geometry, 0, Math.PI / 2);
+  const topEnd = cylinderPoint(geometry, 1, Math.PI / 2);
+  context.moveTo(topStart.x, topStart.y);
+  context.lineTo(topEnd.x, topEnd.y);
+  for (let index = 1; index <= steps; index += 1) {
+    const angle = lerp(Math.PI / 2, -Math.PI / 2, index / steps);
+    const point = cylinderPoint(geometry, 1, angle);
+    context.lineTo(point.x, point.y);
+  }
+  const bottomStart = cylinderPoint(geometry, 0, -Math.PI / 2);
+  context.lineTo(bottomStart.x, bottomStart.y);
+  for (let index = 1; index <= steps; index += 1) {
+    const angle = lerp(-Math.PI / 2, -3 * Math.PI / 2, index / steps);
+    const point = cylinderPoint(geometry, 0, angle);
+    context.lineTo(point.x, point.y);
+  }
+  context.closePath();
+}
+
+function drawCylinderRing(context, geometry, position, front, options = {}) {
+  context.save();
+  context.strokeStyle = options.strokeStyle || "rgba(11, 87, 72, 0.2)";
+  context.lineWidth = options.lineWidth || 1;
+  context.setLineDash(options.dash || []);
+  context.beginPath();
+  if (front) traceCylinderRing(context, geometry, position, -Math.PI / 2, Math.PI / 2);
+  else traceCylinderRing(context, geometry, position, Math.PI / 2, 3 * Math.PI / 2);
+  context.stroke();
+  context.restore();
+}
+
+function drawCylinderGenerator(context, geometry, angle, options = {}) {
+  const start = cylinderPoint(geometry, 0, angle);
+  const end = cylinderPoint(geometry, 1, angle);
+  context.save();
+  context.strokeStyle = options.strokeStyle || "rgba(11, 87, 72, 0.2)";
+  context.lineWidth = options.lineWidth || 1;
+  context.setLineDash(options.dash || []);
+  context.beginPath();
+  context.moveTo(start.x, start.y);
+  context.lineTo(end.x, end.y);
+  context.stroke();
+  context.restore();
+}
+
+function drawCylinderShell(context, geometry, options = {}) {
+  context.save();
+  context.fillStyle = options.fillStyle || "rgba(98, 200, 181, 0.07)";
+  context.beginPath();
+  traceCylinderShell(context, geometry);
+  context.fill();
+  context.strokeStyle = options.strokeStyle || "rgba(11, 87, 72, 0.28)";
+  context.lineWidth = options.lineWidth || 1.1;
+  context.beginPath();
+  traceCylinderShell(context, geometry);
+  context.stroke();
+  context.restore();
+}
+
+function equilibriumTubeStyle(equilibrium, front) {
+  if (equilibrium.stability === "stable") {
+    return {
+      strokeStyle: front ? "rgba(11, 87, 72, 0.72)" : "rgba(11, 87, 72, 0.2)",
+      lineWidth: front ? 1.8 : 1.1,
+      dash: []
+    };
+  }
+  if (equilibrium.stability === "unstable") {
+    return {
+      strokeStyle: front ? "rgba(168, 79, 36, 0.68)" : "rgba(168, 79, 36, 0.18)",
+      lineWidth: front ? 1.6 : 1,
+      dash: [4, 4]
+    };
+  }
+  return {
+    strokeStyle: front ? "rgba(138, 98, 0, 0.72)" : "rgba(138, 98, 0, 0.2)",
+    lineWidth: front ? 1.7 : 1,
+    dash: [2, 4]
+  };
+}
+
+function drawTrajectorySegments(context, geometry, series, startTime, endTime, front) {
+  for (const { particle, trail } of series) {
+    if (trail.length < 2) continue;
+    const highlighted = particle.id === state.activeParticleId;
+    context.save();
+    context.strokeStyle = highlighted
+      ? front ? "rgba(138, 98, 0, 0.96)" : "rgba(138, 98, 0, 0.3)"
+      : front ? "rgba(11, 87, 72, 0.7)" : "rgba(11, 87, 72, 0.22)";
+    context.lineWidth = highlighted ? (front ? 2.6 : 1.6) : (front ? 1.55 : 1.05);
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.setLineDash(front ? [] : [3, 4]);
+    context.beginPath();
+    let drawing = false;
+    for (let index = 1; index < trail.length; index += 1) {
+      const previous = trail[index - 1];
+      const current = trail[index];
+      const midpointDepth = Math.cos((previous.lifted + current.lifted) / 2);
+      const belongs = front ? midpointDepth >= -1e-8 : midpointDepth < -1e-8;
+      if (!belongs) {
+        drawing = false;
+        continue;
+      }
+      const start = cylinderPoint(
+        geometry,
+        clamp(inverseLerp(startTime, endTime, previous.t), 0, 1),
+        previous.lifted
+      );
+      const end = cylinderPoint(
+        geometry,
+        clamp(inverseLerp(startTime, endTime, current.t), 0, 1),
+        current.lifted
+      );
+      if (!drawing) context.moveTo(start.x, start.y);
+      context.lineTo(end.x, end.y);
+      drawing = true;
+    }
+    context.stroke();
+    context.restore();
+  }
+}
+
+function drawTrajectoryTube() {
   if (!state.flow) return;
   const { context, width, height } = canvasSurface(elements.liftCanvas);
   context.fillStyle = COLORS.paper;
   context.fillRect(0, 0, width, height);
 
-  const phaseY = height - 54;
-  const lineLeft = 46;
-  const lineRight = width - 18;
-  state.liftPhaseLine = { left: lineLeft, right: lineRight, y: phaseY };
-  const graph = {
-    left: lineLeft,
-    right: lineRight,
-    top: 17,
-    bottom: Math.max(74, phaseY - 39)
+  const top = 18;
+  const bottom = Math.max(top + 76, height - 42);
+  const radiusY = Math.min(72, Math.max(30, (bottom - top) * 0.34));
+  const radiusX = Math.min(22, Math.max(13, radiusY * 0.28));
+  const geometry = {
+    startX: 24 + radiusX,
+    endX: Math.max(24 + radiusX + 54, width - 24 - radiusX),
+    centerY: (top + bottom) / 2,
+    radiusX,
+    radiusY
   };
+  state.trajectoryTube = geometry;
+
   const timeSpan = 8;
   const startTime = Math.max(0, state.elapsed - timeSpan);
   const endTime = Math.max(startTime + 0.001, state.elapsed);
-  const recentTrails = state.particles.map((particle) => particle.trail.filter((point) => point.t >= startTime));
-  const [liftMinimum, liftMaximum] = liftedRange(recentTrails);
+  const series = state.particles.map((particle) => ({
+    particle,
+    trail: particle.trail.filter((point) => point.t >= startTime)
+  }));
 
-  const mapTime = (time) => lerp(graph.left, graph.right, inverseLerp(startTime, endTime, time));
-  const mapLift = (lift) => lerp(graph.bottom, graph.top, inverseLerp(liftMinimum, liftMaximum, lift));
-
-  context.save();
-  context.beginPath();
-  context.rect(graph.left, graph.top, graph.right - graph.left, graph.bottom - graph.top);
-  context.clip();
-  const firstTurn = Math.ceil(liftMinimum / TWO_PI);
-  const lastTurn = Math.floor(liftMaximum / TWO_PI);
-  context.font = "9px 'IBM Plex Mono', monospace";
-  for (let turn = firstTurn; turn <= lastTurn; turn += 1) {
-    const y = mapLift(turn * TWO_PI);
-    context.strokeStyle = "rgba(11, 87, 72, 0.14)";
-    context.setLineDash([3, 5]);
-    context.beginPath();
-    context.moveTo(graph.left, y);
-    context.lineTo(graph.right, y);
-    context.stroke();
-    context.fillStyle = "rgba(71, 92, 84, 0.68)";
-    context.textAlign = "left";
-    context.fillText(`${turn} turn${Math.abs(turn) === 1 ? "" : "s"}`, graph.left + 4, y - 4);
+  for (const position of [0, 0.25, 0.5, 0.75, 1]) {
+    drawCylinderRing(context, geometry, position, false, {
+      strokeStyle: "rgba(11, 87, 72, 0.11)",
+      dash: [3, 4]
+    });
   }
-  context.setLineDash([]);
+  drawCylinderGenerator(context, geometry, Math.PI, {
+    strokeStyle: "rgba(11, 87, 72, 0.1)",
+    dash: [3, 5]
+  });
 
-  if (elements.showEquilibriumParticles.checked && state.analysis.equilibriumCount !== Infinity) {
+  if (state.analysis.equilibriumCount !== Infinity) {
     for (const equilibrium of state.analysis.equilibria) {
-      const minCopy = Math.floor((liftMinimum - equilibrium.angle) / TWO_PI) - 1;
-      const maxCopy = Math.ceil((liftMaximum - equilibrium.angle) / TWO_PI) + 1;
-      for (let copy = minCopy; copy <= maxCopy; copy += 1) {
-        const lift = equilibrium.angle + copy * TWO_PI;
-        if (lift < liftMinimum || lift > liftMaximum) continue;
-        const y = mapLift(lift);
-        context.strokeStyle = equilibrium.stability === "stable"
-          ? "rgba(11, 87, 72, 0.20)"
-          : equilibrium.stability === "unstable"
-            ? "rgba(168, 79, 36, 0.18)"
-            : "rgba(138, 98, 0, 0.24)";
-        context.setLineDash(equilibrium.stability === "stable" ? [] : [4, 5]);
-        context.beginPath();
-        context.moveTo(graph.left, y);
-        context.lineTo(graph.right, y);
-        context.stroke();
+      if (Math.cos(equilibrium.angle) < 0) {
+        if (elements.showEquilibriumParticles.checked) {
+          drawCylinderGenerator(context, geometry, equilibrium.angle, equilibriumTubeStyle(equilibrium, false));
+        }
+        const endpoint = cylinderPoint(geometry, 1, equilibrium.angle);
+        context.save();
+        context.globalAlpha = 0.34;
+        drawEquilibriumMarker(context, endpoint.x, endpoint.y, equilibrium, {
+          dark: false,
+          radius: 3.6
+        });
+        context.restore();
       }
     }
   }
-
   if (elements.showTrails.checked) {
-    recentTrails.forEach((trail, particleIndex) => {
-      if (trail.length < 2) return;
-      const highlighted = state.particles[particleIndex]?.id === state.activeParticleId;
-      context.strokeStyle = highlighted
-        ? "rgba(138, 98, 0, 0.88)"
-        : "rgba(11, 87, 72, 0.48)";
-      context.lineWidth = highlighted ? 2 : 1.2;
-      context.lineJoin = "round";
-      context.beginPath();
-      trail.forEach((point, index) => {
-        const x = mapTime(point.t);
-        const y = mapLift(point.lifted);
-        if (index === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      });
-      context.stroke();
+    drawTrajectorySegments(context, geometry, series, startTime, endTime, false);
+  }
+  for (const particle of state.particles) {
+    if (Math.cos(particle.lifted) >= 0) continue;
+    const point = cylinderPoint(geometry, 1, particle.lifted);
+    drawParticle(context, point.x, point.y, particle.ambient ? 2.5 : 3.8, particle.ambient ? 0.25 : 0.4);
+  }
+
+  drawCylinderShell(context, geometry, {
+    fillStyle: "rgba(98, 200, 181, 0.075)",
+    strokeStyle: "rgba(11, 87, 72, 0.28)"
+  });
+
+  for (const position of [0, 0.25, 0.5, 0.75, 1]) {
+    drawCylinderRing(context, geometry, position, true, {
+      strokeStyle: position === 1 ? "rgba(11, 87, 72, 0.48)" : "rgba(11, 87, 72, 0.2)",
+      lineWidth: position === 1 ? 1.4 : 1
     });
   }
-  context.restore();
-
-  context.save();
-  context.strokeStyle = "rgba(23, 33, 29, 0.25)";
-  context.lineWidth = 1;
-  context.strokeRect(graph.left, graph.top, graph.right - graph.left, graph.bottom - graph.top);
-  context.fillStyle = COLORS.muted;
-  context.font = "9px 'IBM Plex Mono', monospace";
-  context.textAlign = "left";
-  const liftSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "Φ" : "Θ";
-  context.fillText(`lift ${liftSymbol}(t)`, graph.left + 4, graph.top + 11);
-  context.fillText(`${formatNumber(startTime, 1)} s`, graph.left, graph.bottom + 12);
-  context.textAlign = "right";
-  context.fillText(`${formatNumber(endTime, 1)} s`, graph.right, graph.bottom + 12);
-  context.restore();
-
-  context.save();
-  context.strokeStyle = "rgba(23, 33, 29, 0.45)";
-  context.lineWidth = 1.5;
-  context.beginPath();
-  context.moveTo(lineLeft, phaseY);
-  context.lineTo(lineRight, phaseY);
-  context.stroke();
-  context.strokeStyle = "rgba(138, 98, 0, 0.58)";
-  context.setLineDash([3, 4]);
-  context.beginPath();
-  context.moveTo(lineLeft, phaseY - 17);
-  context.lineTo(lineLeft, phaseY + 15);
-  context.moveTo(lineRight, phaseY - 17);
-  context.lineTo(lineRight, phaseY + 15);
-  context.stroke();
-  context.restore();
-
-  if (elements.showArrows.checked) {
-    const arrowCount = Math.max(8, Math.min(15, Math.round((lineRight - lineLeft) / 35)));
-    for (let index = 0; index < arrowCount; index += 1) {
-      const angle = TWO_PI * (index + 0.5) / arrowCount;
-      const velocity = evaluateFlow(state.flow, angle);
-      if (Math.abs(velocity) < state.maximumVelocity * 0.012) continue;
-      const center = lerp(lineLeft, lineRight, angle / TWO_PI);
-      const sign = Math.sign(velocity);
-      const length = 7 + 14 * Math.min(1, Math.abs(velocity) / state.maximumVelocity);
-      drawArrow(
-        context,
-        center - sign * length * 0.5,
-        phaseY,
-        center + sign * length * 0.5,
-        phaseY,
-        velocity >= 0 ? COLORS.forest : COLORS.rust,
-        1.25,
-        4
-      );
-    }
+  for (const angle of [0, Math.PI / 2, 3 * Math.PI / 2]) {
+    drawCylinderGenerator(context, geometry, angle, {
+      strokeStyle: Math.abs(Math.cos(angle)) < 0.1
+        ? "rgba(11, 87, 72, 0.28)"
+        : "rgba(11, 87, 72, 0.18)"
+    });
   }
 
   if (state.analysis.equilibriumCount !== Infinity) {
     for (const equilibrium of state.analysis.equilibria) {
-      const x = lerp(lineLeft, lineRight, equilibrium.angle / TWO_PI);
-      drawEquilibriumMarker(context, x, phaseY, equilibrium, { dark: false, radius: 5.7 });
-      if (elements.showEquilibriumParticles.checked) drawParticle(context, x, phaseY, 2.35, 0.7);
+      if (Math.cos(equilibrium.angle) >= 0) {
+        if (elements.showEquilibriumParticles.checked) {
+          drawCylinderGenerator(context, geometry, equilibrium.angle, equilibriumTubeStyle(equilibrium, true));
+        }
+        const endpoint = cylinderPoint(geometry, 1, equilibrium.angle);
+        drawEquilibriumMarker(context, endpoint.x, endpoint.y, equilibrium, {
+          dark: false,
+          radius: 4.5
+        });
+      }
+    }
+  }
+  if (elements.showTrails.checked) {
+    drawTrajectorySegments(context, geometry, series, startTime, endTime, true);
+  }
+
+  if (elements.showArrows.checked) {
+    for (const { particle, trail } of series) {
+      if (trail.length < 2 || (particle.ambient && particle.id !== state.activeParticleId)) continue;
+      const previous = trail[Math.max(0, trail.length - 2)];
+      const current = trail[trail.length - 1];
+      const start = cylinderPoint(
+        geometry,
+        clamp(inverseLerp(startTime, endTime, previous.t), 0, 1),
+        previous.lifted
+      );
+      const end = cylinderPoint(
+        geometry,
+        clamp(inverseLerp(startTime, endTime, current.t), 0, 1),
+        current.lifted
+      );
+      if (Math.hypot(end.x - start.x, end.y - start.y) > 2.5) {
+        drawArrow(
+          context,
+          start.x,
+          start.y,
+          end.x,
+          end.y,
+          particle.id === state.activeParticleId ? COLORS.goldDark : COLORS.forest,
+          1.2,
+          3.5
+        );
+      }
     }
   }
 
   for (const particle of state.particles) {
-    const angle = wrapAngle(particle.lifted);
-    const x = lerp(lineLeft, lineRight, angle / TWO_PI);
-    drawParticle(context, x, phaseY + particle.lane * 0.35, particle.ambient ? 2.8 : 4.2, particle.ambient ? 0.72 : 1);
-    const seamDistance = Math.min(angle, TWO_PI - angle);
-    if (seamDistance < 0.08) {
-      const ghostX = angle < 0.08 ? lineRight : lineLeft;
-      drawParticle(context, ghostX, phaseY + particle.lane * 0.35, 2.6, 0.3);
-    }
+    if (Math.cos(particle.lifted) < 0) continue;
+    const point = cylinderPoint(geometry, 1, particle.lifted);
+    drawParticle(context, point.x, point.y, particle.ambient ? 2.8 : 4.2, particle.ambient ? 0.72 : 1);
   }
 
-  const selectedX = lerp(lineLeft, lineRight, state.selectedAngle / TWO_PI);
+  const selected = cylinderPoint(geometry, 1, state.selectedAngle);
   context.save();
   context.strokeStyle = COLORS.goldDark;
-  context.lineWidth = 1.4;
+  context.lineWidth = 1.35;
+  context.setLineDash(Math.cos(state.selectedAngle) < 0 ? [3, 3] : []);
   context.beginPath();
-  context.moveTo(selectedX, phaseY - 17);
-  context.lineTo(selectedX, phaseY + 17);
+  context.moveTo(geometry.endX, geometry.centerY);
+  context.lineTo(selected.x, selected.y);
   context.stroke();
-  context.fillStyle = COLORS.goldDark;
+  context.setLineDash([]);
+  context.fillStyle = COLORS.paper;
   context.beginPath();
-  context.moveTo(selectedX, phaseY - 21);
-  context.lineTo(selectedX - 4, phaseY - 28);
-  context.lineTo(selectedX + 4, phaseY - 28);
-  context.closePath();
+  context.arc(selected.x, selected.y, 4.3, 0, TWO_PI);
   context.fill();
+  context.stroke();
+  context.restore();
+
+  context.save();
+  context.fillStyle = COLORS.muted;
+  context.font = "9px 'IBM Plex Mono', monospace";
+  context.textBaseline = "middle";
+  context.textAlign = "center";
+  const arrowY = geometry.centerY + geometry.radiusY + 22;
+  drawArrow(context, geometry.startX, arrowY, geometry.endX, arrowY, "rgba(23, 33, 29, 0.42)", 1, 4);
+  context.fillText("time t", (geometry.startX + geometry.endX) / 2, arrowY - 7);
+  context.textAlign = "left";
+  context.fillText(`${formatNumber(startTime, 1)} s`, geometry.startX - geometry.radiusX, arrowY + 10);
+  context.textAlign = "right";
+  context.fillText("now", geometry.endX + geometry.radiusX, arrowY + 10);
+  if (elements.showLabels.checked) {
+    const labelAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+    const labels = ["0", "π/2", "π", "3π/2"];
+    context.textAlign = "center";
+    labelAngles.forEach((angle, index) => {
+      const point = cylinderPoint(geometry, 1, angle);
+      const offsetX = 10 * Math.cos(angle);
+      const offsetY = -10 * Math.sin(angle);
+      context.fillText(labels[index], point.x + offsetX, point.y + offsetY);
+    });
+  }
   context.restore();
 }
 
@@ -1500,6 +1653,283 @@ function drawBifurcationMessage(context, box, title, detail) {
   context.restore();
 }
 
+function bifurcationTubeGeometry(width, height) {
+  const top = Math.min(78, Math.max(60, height * 0.13));
+  const bottom = Math.max(top + 120, height - 64);
+  const radiusY = Math.min(170, Math.max(46, (bottom - top) * 0.37));
+  const radiusX = Math.min(38, Math.max(15, radiusY * 0.23));
+  const startX = Math.min(width * 0.22, 54) + radiusX;
+  const endX = Math.max(startX + 90, width - 24 - radiusX);
+  return {
+    startX,
+    endX,
+    centerY: (top + bottom) / 2,
+    radiusX,
+    radiusY
+  };
+}
+
+function drawBifurcationTubeBranches(context, geometry, data, minimum, maximum, front) {
+  const stableSegments = [];
+  const unstableSegments = [];
+  const thresholdPoints = [];
+  const continuumPositions = [];
+  const parameterStep = (maximum - minimum) / Math.max(1, data.slices.length - 1);
+
+  for (const slice of data.slices) {
+    const position = clamp(inverseLerp(minimum, maximum, slice.parameter), 0, 1);
+    if (slice.continuum) {
+      continuumPositions.push(position);
+      continue;
+    }
+    for (const equilibrium of slice.equilibria) {
+      const angle = wrapAngle(equilibrium.angle);
+      const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+      if (!belongs) continue;
+      const halfStep = parameterStep * 0.62;
+      const startParameter = clamp(slice.parameter - halfStep, minimum, maximum);
+      const endParameter = clamp(slice.parameter + halfStep, minimum, maximum);
+      const start = cylinderPoint(
+        geometry,
+        inverseLerp(minimum, maximum, startParameter),
+        angle
+      );
+      const end = cylinderPoint(
+        geometry,
+        inverseLerp(minimum, maximum, endParameter),
+        angle
+      );
+      const segment = [start.x, start.y, end.x, end.y];
+      if (equilibrium.stability === "stable") stableSegments.push(segment);
+      else if (equilibrium.stability === "unstable") unstableSegments.push(segment);
+      else thresholdPoints.push(cylinderPoint(geometry, position, angle));
+    }
+  }
+
+  for (const position of continuumPositions) {
+    drawCylinderRing(context, geometry, position, front, {
+      strokeStyle: front ? "rgba(138, 98, 0, 0.76)" : "rgba(138, 98, 0, 0.24)",
+      lineWidth: front ? 1.8 : 1.1,
+      dash: [4, 4]
+    });
+  }
+
+  if (stableSegments.length) {
+    context.save();
+    context.strokeStyle = front ? "rgba(11, 87, 72, 0.94)" : "rgba(11, 87, 72, 0.28)";
+    context.lineWidth = front ? 2.35 : 1.35;
+    context.beginPath();
+    for (const [startX, startY, endX, endY] of stableSegments) {
+      context.moveTo(startX, startY);
+      context.lineTo(endX, endY);
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  if (unstableSegments.length) {
+    context.save();
+    context.strokeStyle = front ? "rgba(168, 79, 36, 0.94)" : "rgba(168, 79, 36, 0.27)";
+    context.lineWidth = front ? 2.05 : 1.2;
+    context.setLineDash(front ? [2.4, 2.4] : [2, 3.5]);
+    context.beginPath();
+    for (const [startX, startY, endX, endY] of unstableSegments) {
+      context.moveTo(startX, startY);
+      context.lineTo(endX, endY);
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  if (thresholdPoints.length) {
+    context.save();
+    context.fillStyle = COLORS.paper;
+    context.strokeStyle = front ? "rgba(138, 98, 0, 0.96)" : "rgba(138, 98, 0, 0.32)";
+    context.lineWidth = front ? 1.5 : 1;
+    context.beginPath();
+    for (const point of thresholdPoints) {
+      context.moveTo(point.x + 2.8, point.y);
+      context.arc(point.x, point.y, 2.8, 0, TWO_PI);
+    }
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+}
+
+function drawBifurcationTubeCurrentState(context, geometry, currentPosition, front) {
+  drawCylinderRing(context, geometry, currentPosition, front, {
+    strokeStyle: front ? "rgba(138, 98, 0, 0.92)" : "rgba(138, 98, 0, 0.34)",
+    lineWidth: state.analysis.equilibriumCount === Infinity ? (front ? 2.7 : 1.5) : (front ? 1.8 : 1.1),
+    dash: [5, 4]
+  });
+
+  context.save();
+  context.globalAlpha = front ? 1 : 0.34;
+  if (state.analysis.equilibriumCount !== Infinity) {
+    for (const equilibrium of state.analysis.equilibria) {
+      const angle = wrapAngle(equilibrium.angle);
+      const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+      if (!belongs) continue;
+      const point = cylinderPoint(geometry, currentPosition, angle);
+      drawEquilibriumMarker(context, point.x, point.y, equilibrium, { dark: false, radius: 4.6 });
+    }
+  }
+  for (const particle of state.particles) {
+    const angle = wrapAngle(particle.lifted);
+    const belongs = front ? Math.cos(angle) >= -1e-8 : Math.cos(angle) < -1e-8;
+    if (!belongs) continue;
+    const point = cylinderPoint(geometry, currentPosition, angle);
+    drawParticle(
+      context,
+      point.x,
+      point.y,
+      particle.id === state.activeParticleId ? 3.2 : 2,
+      particle.id === state.activeParticleId ? 0.96 : 0.5
+    );
+  }
+  context.restore();
+}
+
+function drawBifurcationTubeAxes(context, geometry, name, minimum, maximum) {
+  const ticks = bifurcationHorizontalTicks(name, minimum, maximum);
+  const baselineY = geometry.centerY + geometry.radiusY + 30;
+  context.save();
+  context.font = "9px 'IBM Plex Mono', monospace";
+  context.fillStyle = COLORS.muted;
+  context.strokeStyle = "rgba(23, 33, 29, 0.34)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(geometry.startX, baselineY);
+  context.lineTo(geometry.endX, baselineY);
+  context.stroke();
+  context.textAlign = "center";
+  context.textBaseline = "top";
+  for (const value of ticks) {
+    const position = clamp(inverseLerp(minimum, maximum, value), 0, 1);
+    const x = lerp(geometry.startX, geometry.endX, position);
+    context.beginPath();
+    context.moveTo(x, baselineY - 3);
+    context.lineTo(x, baselineY + 3);
+    context.stroke();
+    context.fillText(
+      name === "phase" ? formatPhaseAxisTick(value) : formatAxisNumber(value, maximum - minimum),
+      x,
+      baselineY + 6
+    );
+  }
+  context.fillStyle = COLORS.ink;
+  context.textAlign = "right";
+  context.fillText(parameterPlayerLabel(name), geometry.endX, baselineY + 24);
+
+  const labels = [
+    [0, "0"],
+    [Math.PI / 2, "π/2"],
+    [Math.PI, "π"],
+    [3 * Math.PI / 2, "3π/2"]
+  ];
+  context.fillStyle = COLORS.muted;
+  context.textBaseline = "middle";
+  for (const [angle, label] of labels) {
+    const point = cylinderPoint(geometry, 0, angle);
+    context.textAlign = Math.cos(angle) > 0.2 ? "left" : Math.cos(angle) < -0.2 ? "right" : "center";
+    context.fillText(label, point.x + 9 * Math.cos(angle), point.y - 10 * Math.sin(angle));
+  }
+  const stateSymbol = ["firefly-locking", "josephson-junction"].includes(state.flow.id) ? "φ*" : "θ*";
+  context.fillStyle = COLORS.ink;
+  context.textAlign = "left";
+  context.fillText(`${stateSymbol} wraps around`, geometry.startX - geometry.radiusX, geometry.centerY - geometry.radiusY - 18);
+  context.restore();
+}
+
+function drawCylindricalBifurcation(context, width, height, data, name, config, minimum, maximum) {
+  const geometry = bifurcationTubeGeometry(width, height);
+  const box = {
+    left: geometry.startX,
+    right: geometry.endX,
+    top: geometry.centerY - geometry.radiusY,
+    bottom: geometry.centerY + geometry.radiusY
+  };
+  state.bifurcation.plot = { box, minimum, maximum, mode: "tube" };
+  const ticks = bifurcationHorizontalTicks(name, minimum, maximum);
+
+  for (const value of ticks) {
+    const position = clamp(inverseLerp(minimum, maximum, value), 0, 1);
+    drawCylinderRing(context, geometry, position, false, {
+      strokeStyle: "rgba(23, 33, 29, 0.1)",
+      dash: [3, 4]
+    });
+  }
+  drawCylinderGenerator(context, geometry, Math.PI, {
+    strokeStyle: "rgba(23, 33, 29, 0.09)",
+    dash: [3, 5]
+  });
+
+  const currentValue = clamp(Number(config.control.value), minimum, maximum);
+  const currentPosition = clamp(inverseLerp(minimum, maximum, currentValue), 0, 1);
+  if (data) {
+    drawBifurcationTubeBranches(context, geometry, data, minimum, maximum, false);
+    drawBifurcationTubeCurrentState(context, geometry, currentPosition, false);
+  }
+
+  const allContinuum = data && data.slices.every((slice) => slice.continuum);
+  drawCylinderShell(context, geometry, {
+    fillStyle: allContinuum ? "rgba(242, 201, 105, 0.16)" : "rgba(98, 200, 181, 0.075)",
+    strokeStyle: "rgba(23, 33, 29, 0.3)"
+  });
+
+  for (const value of ticks) {
+    const position = clamp(inverseLerp(minimum, maximum, value), 0, 1);
+    drawCylinderRing(context, geometry, position, true, {
+      strokeStyle: "rgba(23, 33, 29, 0.17)"
+    });
+  }
+  for (const angle of [0, Math.PI / 2, 3 * Math.PI / 2]) {
+    drawCylinderGenerator(context, geometry, angle, {
+      strokeStyle: Math.abs(Math.cos(angle)) < 0.1
+        ? "rgba(23, 33, 29, 0.28)"
+        : "rgba(23, 33, 29, 0.15)"
+    });
+  }
+
+  if (data) {
+    drawBifurcationTubeBranches(context, geometry, data, minimum, maximum, true);
+    drawBifurcationTubeCurrentState(context, geometry, currentPosition, true);
+  }
+  drawCylinderRing(context, geometry, 1, true, {
+    strokeStyle: "rgba(23, 33, 29, 0.42)",
+    lineWidth: 1.35
+  });
+  drawCylinderRing(context, geometry, 0, true, {
+    strokeStyle: "rgba(23, 33, 29, 0.36)",
+    lineWidth: 1.2
+  });
+  drawBifurcationTubeAxes(context, geometry, name, minimum, maximum);
+
+  const currentTop = cylinderPoint(geometry, currentPosition, Math.PI / 2);
+  context.save();
+  context.fillStyle = COLORS.goldDark;
+  context.beginPath();
+  context.moveTo(currentTop.x, currentTop.y);
+  context.lineTo(currentTop.x - 5, currentTop.y - 8);
+  context.lineTo(currentTop.x + 5, currentTop.y - 8);
+  context.closePath();
+  context.fill();
+  context.restore();
+
+  if (!data) {
+    drawBifurcationMessage(context, box, "Diagram unavailable", "The other linked views remain active.");
+    return;
+  }
+  const continuumCount = data.slices.filter((slice) => slice.continuum).length;
+  const equilibriumCount = data.slices.reduce((total, slice) => total + slice.equilibria.length, 0);
+  if (continuumCount === data.slices.length) {
+    drawBifurcationMessage(context, box, "Every angle is fixed", "The vector field vanishes throughout this sweep.");
+  } else if (equilibriumCount === 0 && continuumCount === 0) {
+    drawBifurcationMessage(context, box, "No equilibrium branches", "The flow circulates throughout this sweep.");
+  }
+}
+
 function drawBifurcationDiagram() {
   if (!state.flow || !elements.bifurcationCanvas) return;
   const { context, width, height } = canvasSurface(elements.bifurcationCanvas);
@@ -1511,8 +1941,12 @@ function drawBifurcationDiagram() {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const minimum = Number(config?.control.min);
   const maximum = Number(config?.control.max);
+  if (state.bifurcation.view === "tube") {
+    drawCylindricalBifurcation(context, width, height, data, name, config, minimum, maximum);
+    return;
+  }
   const box = bifurcationPlotBox(width, height);
-  state.bifurcation.plot = { box, minimum, maximum };
+  state.bifurcation.plot = { box, minimum, maximum, mode: "plane" };
   drawBifurcationAxes(context, box, name, minimum, maximum);
   if (!data) {
     drawBifurcationMessage(context, box, "Diagram unavailable", "The other linked views remain active.");
@@ -1662,7 +2096,7 @@ function drawBifurcationDiagram() {
 function drawAll() {
   drawCirclePortrait();
   drawVelocityGraph();
-  drawLiftedFlow();
+  drawTrajectoryTube();
   drawBifurcationDiagram();
   elements.elapsedTime.textContent = formatNumber(state.elapsed, 1);
   elements.lapCount.textContent = String(state.totalLaps);
@@ -1870,21 +2304,24 @@ function angleFromCanvas(canvas, event) {
       1
     ));
   }
-  if (canvas === elements.liftCanvas && state.liftPhaseLine) {
-    return wrapAngle(TWO_PI * clamp(
-      inverseLerp(state.liftPhaseLine.left, state.liftPhaseLine.right, position.x),
-      0,
-      1
-    ));
+  if (canvas === elements.liftCanvas && state.trajectoryTube) {
+    const geometry = state.trajectoryTube;
+    const normalizedX = (position.x - geometry.endX) / geometry.radiusX;
+    const normalizedY = (geometry.centerY - position.y) / geometry.radiusY;
+    const distance = Math.hypot(normalizedX, normalizedY);
+    if (distance < 0.3 || distance > 1.7) return null;
+    return wrapAngle(Math.atan2(normalizedY, normalizedX));
   }
   return state.selectedAngle;
 }
 
 function beginCanvasPointer(canvas, event) {
   if (event.button !== 0 || event.isPrimary === false) return;
+  const angle = angleFromCanvas(canvas, event);
+  if (!Number.isFinite(angle)) return;
   canvas.focus({ preventScroll: true });
   state.pointer = { canvas, pointerId: event.pointerId, moved: false };
-  state.selectedAngle = angleFromCanvas(canvas, event);
+  state.selectedAngle = angle;
   updateSelectedReadout();
   state.dirty = true;
   canvas.dataset.dragging = "true";
@@ -1893,15 +2330,18 @@ function beginCanvasPointer(canvas, event) {
 
 function moveCanvasPointer(canvas, event) {
   if (!state.pointer || state.pointer.canvas !== canvas || state.pointer.pointerId !== event.pointerId) return;
+  const angle = angleFromCanvas(canvas, event);
+  if (!Number.isFinite(angle)) return;
   state.pointer.moved = true;
-  state.selectedAngle = angleFromCanvas(canvas, event);
+  state.selectedAngle = angle;
   updateSelectedReadout();
   state.dirty = true;
 }
 
 function endCanvasPointer(canvas, event) {
   if (!state.pointer || state.pointer.canvas !== canvas || state.pointer.pointerId !== event.pointerId) return;
-  state.selectedAngle = angleFromCanvas(canvas, event);
+  const angle = angleFromCanvas(canvas, event);
+  if (Number.isFinite(angle)) state.selectedAngle = angle;
   delete canvas.dataset.dragging;
   try {
     if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -2034,6 +2474,20 @@ function handleBifurcationKey(event) {
   setBifurcationParameterValue(value, { immediate: true, announce: true });
 }
 
+function toggleBifurcationView() {
+  const rolled = state.bifurcation.view === "tube";
+  state.bifurcation.view = rolled ? "plane" : "tube";
+  state.bifurcation.plot = null;
+  updateBifurcationAccessibility();
+  state.dirty = true;
+  drawBifurcationDiagram();
+  announce(
+    rolled
+      ? "Bifurcation diagram unrolled into a plane. Equilibrium angle is vertical and the selected parameter is horizontal."
+      : "Bifurcation diagram rolled into a cylinder. The parameter runs along the tube and equilibrium angle wraps around it."
+  );
+}
+
 function currentFullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
@@ -2164,6 +2618,7 @@ function installEvents() {
   elements.bifurcationCanvas.addEventListener("pointercancel", cancelBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("lostpointercapture", cancelBifurcationPointer);
   elements.bifurcationCanvas.addEventListener("keydown", handleBifurcationKey);
+  elements.bifurcationRollToggle?.addEventListener("click", toggleBifurcationView);
   motionQuery.addEventListener?.("change", (event) => {
     if (event.matches) {
       state.running = false;
@@ -2199,6 +2654,7 @@ function initialize() {
   refreshFlow({ resetParticles: true });
   syncAnimationButton();
   syncParameterPlayButtons();
+  syncBifurcationViewControl();
   installEvents();
   if (elements.fullscreenToggle) elements.fullscreenToggle.hidden = !fullscreenSupported();
   syncFullscreen({ announce: false });
