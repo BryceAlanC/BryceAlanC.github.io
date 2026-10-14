@@ -1341,8 +1341,11 @@ function niceTicks(minimum, maximum, target = 6) {
 }
 
 function formatAxisNumber(value, span) {
-  const digits = span < 0.25 ? 2 : span < 3 ? 1 : 0;
-  return formatNumber(value, digits);
+  const tolerance = Math.max(1e-10, span * 1e-8);
+  if (Math.abs(value - Math.round(value)) <= tolerance) return formatNumber(value, 0);
+  if (Math.abs(value * 10 - Math.round(value * 10)) <= tolerance) return formatNumber(value, 1);
+  if (Math.abs(value * 100 - Math.round(value * 100)) <= tolerance) return formatNumber(value, 2);
+  return formatNumber(value, 3);
 }
 
 function formatPhaseAxisTick(value) {
