@@ -205,6 +205,36 @@ const presetDefinitions = Object.freeze({
       return TWO_PI / (Math.abs(params.omega) * Math.sqrt(1 - params.amplitude ** 2));
     }
   }),
+  "symmetric-pitchfork": Object.freeze({
+    id: "symmetric-pitchfork",
+    name: "Symmetric pitchfork on the circle",
+    shortName: "Pitchfork",
+    formula: () => "θ̇ = sin θ [1 + cos θ − μ] + ε",
+    description: "Reflection symmetry produces a supercritical pitchfork; a small bias unfolds it into saddle-nodes.",
+    lesson: "At ε = 0 and μ = 0, one symmetric equilibrium loses stability while two stable equilibria emerge.",
+    parameters: Object.freeze([
+      Object.freeze({
+        ...commonParameters.omega,
+        symbol: "μ",
+        label: "Pitchfork parameter μ",
+        defaultValue: 0.45,
+        minimum: -0.75,
+        maximum: 1.5
+      }),
+      Object.freeze({
+        ...commonParameters.secondAmplitude,
+        symbol: "ε",
+        label: "Symmetry-breaking bias ε",
+        defaultValue: 0,
+        minimum: -0.35,
+        maximum: 0.35
+      })
+    ]),
+    velocity(theta, params) {
+      return Math.sin(theta) * (1 + Math.cos(theta) - params.omega)
+        + params.secondAmplitude;
+    }
+  }),
   "overdamped-pendulum": Object.freeze({
     id: "overdamped-pendulum",
     name: "Overdamped pendulum (Adler flow)",
@@ -310,6 +340,8 @@ const PRESET_ALIASES = Object.freeze({
   adler: "overdamped-pendulum",
   overdamped: "overdamped-pendulum",
   pendulum: "overdamped-pendulum",
+  pitchfork: "symmetric-pitchfork",
+  "symmetric-pitchfork-flow": "symmetric-pitchfork",
   fireflies: "firefly-locking",
   firefly: "firefly-locking",
   josephson: "josephson-junction",
@@ -405,17 +437,17 @@ export function derivativeAt(flowOrId, theta, options = {}) {
   ) / (12 * step);
 }
 
-function bisectRoot(flow, left, right, leftValue, rightValue, valueTolerance, angleTolerance) {
+function bisectRoot(flow, left, right, leftValue, rightValue, angleTolerance) {
   let a = left;
   let b = right;
   let fa = leftValue;
   let fb = rightValue;
-  if (Math.abs(fa) <= valueTolerance) return a;
-  if (Math.abs(fb) <= valueTolerance) return b;
+  if (fa === 0) return a;
+  if (fb === 0) return b;
   for (let iteration = 0; iteration < 90; iteration += 1) {
     const middle = (a + b) / 2;
     const fm = evaluateFlow(flow, middle);
-    if (Math.abs(fm) <= valueTolerance || b - a <= angleTolerance) return middle;
+    if (fm === 0 || b - a <= angleTolerance) return middle;
     if (fa * fm <= 0) {
       b = middle;
       fb = fm;
@@ -576,14 +608,16 @@ export function findEquilibria(flowOrId, options = {}) {
         right,
         leftValue,
         rightValue,
-        valueTolerance,
         angleTolerance
       ));
     }
   }
 
-  // A tangency need not change sign.  Search every sampled local minimum of
-  // |f| and accept it only when minimization reaches numerical zero.
+  // A sampled local minimum of |f| can be either an odd flat root or an
+  // even-multiplicity tangency. Opposite neighbor signs identify the former
+  // and call for bisection; equal neighbor signs identify the latter and call
+  // for minimization. Keeping those paths separate prevents a flat cubic root
+  // from being counted once approximately and once accurately.
   for (let index = 0; index < samples; index += 1) {
     const previous = values[(index - 1 + samples) % samples];
     const current = values[index];
@@ -597,8 +631,20 @@ export function findEquilibria(flowOrId, options = {}) {
       (currentAbsolute < previousAbsolute || currentAbsolute < nextAbsolute)
     ) {
       const center = origin + spacing * index;
-      const minimum = minimizeAbsoluteVelocity(flow, center - spacing, center + spacing);
-      if (minimum.value <= tangencyTolerance) candidates.push(minimum.angle);
+      const neighborProduct = previous * next;
+      if (neighborProduct < 0) {
+        candidates.push(bisectRoot(
+          flow,
+          center - spacing,
+          center + spacing,
+          previous,
+          next,
+          angleTolerance
+        ));
+      } else if (neighborProduct > 0) {
+        const minimum = minimizeAbsoluteVelocity(flow, center - spacing, center + spacing);
+        if (minimum.value <= tangencyTolerance) candidates.push(minimum.angle);
+      }
     }
   }
 

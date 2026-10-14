@@ -19,6 +19,7 @@ function equilibriumNear(equilibria, target, tolerance = 2e-6) {
 assert.deepEqual(model.PRESET_IDS, [
   "uniform",
   "nonuniform",
+  "symmetric-pitchfork",
   "overdamped-pendulum",
   "firefly-locking",
   "josephson-junction",
@@ -49,6 +50,42 @@ for (const id of model.PRESET_IDS) {
       `${id} should be periodic`
     );
   }
+}
+
+// A reflection-symmetric circle flow supports a genuine supercritical
+// pitchfork at theta = pi. The antipodal unstable equilibrium is required by
+// the topology of the circle.
+{
+  const before = model.createCircleFlow("symmetric-pitchfork", {
+    omega: -0.5,
+    secondAmplitude: 0
+  });
+  const beforeEquilibria = model.findEquilibria(before, { samples: 512 });
+  assert.equal(beforeEquilibria.length, 2);
+  assert.equal(equilibriumNear(beforeEquilibria, 0).stability, "unstable");
+  assert.equal(equilibriumNear(beforeEquilibria, Math.PI).stability, "stable");
+
+  const critical = model.createCircleFlow("symmetric-pitchfork", {
+    omega: 0,
+    secondAmplitude: 0
+  });
+  const criticalEquilibria = model.findEquilibria(critical, { samples: 512 });
+  assert.equal(criticalEquilibria.length, 2);
+  const pitchforkPoint = equilibriumNear(criticalEquilibria, Math.PI);
+  assert.ok(pitchforkPoint);
+  assert.equal(pitchforkPoint.stability, "neutral");
+  near(pitchforkPoint.derivative, 0, 1e-8);
+
+  const after = model.createCircleFlow("symmetric-pitchfork", {
+    omega: 0.5,
+    secondAmplitude: 0
+  });
+  const afterEquilibria = model.findEquilibria(after, { samples: 512 });
+  assert.equal(afterEquilibria.length, 4);
+  assert.equal(equilibriumNear(afterEquilibria, 0).stability, "unstable");
+  assert.equal(equilibriumNear(afterEquilibria, 2 * Math.PI / 3).stability, "stable");
+  assert.equal(equilibriumNear(afterEquilibria, Math.PI).stability, "unstable");
+  assert.equal(equilibriumNear(afterEquilibria, 4 * Math.PI / 3).stability, "stable");
 }
 
 // Seam-safe simple roots and stability for sin θ.
@@ -238,6 +275,72 @@ assert.equal(model.default.sampleCircleBifurcation, model.sampleCircleBifurcatio
   assert.ok(bifurcationSlice(repeated, 1).equilibria.every((equilibrium) => equilibrium.stability === "semistable"));
 }
 
+// The symmetric family has a three-branch pitchfork at mu = 0. Sweeping its
+// symmetry-breaking bias exposes the two folds of the imperfect pitchfork.
+{
+  const pitchfork = model.sampleCircleBifurcation(
+    "symmetric-pitchfork",
+    { omega: 0.45, secondAmplitude: 0 },
+    "omega",
+    [-0.75, 1.5],
+    { parameterSamples: 19, equilibriumSamples: 512, anchors: [0] }
+  );
+  assert.equal(bifurcationSlice(pitchfork, -0.75).equilibria.length, 2);
+  assert.equal(bifurcationSlice(pitchfork, 0).equilibria.length, 2);
+  assert.equal(bifurcationSlice(pitchfork, 0.5).equilibria.length, 4);
+
+  const mu = 0.5;
+  const offset = 1 - mu;
+  const foldCosine = (-offset - Math.sqrt(offset ** 2 + 8)) / 4;
+  const foldBias = Math.abs(
+    Math.sqrt(1 - foldCosine ** 2) * (offset + foldCosine)
+  );
+  const unfolding = model.sampleCircleBifurcation(
+    "symmetric-pitchfork",
+    { omega: mu, secondAmplitude: 0 },
+    "b",
+    [-0.35, 0.35],
+    { parameterSamples: 15, equilibriumSamples: 512, anchors: [-foldBias, 0, foldBias] }
+  );
+  assert.equal(bifurcationSlice(unfolding, -0.35).equilibria.length, 2);
+  assert.equal(bifurcationSlice(unfolding, 0).equilibria.length, 4);
+  assert.equal(bifurcationSlice(unfolding, 0.35).equilibria.length, 2);
+  for (const sign of [-1, 1]) {
+    const fold = bifurcationSlice(unfolding, sign * foldBias, 1e-9).equilibria;
+    assert.equal(fold.length, 3);
+    assert.equal(fold.filter((equilibrium) => equilibrium.stability === "semistable").length, 1);
+  }
+
+  const bias = 0.2;
+  let lowerQ = 0;
+  let upperQ = 1;
+  for (let iteration = 0; iteration < 72; iteration += 1) {
+    const q = (lowerQ + upperQ) / 2;
+    const residual = (1 - q ** 2) ** 3 - bias ** 2 * q ** 2;
+    if (residual > 0) lowerQ = q;
+    else upperQ = q;
+  }
+  const q = (lowerQ + upperQ) / 2;
+  const firstMuFold = 1 + 1 / q - 2 * q;
+  const secondMuFold = 2 - firstMuFold;
+  const imperfectPitchfork = model.sampleCircleBifurcation(
+    "symmetric-pitchfork",
+    { omega: 0.45, secondAmplitude: bias },
+    "omega",
+    [-0.75, 1.5],
+    {
+      parameterSamples: 19,
+      equilibriumSamples: 512,
+      anchors: [firstMuFold, secondMuFold]
+    }
+  );
+  for (const foldParameter of [firstMuFold, secondMuFold]) {
+    const fold = bifurcationSlice(imperfectPitchfork, foldParameter, 1e-9).equilibria;
+    assert.equal(fold.length, 3);
+    assert.equal(fold.filter((equilibrium) => equilibrium.stability === "semistable").length, 1);
+  }
+}
+
 // Alias b must override the canonical base value, and b = 0 is a continuum in
 // the pure second-harmonic test family.
 {
@@ -338,6 +441,23 @@ assert.equal(model.default.sampleCircleBifurcation, model.sampleCircleBifurcatio
   const repeatedRoots = model.findEquilibria(repeated, { samples: 512 });
   assert.equal(repeatedRoots.length, 8);
   assert.ok(repeatedRoots.every((equilibrium) => equilibrium.stability === "semistable"));
+}
+
+
+// A flat odd root away from the sampling grid must use the sign-changing
+// bisection path, not be duplicated by the even-root tangency search.
+for (const phase of [0.01, 0.35, 0.37, Math.PI / 2, Math.PI - 0.01]) {
+  const shiftedPitchfork = {
+    id: "shifted-pitchfork",
+    eval(theta) {
+      const shifted = theta - phase;
+      return Math.sin(shifted) * (1 + Math.cos(shifted));
+    }
+  };
+  const equilibria = model.findEquilibria(shiftedPitchfork, { samples: 512 });
+  assert.equal(equilibria.length, 2);
+  assert.ok(equilibriumNear(equilibria, phase, 1e-8));
+  assert.ok(equilibriumNear(equilibria, phase + Math.PI, 1e-7));
 }
 
 console.log("circle-flow model tests passed");

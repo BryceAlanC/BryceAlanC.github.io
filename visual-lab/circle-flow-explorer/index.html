@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261014-1" />
-    <script type="module" src="./demo.js?v=20261014-2"></script>
+    <link rel="stylesheet" href="./style.css?v=20261014-2" />
+    <script type="module" src="./demo.js?v=20261014-3"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -102,6 +102,7 @@
               <select id="family-select">
                 <option value="uniform">Uniform rotation</option>
                 <option value="nonuniform">Nonuniform rotation</option>
+                <option value="symmetric-pitchfork">Symmetric pitchfork</option>
                 <option value="overdamped-pendulum" selected>Overdamped pendulum</option>
                 <option value="firefly-locking">Firefly phase locking</option>
                 <option value="josephson-junction">Josephson junction</option>
@@ -447,10 +448,18 @@
               <section class="circle-panel bifurcation-panel" aria-labelledby="bifurcation-title">
                 <div class="circle-panel-heading bifurcation-panel-heading">
                   <div><span>04</span><h3 id="bifurcation-title">Bifurcation diagram</h3></div>
-                  <div class="bifurcation-heading-controls">
-                    <label for="bifurcation-parameter">Horizontal parameter</label>
+                </div>
+                <div class="bifurcation-toolbar">
+                  <label for="bifurcation-parameter">
+                    <strong>Horizontal axis</strong>
+                    <small>Choose which continuous parameter varies; the others stay fixed.</small>
+                  </label>
+                  <div class="bifurcation-toolbar-input">
                     <select id="bifurcation-parameter" aria-controls="bifurcation-canvas"></select>
-                    <output id="bifurcation-current-value" for="bifurcation-parameter">—</output>
+                    <span class="bifurcation-current">
+                      Current:
+                      <output id="bifurcation-current-value" for="bifurcation-parameter">—</output>
+                    </span>
                   </div>
                 </div>
                 <div class="canvas-frame bifurcation-frame">
@@ -466,7 +475,7 @@
                   <div class="bifurcation-legend" aria-hidden="true">
                     <span><i class="legend-stable-branch"></i>Stable</span>
                     <span><i class="legend-unstable-branch"></i>Unstable</span>
-                    <span><i class="legend-threshold-branch"></i>Threshold</span>
+                    <span><i class="legend-threshold-branch"></i>Critical</span>
                     <span><i class="legend-current-parameter"></i>Current slice</span>
                     <span><i class="legend-trajectory-point"></i>Trajectory</span>
                   </div>
@@ -475,7 +484,7 @@
                   Equilibrium angle is plotted vertically from zero to two pi while the
                   selected parameter varies horizontally. The top and bottom edges are
                   the same point on the circle. Solid green traces are stable, dashed
-                  rust traces are unstable, and gold marks thresholds and the current
+                  rust traces are unstable, and gold marks nonhyperbolic critical points and the current
                   parameter slice. Click or drag horizontally to set the parameter. Use
                   the left and right arrow keys to adjust it, Home and End for its bounds,
                   and Space to start or pause its animation.
@@ -514,6 +523,13 @@
                   parameters fixed. Its top and bottom edges both represent the circle
                   seam <span class="nowrap">0 = 2π</span>. The gold vertical slice is the
                   parameter value used by the other three views.
+                </p>
+                <p class="app-note">
+                  <strong>Pitchforks and symmetry.</strong> In the symmetric pitchfork
+                  example, <span class="nowrap">ε = 0</span> enforces a reflection
+                  symmetry. At <span class="nowrap">μ = 0</span>, one equilibrium loses
+                  stability while two stable equilibria emerge. A nonzero ε breaks the
+                  symmetry and unfolds the pitchfork into ordinary saddle-nodes.
                 </p>
               </div>
             </details>

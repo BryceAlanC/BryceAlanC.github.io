@@ -10,7 +10,7 @@ import {
   seamCrossings,
   stepLiftedRK4,
   wrapAngle
-} from "./model.js?v=20261014-1";
+} from "./model.js?v=20261014-2";
 
 const byId = (id) => document.getElementById(id);
 
@@ -111,6 +111,14 @@ const FAMILY_UI = Object.freeze({
     ranges: { omega: [-2.2, 2.2, 0.002], a: [0, 1.4, 0.002], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Base angular velocity ω", a: "Speed modulation a", phase: "Wave phase φ" },
     help: "For ω ≠ 0 and a < 1 the speed varies but never vanishes. At a = 1 a bottleneck becomes a threshold; for a > 1 fixed points appear."
+  },
+  "symmetric-pitchfork": {
+    visible: ["omega", "b"],
+    bifurcationDefault: "omega",
+    defaults: { omega: 0.45, b: 0 },
+    ranges: { omega: [-0.75, 1.5, 0.002], b: [-0.35, 0.35, 0.001] },
+    labels: { omega: "Pitchfork parameter μ", b: "Symmetry-breaking bias ε" },
+    help: "With ε = 0, the reflection symmetry forces a supercritical pitchfork at μ = 0. A nonzero ε breaks the symmetry and unfolds it into saddle-nodes."
   },
   "overdamped-pendulum": {
     visible: ["omega", "a"],
@@ -351,12 +359,19 @@ function updateParameterOutputs(options = {}) {
   const secondAmplitude = Number(elements.b.value);
   const phase = Number(elements.phase.value);
   const harmonics = Math.round(Number(elements.n.value));
+  const pitchforkFamily = elements.familySelect.value === "symmetric-pitchfork";
   Object.keys(PARAMETER_PLAYER_CONFIG).forEach((name) => {
     syncParameterValueInput(name, options);
   });
-  elements.omega.setAttribute("aria-valuetext", `${formatNumber(omega, 3)} radians per unit time`);
+  elements.omega.setAttribute(
+    "aria-valuetext",
+    pitchforkFamily ? formatNumber(omega, 3) : `${formatNumber(omega, 3)} radians per unit time`
+  );
   elements.a.setAttribute("aria-valuetext", formatNumber(amplitude, 3));
-  elements.b.setAttribute("aria-valuetext", formatNumber(secondAmplitude, 3));
+  elements.b.setAttribute(
+    "aria-valuetext",
+    pitchforkFamily ? `${formatNumber(secondAmplitude, 3)} symmetry-breaking bias` : formatNumber(secondAmplitude, 3)
+  );
   elements.phase.setAttribute("aria-valuetext", `${formatNumber(phase / Math.PI, 2)} pi radians`);
   elements.n.setAttribute("aria-valuetext", `${harmonics} repeats`);
 }
@@ -451,10 +466,41 @@ function bifurcationCacheKey() {
   return JSON.stringify({ familyId, selected, fixed });
 }
 
+function symmetricPitchforkMuFolds(bias) {
+  const epsilon = Math.abs(Number(bias));
+  if (epsilon <= 1e-12) return [0, 2];
+  let lower = 0;
+  let upper = 1;
+  for (let iteration = 0; iteration < 72; iteration += 1) {
+    const q = (lower + upper) / 2;
+    const residual = (1 - q ** 2) ** 3 - epsilon ** 2 * q ** 2;
+    if (residual > 0) lower = q;
+    else upper = q;
+  }
+  const q = (lower + upper) / 2;
+  const lowerFold = 1 + 1 / q - 2 * q;
+  return [lowerFold, 2 - lowerFold];
+}
+
 function bifurcationAnchors(familyId, name) {
   const amplitude = Math.abs(Number(elements.a.value));
   const omega = Math.abs(Number(elements.omega.value));
   if (familyId === "nonuniform" && name === "a") return [1];
+  if (familyId === "symmetric-pitchfork" && name === "omega") {
+    return symmetricPitchforkMuFolds(Number(elements.b.value));
+  }
+  if (familyId === "symmetric-pitchfork" && name === "b") {
+    const mu = Number(elements.omega.value);
+    const offset = 1 - mu;
+    const discriminant = Math.sqrt(offset ** 2 + 8);
+    const folds = [];
+    for (const cosine of [(-offset + discriminant) / 4, (-offset - discriminant) / 4]) {
+      if (cosine < -1 || cosine > 1) continue;
+      const magnitude = Math.abs(Math.sqrt(Math.max(0, 1 - cosine ** 2)) * (offset + cosine));
+      if (magnitude > 1e-10) folds.push(-magnitude, magnitude);
+    }
+    return folds;
+  }
   const lockingFamilies = [
     "overdamped-pendulum",
     "firefly-locking",
@@ -570,7 +616,13 @@ function stabilityLabel(stability) {
   if (stability === "stable") return "stable";
   if (stability === "unstable") return "unstable";
   if (stability === "semistable") return "threshold";
-  return "neutral";
+  return "nonhyperbolic";
+}
+
+function atSymmetricPitchfork() {
+  return elements.familySelect.value === "symmetric-pitchfork"
+    && Math.abs(Number(elements.omega.value)) <= 1e-9
+    && Math.abs(Number(elements.b.value)) <= 1e-9;
 }
 
 function updateEquilibriumList() {
@@ -614,7 +666,10 @@ function updateRegimeCopy() {
   const { regime, direction, period } = state.analysis;
   const ratio = Math.abs(state.minimumVelocityPoint?.velocity || 0) / Math.max(1e-9, state.maximumVelocity);
   const nearBottleneck = regime === "rotating" && ratio < 0.18;
-  if (regime === "stationary") {
+  if (atSymmetricPitchfork()) {
+    elements.regimeNoteKicker.textContent = "Supercritical pitchfork";
+    elements.regimeNoteCopy.textContent = "At μ = 0 the symmetric equilibrium is nonhyperbolic. As μ increases, it loses stability and two stable equilibria emerge symmetrically.";
+  } else if (regime === "stationary") {
     elements.regimeNoteKicker.textContent = "Degenerate stationary flow";
     elements.regimeNoteCopy.textContent = "The vector field vanishes everywhere, so every initial angle is a constant solution.";
   } else if (regime === "threshold") {
@@ -639,9 +694,14 @@ function updateRegimeCopy() {
 
 function updateTelemetry() {
   const { regime, direction, equilibriumCount, meanFrequency, period } = state.analysis;
+  const pitchforkCritical = atSymmetricPitchfork();
   const regimeLabels = {
     stationary: "Every point fixed",
-    locked: elements.familySelect.value === "firefly-locking" ? "Phase locked" : "Locked",
+    locked: pitchforkCritical
+      ? "Pitchfork threshold"
+      : elements.familySelect.value === "firefly-locking"
+        ? "Phase locked"
+        : "Locked",
     threshold: "Saddle-node threshold",
     rotating: "Rotating"
   };
@@ -661,7 +721,9 @@ function updateTelemetry() {
       : regime === "threshold"
         ? "0 (threshold)"
         : "0 (locked)";
-  elements.stageStatus.textContent = Number.isFinite(period)
+  elements.stageStatus.textContent = pitchforkCritical
+    ? "Pitchfork point at μ = 0"
+    : Number.isFinite(period)
     ? `One lap: T = ${formatNumber(period, 3)}`
     : regime === "threshold"
       ? "Infinite-period threshold"
