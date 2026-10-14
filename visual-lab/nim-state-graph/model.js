@@ -224,6 +224,52 @@ export function terminalOutcome(piles, turn) {
   return turn === COMPUTER_TURN ? VICTORY : DEFEAT;
 }
 
+/**
+ * Return the exact directed future cone from one state-turn node.
+ *
+ * The two turn copies of a pile configuration are intentionally distinct.
+ * Consumers can use the result to emphasize the remaining game without
+ * removing nodes from the complete graph or disturbing its layout.
+ */
+export function directedReachability(graph, currentId) {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  const edges = Array.isArray(graph?.edges) ? graph.edges : [];
+  const knownNodeIds = new Set(nodes.map((node) => node.id));
+  if (!knownNodeIds.has(currentId)) {
+    return Object.freeze({
+      nodeIds: Object.freeze([]),
+      edgeIds: Object.freeze([])
+    });
+  }
+
+  const outgoing = new Map();
+  for (const edge of edges) {
+    const sourceId = edge.sourceId ?? edge.source;
+    if (!outgoing.has(sourceId)) outgoing.set(sourceId, []);
+    outgoing.get(sourceId).push(edge);
+  }
+
+  const nodeIds = new Set([currentId]);
+  const edgeIds = new Set();
+  const queue = [currentId];
+  for (let index = 0; index < queue.length; index += 1) {
+    const sourceId = queue[index];
+    for (const edge of outgoing.get(sourceId) ?? []) {
+      const targetId = edge.targetId ?? edge.target;
+      if (!knownNodeIds.has(targetId)) continue;
+      edgeIds.add(edge.id);
+      if (nodeIds.has(targetId)) continue;
+      nodeIds.add(targetId);
+      queue.push(targetId);
+    }
+  }
+
+  return Object.freeze({
+    nodeIds: Object.freeze([...nodeIds]),
+    edgeIds: Object.freeze([...edgeIds])
+  });
+}
+
 function layoutForConfigurations(configurations, initialTotal) {
   const byTotal = new Map();
   for (const piles of configurations) {
@@ -400,6 +446,7 @@ export default Object.freeze({
   nodeId,
   oppositeTurn,
   terminalOutcome,
+  directedReachability,
   legalMoves,
   isLegalSuccessor,
   optimalMove,

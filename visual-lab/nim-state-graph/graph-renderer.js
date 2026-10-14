@@ -1,5 +1,10 @@
 const TAU = Math.PI * 2;
-const FORCE_POSITION_SCALE = 10;
+const GRAPH_BACKGROUND = "#071c18";
+const FUTURE_OPACITY = 0.94;
+const AHEAD_INACCESSIBLE_OPACITY = 0.5;
+const BEHIND_OPACITY = 0.13;
+const PATH_OPACITY = 0.88;
+const LANDMARK_OPACITY = 0.58;
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -18,6 +23,43 @@ function roundedRect(context, x, y, width, height, radius) {
 
 function prefersReducedMotion() {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+function parseHexColor(color) {
+  const value = color.replace("#", "");
+  return [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16));
+}
+
+function colorWithOpacity(color, opacity) {
+  const [red, green, blue] = parseHexColor(color);
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(opacity, 0, 1)})`;
+}
+
+function nodeEmphasis(node, renderer) {
+  if (
+    node.id === renderer.currentId ||
+    node.id === renderer.previewId ||
+    renderer.legalIds.has(node.id)
+  ) return 1;
+  if (renderer.pathNodeIds.has(node.id)) return PATH_OPACITY;
+  if (renderer.reachableNodeIds.has(node.id)) return FUTURE_OPACITY;
+  if (node.outcome) return LANDMARK_OPACITY;
+  return node.totalStones > renderer.currentTotal
+    ? BEHIND_OPACITY
+    : AHEAD_INACCESSIBLE_OPACITY;
+}
+
+function edgeEmphasis(edge, renderer) {
+  const sourceId = edgeSourceId(edge);
+  const targetId = edgeTargetId(edge);
+  if (edge.id === renderer.lastEdgeId || (sourceId === renderer.currentId && targetId === renderer.previewId)) return 1;
+  if (renderer.pathEdgeIds.has(edge.id)) return PATH_OPACITY;
+  if (sourceId === renderer.currentId) return 0.92;
+  if (renderer.reachableEdgeIds.has(edge.id)) return 0.52;
+  const source = renderer.nodeById.get(sourceId);
+  const target = renderer.nodeById.get(targetId);
+  const isBehind = (source?.totalStones ?? 0) > renderer.currentTotal || (target?.totalStones ?? 0) > renderer.currentTotal;
+  return isBehind ? 0.06 : 0.18;
 }
 
 class CanvasNimGraphRenderer {
@@ -39,6 +81,10 @@ class CanvasNimGraphRenderer {
     this.currentId = null;
     this.legalIds = new Set();
     this.pathEdgeIds = new Set();
+    this.pathNodeIds = new Set();
+    this.reachableNodeIds = new Set();
+    this.reachableEdgeIds = new Set();
+    this.currentTotal = Infinity;
     this.lastEdgeId = null;
     this.previewId = null;
     this.hoverId = null;
@@ -88,10 +134,23 @@ class CanvasNimGraphRenderer {
     this.draw();
   }
 
-  setHighlights({ currentId, legalIds, pathEdgeIds, lastEdgeId, previewId } = {}) {
+  setHighlights({
+    currentId,
+    legalIds,
+    pathEdgeIds,
+    pathNodeIds,
+    reachableNodeIds,
+    reachableEdgeIds,
+    lastEdgeId,
+    previewId
+  } = {}) {
     this.currentId = currentId ?? null;
     this.legalIds = new Set(legalIds || []);
     this.pathEdgeIds = new Set(pathEdgeIds || []);
+    this.pathNodeIds = new Set(pathNodeIds || []);
+    this.reachableNodeIds = new Set(reachableNodeIds || []);
+    this.reachableEdgeIds = new Set(reachableEdgeIds || []);
+    this.currentTotal = this.nodeById.get(this.currentId)?.totalStones ?? Infinity;
     this.lastEdgeId = lastEdgeId ?? null;
     this.previewId = previewId ?? null;
     this.draw();
@@ -250,7 +309,7 @@ class CanvasNimGraphRenderer {
   }
 
   drawEdge(context, edge, source, target) {
-    const isCurrent = edge.source === this.currentId;
+    const isCurrent = edgeSourceId(edge) === this.currentId;
     const isPath = this.pathEdgeIds.has(edge.id);
     const isLast = edge.id === this.lastEdgeId;
     const isPreview = target.node.id === this.previewId && isCurrent;
@@ -283,6 +342,7 @@ class CanvasNimGraphRenderer {
     }
 
     context.save();
+    context.globalAlpha = edgeEmphasis(edge, this);
     context.strokeStyle = stroke;
     context.fillStyle = stroke;
     context.lineWidth = lineWidth;
@@ -311,19 +371,26 @@ class CanvasNimGraphRenderer {
     const isLegal = this.legalIds.has(node.id);
     const isHovered = node.id === this.hoverId;
     const isPreview = node.id === this.previewId;
+    const isPath = this.pathNodeIds.has(node.id);
     let radius = projected.radius;
     if (isLegal) radius += 1.3;
     if (isCurrent) radius += 2.6;
 
-    if (isCurrent || isLegal || isPreview) {
+    context.save();
+    context.globalAlpha = nodeEmphasis(node, this);
+
+    if (isCurrent || isLegal || isPreview || isPath) {
       context.save();
       context.beginPath();
       const pulse = isCurrent && this.frame ? Math.sin(this.frame * Math.PI) * 3 : 0;
-      context.arc(projected.x, projected.y, radius + (isCurrent ? 8 : 4) + pulse, 0, TAU);
+      const halo = isCurrent ? 8 : isPath ? 3 : 4;
+      context.arc(projected.x, projected.y, radius + halo + pulse, 0, TAU);
       context.strokeStyle = isCurrent
         ? "rgba(255, 209, 102, 0.72)"
-        : "rgba(223, 250, 244, 0.62)";
-      context.lineWidth = isCurrent ? 2.2 : 1.35;
+        : isPath
+          ? "rgba(107, 224, 204, 0.72)"
+          : "rgba(223, 250, 244, 0.62)";
+      context.lineWidth = isCurrent ? 2.2 : isPath ? 1.6 : 1.35;
       context.stroke();
       context.restore();
     }
@@ -343,6 +410,10 @@ class CanvasNimGraphRenderer {
     } else if (node.outcome === "defeat") {
       outer = "#ffe0d0";
       inner = "#ba5d35";
+    }
+    if (isPath && !node.outcome && !isCurrent && !isLegal && !isPreview) {
+      outer = "#c9fff4";
+      inner = "#32a890";
     }
 
     const gradient = context.createRadialGradient(
@@ -384,6 +455,7 @@ class CanvasNimGraphRenderer {
       }
       context.restore();
     }
+    context.restore();
   }
 
   drawLabel(context, projected) {
@@ -398,6 +470,7 @@ class CanvasNimGraphRenderer {
         ? "DEFEAT"
         : `[${node.piles.join(", ")}]`;
     context.save();
+    context.globalAlpha = nodeEmphasis(node, this);
     context.font = "500 10px 'IBM Plex Mono', monospace";
     const textWidth = context.measureText(label).width;
     const boxWidth = textWidth + 14;
@@ -574,20 +647,23 @@ function edgeTargetId(edge) {
 }
 
 function forceNodeColor(node, renderer) {
-  if (node.outcome === "victory") return "#56e3c4";
-  if (node.outcome === "defeat") return "#f07f52";
-  if (node.id === renderer.previewId) return "#fff1a8";
-  if (node.id === renderer.currentId) return "#ffd166";
-  if (renderer.legalIds.has(node.id)) return "#dffaf4";
-  return node.nimSum === 0 ? "#a95834" : "#27907b";
+  let color = node.nimSum === 0 ? "#a95834" : "#27907b";
+  if (renderer.pathNodeIds.has(node.id)) color = "#62d8c2";
+  if (node.outcome === "victory") color = "#56e3c4";
+  if (node.outcome === "defeat") color = "#f07f52";
+  if (renderer.legalIds.has(node.id)) color = "#dffaf4";
+  if (node.id === renderer.currentId) color = "#ffd166";
+  if (node.id === renderer.previewId) color = "#fff1a8";
+  return colorWithOpacity(color, nodeEmphasis(node, renderer));
 }
 
 function forceEdgeColor(edge, renderer) {
-  if (edgeSourceId(edge) === renderer.currentId && edgeTargetId(edge) === renderer.previewId) return "#fff1a8";
-  if (edge.id === renderer.lastEdgeId) return "#8bf1dd";
-  if (edgeSourceId(edge) === renderer.currentId) return "#ffd166";
-  if (renderer.pathEdgeIds.has(edge.id)) return "#4ebca7";
-  return "#5f7d74";
+  let color = "#5f7d74";
+  if (renderer.pathEdgeIds.has(edge.id)) color = "#4ebca7";
+  if (edgeSourceId(edge) === renderer.currentId) color = "#ffd166";
+  if (edge.id === renderer.lastEdgeId) color = "#8bf1dd";
+  if (edgeSourceId(edge) === renderer.currentId && edgeTargetId(edge) === renderer.previewId) color = "#fff1a8";
+  return colorWithOpacity(color, edgeEmphasis(edge, renderer));
 }
 
 class ForceNimGraphRenderer {
@@ -597,30 +673,49 @@ class ForceNimGraphRenderer {
     this.currentId = null;
     this.legalIds = new Set();
     this.pathEdgeIds = new Set();
+    this.pathNodeIds = new Set();
+    this.reachableNodeIds = new Set();
+    this.reachableEdgeIds = new Set();
+    this.currentTotal = Infinity;
     this.lastEdgeId = null;
     this.previewId = null;
     this.nodes = [];
     this.edges = [];
+    this.nodeById = new Map();
     this.rendererType = "webgl";
     this.sceneRadius = 100;
+    this.sceneCenter = { x: 0, y: 0, z: 0 };
+    this.layoutSettling = false;
+    this.pendingReset = false;
+    this.resetTimer = 0;
     this.reducedMotion = prefersReducedMotion();
     this.boundKeyDown = this.onKeyDown.bind(this);
 
     const graph = new window.ForceGraph3D(container, { controlType: "orbit" });
     this.graph = graph
       .showNavInfo(false)
-      .enableNodeDrag(false)
-      .backgroundColor("#071c18")
+      .enableNodeDrag(true)
+      .backgroundColor(GRAPH_BACKGROUND)
+      .forceEngine("d3")
+      .warmupTicks(this.reducedMotion ? 80 : 24)
+      .cooldownTicks(this.reducedMotion ? 0 : 90)
+      .cooldownTime(this.reducedMotion ? 0 : 2500)
+      .d3AlphaMin(0.02)
+      .d3AlphaDecay(0.045)
+      .d3VelocityDecay(0.5)
       .nodeId("id")
       .nodeRelSize(2.2)
-      .nodeResolution(12)
+      .nodeResolution(8)
+      .nodeOpacity(1)
       .nodeColor((node) => forceNodeColor(node, this))
       .nodeVal((node) => {
-        if (node.id === this.currentId) return 6;
-        if (node.outcome) return 4.8;
-        if (node.id === this.previewId) return 4.2;
-        if (this.legalIds.has(node.id)) return 3.3;
-        return node.nimSum === 0 ? 1.35 : 1;
+        let value = node.nimSum === 0 ? 1.35 : 1;
+        if (this.pathNodeIds.has(node.id)) value = 1.8;
+        if (node.outcome) value = 4.8;
+        if (this.legalIds.has(node.id)) value = 3.3;
+        if (node.id === this.previewId) value = 4.2;
+        if (node.id === this.currentId) value = 6;
+        return value * (0.55 + nodeEmphasis(node, this) * 0.45);
       })
       .nodeLabel((node) => {
         const outcome = node.outcome === "victory"
@@ -631,7 +726,7 @@ class ForceNimGraphRenderer {
         return `<div class="force-node-label">${outcome}</div>`;
       })
       .linkColor((edge) => forceEdgeColor(edge, this))
-      .linkOpacity(0.46)
+      .linkOpacity(1)
       .linkWidth((edge) => {
         if (edge.id === this.lastEdgeId) return 2.8;
         if (edgeSourceId(edge) === this.currentId && edgeTargetId(edge) === this.previewId) return 2.5;
@@ -639,16 +734,31 @@ class ForceNimGraphRenderer {
         if (this.pathEdgeIds.has(edge.id)) return 1.1;
         return 0;
       })
-      .linkDirectionalArrowLength((edge) => edgeSourceId(edge) === this.currentId || edge.id === this.lastEdgeId ? 4.6 : 2.2)
+      .linkDirectionalArrowLength((edge) => {
+        if (edge.id === this.lastEdgeId || (edgeSourceId(edge) === this.currentId && edgeTargetId(edge) === this.previewId)) return 4.6;
+        if (edgeSourceId(edge) === this.currentId) return 3.8;
+        if (this.pathEdgeIds.has(edge.id)) return 2.7;
+        return 0;
+      })
+      .linkDirectionalArrowResolution(4)
       .linkDirectionalArrowRelPos(0.72)
       .linkDirectionalArrowColor((edge) => forceEdgeColor(edge, this))
       .linkDirectionalParticles((edge) => !this.reducedMotion && edge.id === this.lastEdgeId ? 2 : 0)
       .linkDirectionalParticleWidth(2.1)
       .linkDirectionalParticleColor(() => "#c9fff4")
       .linkDirectionalParticleSpeed(0.012)
-      .cooldownTicks(0)
+      .onEngineStop(() => this.handleEngineStop())
       .onNodeClick((node) => this.options.onNodeClick?.(node))
       .onNodeHover((node) => this.options.onNodeHover?.(node || null, null));
+
+    const chargeForce = graph.d3Force?.("charge");
+    chargeForce?.strength?.(-23);
+    chargeForce?.theta?.(1.1);
+    chargeForce?.distanceMin?.(2);
+    chargeForce?.distanceMax?.(220);
+    const linkForce = graph.d3Force?.("link");
+    linkForce?.distance?.(28);
+    linkForce?.iterations?.(1);
 
     const renderer = graph.renderer?.();
     renderer?.setPixelRatio?.(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -666,31 +776,39 @@ class ForceNimGraphRenderer {
   }
 
   setGraph(graphData) {
-    this.nodes = (graphData?.nodes || []).map((node) => ({
-      ...node,
-      x: (node.position?.x ?? node.x ?? 0) * FORCE_POSITION_SCALE,
-      y: (node.position?.y ?? node.y ?? 0) * FORCE_POSITION_SCALE,
-      z: (node.position?.z ?? node.z ?? 0) * FORCE_POSITION_SCALE,
-      fx: (node.position?.x ?? node.x ?? 0) * FORCE_POSITION_SCALE,
-      fy: (node.position?.y ?? node.y ?? 0) * FORCE_POSITION_SCALE,
-      fz: (node.position?.z ?? node.z ?? 0) * FORCE_POSITION_SCALE
-    }));
+    window.clearTimeout(this.resetTimer);
+    this.nodes = (graphData?.nodes || []).map((node) => {
+      const { x, y, z, fx, fy, fz, ...unpositionedNode } = node;
+      return { ...unpositionedNode };
+    });
     this.edges = (graphData?.edges || []).map((edge) => ({
       ...edge,
       source: edge.sourceId || edge.source,
       target: edge.targetId || edge.target
     }));
-    this.sceneRadius = Math.max(
-      30,
-      ...this.nodes.map((node) => Math.hypot(node.x, node.y, node.z))
-    );
+    this.nodeById = new Map(this.nodes.map((node) => [node.id, node]));
+    this.layoutSettling = true;
+    this.pendingReset = true;
     this.graph.graphData({ nodes: this.nodes, links: this.edges });
   }
 
-  setHighlights({ currentId, legalIds, pathEdgeIds, lastEdgeId, previewId } = {}) {
+  setHighlights({
+    currentId,
+    legalIds,
+    pathEdgeIds,
+    pathNodeIds,
+    reachableNodeIds,
+    reachableEdgeIds,
+    lastEdgeId,
+    previewId
+  } = {}) {
     this.currentId = currentId ?? null;
     this.legalIds = new Set(legalIds || []);
     this.pathEdgeIds = new Set(pathEdgeIds || []);
+    this.pathNodeIds = new Set(pathNodeIds || []);
+    this.reachableNodeIds = new Set(reachableNodeIds || []);
+    this.reachableEdgeIds = new Set(reachableEdgeIds || []);
+    this.currentTotal = this.nodeById.get(this.currentId)?.totalStones ?? Infinity;
     this.lastEdgeId = lastEdgeId ?? null;
     this.previewId = previewId ?? null;
     this.graph.refresh();
@@ -708,21 +826,82 @@ class ForceNimGraphRenderer {
   }
 
   resetView() {
+    if (this.layoutSettling) {
+      this.pendingReset = true;
+      return;
+    }
+    this.applyResetView();
+  }
+
+  measureScene() {
+    const positioned = this.nodes.filter((node) => [node.x, node.y, node.z].every(Number.isFinite));
+    if (!positioned.length) {
+      this.sceneCenter = { x: 0, y: 0, z: 0 };
+      this.sceneRadius = 100;
+      return;
+    }
+    const bounds = positioned.reduce((result, node) => ({
+      minX: Math.min(result.minX, node.x),
+      maxX: Math.max(result.maxX, node.x),
+      minY: Math.min(result.minY, node.y),
+      maxY: Math.max(result.maxY, node.y),
+      minZ: Math.min(result.minZ, node.z),
+      maxZ: Math.max(result.maxZ, node.z)
+    }), {
+      minX: Infinity,
+      maxX: -Infinity,
+      minY: Infinity,
+      maxY: -Infinity,
+      minZ: Infinity,
+      maxZ: -Infinity
+    });
+    this.sceneCenter = {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+      z: (bounds.minZ + bounds.maxZ) / 2
+    };
+    this.sceneRadius = Math.max(
+      30,
+      ...positioned.map((node) => Math.hypot(
+        node.x - this.sceneCenter.x,
+        node.y - this.sceneCenter.y,
+        node.z - this.sceneCenter.z
+      ))
+    );
+  }
+
+  handleEngineStop() {
+    this.layoutSettling = false;
+    this.measureScene();
+    if (!this.pendingReset) return;
+    this.pendingReset = false;
+    this.applyResetView();
+  }
+
+  applyResetView() {
+    window.clearTimeout(this.resetTimer);
     const duration = this.reducedMotion ? 0 : 260;
     const radius = this.sceneRadius;
+    const target = this.sceneCenter;
     this.graph.cameraPosition(
-      { x: radius * 0.92, y: radius * 0.58, z: radius * 2.25 },
-      { x: 0, y: 0, z: 0 },
+      {
+        x: target.x + radius * 0.92,
+        y: target.y + radius * 0.58,
+        z: target.z + radius * 2.25
+      },
+      target,
       duration
     );
-    window.setTimeout(() => this.fitView(this.reducedMotion ? 0 : 260), duration);
+    this.resetTimer = window.setTimeout(() => {
+      this.resetTimer = 0;
+      this.fitView(this.reducedMotion ? 0 : 260);
+    }, duration);
   }
 
-  pulse() {
-    this.graph.refresh();
-  }
+  pulse() {}
 
   destroy() {
+    window.clearTimeout(this.resetTimer);
     this.container.removeEventListener("keydown", this.boundKeyDown);
     this.graph._destructor?.();
   }
@@ -730,17 +909,28 @@ class ForceNimGraphRenderer {
   moveCamera({ yaw = 0, pitch = 0, scale = 1 }) {
     const position = this.graph.cameraPosition?.();
     if (!position) return;
+    const controlTarget = this.graph.controls?.()?.target;
+    const target = controlTarget && [controlTarget.x, controlTarget.y, controlTarget.z].every(Number.isFinite)
+      ? { x: controlTarget.x, y: controlTarget.y, z: controlTarget.z }
+      : this.sceneCenter;
+    const offsetX = position.x - target.x;
+    const offsetY = position.y - target.y;
+    const offsetZ = position.z - target.z;
     const cosYaw = Math.cos(yaw);
     const sinYaw = Math.sin(yaw);
-    const yawX = cosYaw * position.x - sinYaw * position.z;
-    const yawZ = sinYaw * position.x + cosYaw * position.z;
+    const yawX = cosYaw * offsetX - sinYaw * offsetZ;
+    const yawZ = sinYaw * offsetX + cosYaw * offsetZ;
     const cosPitch = Math.cos(pitch);
     const sinPitch = Math.sin(pitch);
-    const nextY = cosPitch * position.y - sinPitch * yawZ;
-    const nextZ = sinPitch * position.y + cosPitch * yawZ;
+    const nextY = cosPitch * offsetY - sinPitch * yawZ;
+    const nextZ = sinPitch * offsetY + cosPitch * yawZ;
     this.graph.cameraPosition(
-      { x: yawX * scale, y: nextY * scale, z: nextZ * scale },
-      { x: 0, y: 0, z: 0 },
+      {
+        x: target.x + yawX * scale,
+        y: target.y + nextY * scale,
+        z: target.z + nextZ * scale
+      },
+      target,
       this.reducedMotion ? 0 : 120
     );
   }
