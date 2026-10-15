@@ -26,7 +26,7 @@
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
     <link rel="stylesheet" href="./style.css?v=20261014-4" />
-    <script type="module" src="./demo.js?v=20261014-5"></script>
+    <script type="module" src="./demo.js?v=20261015-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -102,6 +102,7 @@
               <select id="family-select">
                 <option value="uniform">Uniform rotation</option>
                 <option value="nonuniform">Nonuniform rotation</option>
+                <option value="transcritical">Transcritical exchange</option>
                 <option value="symmetric-pitchfork">Symmetric pitchfork</option>
                 <option value="overdamped-pendulum" selected>Overdamped pendulum</option>
                 <option value="firefly-locking">Firefly phase locking</option>
@@ -568,6 +569,16 @@
                   <span class="nowrap">0 = 2π</span>. Rolling the plane joins those edges
                   into a cylinder. The gold slice is the parameter value used by the
                   other three views.
+                </p>
+                <p class="app-note">
+                  <strong>Transcritical exchange.</strong> In the transcritical
+                  example, <span class="nowrap">θ* = π</span> is fixed while
+                  <span class="nowrap">θ* = π + μ</span> moves. At
+                  <span class="nowrap">μ = 0</span> the branches cross and exchange
+                  stability rather than being created or destroyed. With
+                  <span class="nowrap">x = θ − π</span>, the vector field begins as
+                  <span class="nowrap">ẋ = ½x(μ − x) + higher-order terms</span>,
+                  the transcritical normal form.
                 </p>
                 <p class="app-note">
                   <strong>Pitchforks and symmetry.</strong> In the symmetric pitchfork

@@ -10,7 +10,7 @@ import {
   seamCrossings,
   stepLiftedRK4,
   wrapAngle
-} from "./model.js?v=20261014-2";
+} from "./model.js?v=20261015-1";
 
 const byId = (id) => document.getElementById(id);
 
@@ -116,6 +116,14 @@ const FAMILY_UI = Object.freeze({
     ranges: { omega: [-2.2, 2.2, 0.002], a: [0, 1.4, 0.002], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Base angular velocity ω", a: "Speed modulation a", phase: "Wave phase φ" },
     help: "For ω ≠ 0 and a < 1 the speed varies but never vanishes. At a = 1 a bottleneck becomes a threshold; for a > 1 fixed points appear."
+  },
+  transcritical: {
+    visible: ["omega"],
+    bifurcationDefault: "omega",
+    defaults: { omega: 0.7 },
+    ranges: { omega: [-2.5, 2.5, 0.002] },
+    labels: { omega: "Transcritical parameter μ" },
+    help: "The fixed branch θ* = π and moving branch θ* = π + μ meet at μ = 0. They cross and exchange stability without changing the number of equilibria on either side."
   },
   "symmetric-pitchfork": {
     visible: ["omega", "b"],
@@ -371,12 +379,13 @@ function updateParameterOutputs(options = {}) {
   const phase = Number(elements.phase.value);
   const harmonics = Math.round(Number(elements.n.value));
   const pitchforkFamily = elements.familySelect.value === "symmetric-pitchfork";
+  const namedMuFamily = pitchforkFamily || elements.familySelect.value === "transcritical";
   Object.keys(PARAMETER_PLAYER_CONFIG).forEach((name) => {
     syncParameterValueInput(name, options);
   });
   elements.omega.setAttribute(
     "aria-valuetext",
-    pitchforkFamily ? formatNumber(omega, 3) : `${formatNumber(omega, 3)} radians per unit time`
+    namedMuFamily ? formatNumber(omega, 3) : `${formatNumber(omega, 3)} radians per unit time`
   );
   elements.a.setAttribute("aria-valuetext", formatNumber(amplitude, 3));
   elements.b.setAttribute(
@@ -538,6 +547,7 @@ function bifurcationAnchors(familyId, name) {
   const amplitude = Math.abs(Number(elements.a.value));
   const omega = Math.abs(Number(elements.omega.value));
   if (familyId === "nonuniform" && name === "a") return [1];
+  if (familyId === "transcritical" && name === "omega") return [0];
   if (familyId === "symmetric-pitchfork" && name === "omega") {
     return symmetricPitchforkMuFolds(Number(elements.b.value));
   }
@@ -667,6 +677,7 @@ function minimumVelocitySample(samples) {
 function stabilityLabel(stability) {
   if (stability === "stable") return "stable";
   if (stability === "unstable") return "unstable";
+  if (stability === "semistable" && atTranscritical()) return "transcritical";
   if (stability === "semistable") return "threshold";
   return "nonhyperbolic";
 }
@@ -675,6 +686,11 @@ function atSymmetricPitchfork() {
   return elements.familySelect.value === "symmetric-pitchfork"
     && Math.abs(Number(elements.omega.value)) <= 1e-9
     && Math.abs(Number(elements.b.value)) <= 1e-9;
+}
+
+function atTranscritical() {
+  return elements.familySelect.value === "transcritical"
+    && Math.abs(Number(elements.omega.value)) <= 1e-9;
 }
 
 function updateEquilibriumList() {
@@ -718,7 +734,10 @@ function updateRegimeCopy() {
   const { regime, direction, period } = state.analysis;
   const ratio = Math.abs(state.minimumVelocityPoint?.velocity || 0) / Math.max(1e-9, state.maximumVelocity);
   const nearBottleneck = regime === "rotating" && ratio < 0.18;
-  if (atSymmetricPitchfork()) {
+  if (atTranscritical()) {
+    elements.regimeNoteKicker.textContent = "Transcritical bifurcation";
+    elements.regimeNoteCopy.textContent = "At μ = 0 the fixed branch θ* = π meets the moving branch θ* = π + μ. They pass through one another and exchange stability; neither branch is created or destroyed.";
+  } else if (atSymmetricPitchfork()) {
     elements.regimeNoteKicker.textContent = "Supercritical pitchfork";
     elements.regimeNoteCopy.textContent = "At μ = 0 the symmetric equilibrium is nonhyperbolic. As μ increases, it loses stability and two stable equilibria emerge symmetrically.";
   } else if (regime === "stationary") {
@@ -747,6 +766,7 @@ function updateRegimeCopy() {
 function updateTelemetry() {
   const { regime, direction, equilibriumCount, meanFrequency, period } = state.analysis;
   const pitchforkCritical = atSymmetricPitchfork();
+  const transcriticalCritical = atTranscritical();
   const regimeLabels = {
     stationary: "Every point fixed",
     locked: pitchforkCritical
@@ -754,7 +774,7 @@ function updateTelemetry() {
       : elements.familySelect.value === "firefly-locking"
         ? "Phase locked"
         : "Locked",
-    threshold: "Saddle-node threshold",
+    threshold: transcriticalCritical ? "Transcritical point" : "Saddle-node threshold",
     rotating: "Rotating"
   };
   elements.telemetryRegime.textContent = regimeLabels[regime] || regime;
@@ -768,22 +788,26 @@ function updateTelemetry() {
         : "Stationary";
   elements.telemetryFrequency.textContent = regime === "rotating"
     ? formatNumber(meanFrequency, 3)
-    : regime === "stationary"
-      ? "—"
-      : regime === "threshold"
-        ? "0 (threshold)"
-        : "0 (locked)";
-  elements.stageStatus.textContent = pitchforkCritical
-    ? "Pitchfork point at μ = 0"
-    : Number.isFinite(period)
-    ? `One lap: T = ${formatNumber(period, 3)}`
-    : regime === "threshold"
-      ? "Infinite-period threshold"
+    : transcriticalCritical
+      ? "0 (critical)"
       : regime === "stationary"
-        ? "The vector field is zero everywhere"
-        : equilibriumCount === 1
-          ? "1 equilibrium on the circle"
-          : `${equilibriumCount} equilibria on the circle`;
+        ? "—"
+        : regime === "threshold"
+          ? "0 (threshold)"
+          : "0 (locked)";
+  elements.stageStatus.textContent = transcriticalCritical
+    ? "Transcritical point at μ = 0"
+    : pitchforkCritical
+      ? "Pitchfork point at μ = 0"
+      : Number.isFinite(period)
+        ? `One lap: T = ${formatNumber(period, 3)}`
+        : regime === "threshold"
+          ? "Infinite-period threshold"
+          : regime === "stationary"
+            ? "The vector field is zero everywhere"
+            : equilibriumCount === 1
+              ? "1 equilibrium on the circle"
+              : `${equilibriumCount} equilibria on the circle`;
 }
 
 function refreshFlow(options = {}) {

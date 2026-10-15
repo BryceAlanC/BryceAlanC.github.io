@@ -19,6 +19,7 @@ function equilibriumNear(equilibria, target, tolerance = 2e-6) {
 assert.deepEqual(model.PRESET_IDS, [
   "uniform",
   "nonuniform",
+  "transcritical",
   "symmetric-pitchfork",
   "overdamped-pendulum",
   "firefly-locking",
@@ -50,6 +51,40 @@ for (const id of model.PRESET_IDS) {
       `${id} should be periodic`
     );
   }
+}
+
+// A genuine transcritical on the circle needs only one stable–unstable pair.
+// The fixed branch theta = pi and moving branch theta = pi + mu cross and
+// exchange stability at mu = 0.
+{
+  const before = model.createCircleFlow("transcritical", { mu: -0.7 });
+  const beforeEquilibria = model.findEquilibria(before, { samples: 128 });
+  assert.equal(beforeEquilibria.length, 2);
+  assert.equal(equilibriumNear(beforeEquilibria, Math.PI).stability, "stable");
+  assert.equal(equilibriumNear(beforeEquilibria, Math.PI - 0.7).stability, "unstable");
+
+  const critical = model.createCircleFlow("transcritical", { omega: 0 });
+  const criticalEquilibria = model.findEquilibria(critical, { samples: 128 });
+  assert.equal(criticalEquilibria.length, 1);
+  near(criticalEquilibria[0].angle, Math.PI, 2e-7);
+  assert.equal(criticalEquilibria[0].stability, "semistable");
+  near(criticalEquilibria[0].derivative, 0, 2e-8);
+
+  const after = model.createCircleFlow("transcritical", { "μ": 0.7 });
+  const afterEquilibria = model.findEquilibria(after, { samples: 128 });
+  assert.equal(afterEquilibria.length, 2);
+  assert.equal(equilibriumNear(afterEquilibria, Math.PI).stability, "unstable");
+  assert.equal(equilibriumNear(afterEquilibria, Math.PI + 0.7).stability, "stable");
+
+  // Analytic equilibrium hints keep very close simple branches from being
+  // lost inside one numerical sampling interval.
+  const close = model.findEquilibria(
+    model.createCircleFlow("transcritical", { omega: 0.002 }),
+    { samples: 64 }
+  );
+  assert.equal(close.length, 2);
+  assert.ok(equilibriumNear(close, Math.PI));
+  assert.ok(equilibriumNear(close, Math.PI + 0.002));
 }
 
 // A reflection-symmetric circle flow supports a genuine supercritical
@@ -212,6 +247,8 @@ function bifurcationSlice(diagram, parameter, tolerance = 1e-10) {
 assert.equal(model.canonicalCircleParameterKey("a"), "amplitude");
 assert.equal(model.canonicalCircleParameterKey("b"), "secondAmplitude");
 assert.equal(model.canonicalCircleParameterKey("n"), "harmonics");
+assert.equal(model.canonicalCircleParameterKey("mu"), "omega");
+assert.equal(model.canonicalCircleParameterKey("μ"), "omega");
 assert.equal(model.default.canonicalCircleParameterKey, model.canonicalCircleParameterKey);
 assert.equal(model.default.sampleCircleBifurcation, model.sampleCircleBifurcation);
 
@@ -246,6 +283,30 @@ assert.equal(model.default.sampleCircleBifurcation, model.sampleCircleBifurcatio
   near(threshold[0].angle, phase + Math.PI, 2e-7);
   assert.equal(threshold[0].stability, "semistable");
   assert.equal(bifurcationSlice(diagram, 1.2).equilibria.length, 2);
+}
+
+// The transcritical diagram keeps two branches on either side of mu = 0;
+// exactly at the crossing they coincide as one semistable equilibrium.
+{
+  const diagram = model.sampleCircleBifurcation(
+    "transcritical",
+    { omega: 0.7 },
+    "mu",
+    [-1, 1],
+    { parameterSamples: 21, equilibriumSamples: 128 }
+  );
+  assert.equal(diagram.parameterKey, "omega");
+  const before = bifurcationSlice(diagram, -0.5).equilibria;
+  assert.equal(before.length, 2);
+  assert.equal(equilibriumNear(before, Math.PI).stability, "stable");
+  assert.equal(equilibriumNear(before, Math.PI - 0.5).stability, "unstable");
+  const crossing = bifurcationSlice(diagram, 0).equilibria;
+  assert.equal(crossing.length, 1);
+  assert.equal(crossing[0].stability, "semistable");
+  const after = bifurcationSlice(diagram, 0.5).equilibria;
+  assert.equal(after.length, 2);
+  assert.equal(equilibriumNear(after, Math.PI).stability, "unstable");
+  assert.equal(equilibriumNear(after, Math.PI + 0.5).stability, "stable");
 }
 
 // Adler and repeated-locking diagrams have the expected fold counts.
