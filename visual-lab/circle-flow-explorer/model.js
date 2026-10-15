@@ -123,6 +123,9 @@ const PARAMETER_KEY_ALIASES = Object.freeze({
   frequency: "omega",
   deltaOmega: "omega",
   current: "omega",
+  mu: "omega",
+  "μ": "omega",
+  r: "omega",
   a: "amplitude",
   amplitude: "amplitude",
   coupling: "amplitude",
@@ -149,7 +152,7 @@ function normalizeParameters(definition, overrides = {}) {
   const result = {};
   for (const descriptor of definition.parameters) {
     const aliases = descriptor.key === "omega"
-      ? ["drive", "frequency", "deltaOmega", "current"]
+      ? ["drive", "frequency", "deltaOmega", "current", "mu", "μ", "r"]
       : descriptor.key === "amplitude"
         ? ["a", "coupling", "criticalCurrent"]
         : descriptor.key === "phase"
@@ -203,6 +206,31 @@ const presetDefinitions = Object.freeze({
     analyticPeriod(params) {
       if (params.omega === 0 || Math.abs(params.amplitude) >= 1) return Infinity;
       return TWO_PI / (Math.abs(params.omega) * Math.sqrt(1 - params.amplitude ** 2));
+    }
+  }),
+  transcritical: Object.freeze({
+    id: "transcritical",
+    name: "Transcritical exchange on the circle",
+    shortName: "Transcritical",
+    formula: () => "θ̇ = 2 sin((θ − π)/2) sin((μ − θ + π)/2)",
+    description: "A fixed equilibrium and a moving equilibrium cross at μ = 0 and exchange stability.",
+    lesson: "A transcritical bifurcation preserves the stable–unstable pair: the two branches pass through one another instead of being created or destroyed.",
+    parameters: Object.freeze([
+      Object.freeze({
+        ...commonParameters.omega,
+        symbol: "μ",
+        label: "Transcritical parameter μ",
+        defaultValue: 0.7,
+        minimum: -2.5,
+        maximum: 2.5
+      })
+    ]),
+    velocity(theta, params) {
+      const centeredAngle = theta - Math.PI;
+      return Math.cos(centeredAngle - params.omega / 2) - Math.cos(params.omega / 2);
+    },
+    equilibriumAngles(params) {
+      return [Math.PI, Math.PI + params.omega];
     }
   }),
   "symmetric-pitchfork": Object.freeze({
@@ -342,6 +370,8 @@ const PRESET_ALIASES = Object.freeze({
   pendulum: "overdamped-pendulum",
   pitchfork: "symmetric-pitchfork",
   "symmetric-pitchfork-flow": "symmetric-pitchfork",
+  "transcritical-exchange": "transcritical",
+  "transcritical-flow": "transcritical",
   fireflies: "firefly-locking",
   firefly: "firefly-locking",
   josephson: "josephson-junction",
@@ -374,6 +404,11 @@ function makeCircleFlow(definition, overrides = {}) {
   };
   if (typeof definition.analyticPeriod === "function") {
     flow.analyticPeriod = () => definition.analyticPeriod(params);
+  }
+  if (typeof definition.equilibriumAngles === "function") {
+    flow.equilibriumAngles = () => Object.freeze(
+      definition.equilibriumAngles(params).map((angle) => wrapAngle(angle))
+    );
   }
   return Object.freeze(flow);
 }
@@ -596,6 +631,13 @@ export function findEquilibria(flowOrId, options = {}) {
   }
 
   const candidates = [];
+  if (typeof flow.equilibriumAngles === "function") {
+    for (const angle of flow.equilibriumAngles()) {
+      if (Number.isFinite(angle) && Math.abs(evaluateFlow(flow, angle)) <= tangencyTolerance) {
+        candidates.push(angle);
+      }
+    }
+  }
   for (let index = 0; index < samples; index += 1) {
     const left = origin + spacing * index;
     const right = left + spacing;
