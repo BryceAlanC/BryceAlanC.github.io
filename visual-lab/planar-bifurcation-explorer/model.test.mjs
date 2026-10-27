@@ -378,4 +378,99 @@ for (const id of model.PRESET_IDS) {
   }
 }
 
+{
+  const expression = model.compilePlanarExpression("2x_1 + sin(x2) - r");
+  assert.equal(expression.usesX1, true);
+  assert.equal(expression.usesX2, true);
+  assert.equal(expression.usesR, true);
+  near(expression.evaluate(2, Math.PI / 2, 3), 2);
+
+  const aliases = model.compilePlanarExpression("x^2 + y^2");
+  near(aliases.evaluate(3, 4, 0), 25);
+  assert.ok(Number.isNaN(model.compilePlanarExpression("sqrt(x1)").evaluate(-1, 0, 0)));
+  assert.throws(() => model.compilePlanarExpression("window.alert(1)"), /Unsupported character|Unknown name/);
+  assert.throws(() => model.compilePlanarExpression(""), /Enter a right-hand side/);
+}
+
+{
+  const custom = model.createCustomPreset("r*x1 - x2", "x1 + r*x2", {
+    x1Range: [-2, 2],
+    x2Range: [-2, 2],
+    parameterRange: [-1, 1],
+    observable: "x2"
+  });
+  assert.equal(custom.sourceType, "custom");
+  assert.equal(custom.expression1, "r*x1 - x2");
+  assert.equal(custom.expression2, "x1 + r*x2");
+  assert.equal(custom.expressionUsesParameter, true);
+  assert.equal(custom.observable, "y");
+  assert.deepEqual(model.fieldAt(custom, 1, 2, 0.5), [-1.5, 2]);
+  const matrix = model.jacobianAt(custom, 0, 0, -0.4);
+  near(matrix[0][0], -0.4, 2e-6);
+  near(matrix[0][1], -1, 2e-6);
+  near(matrix[1][0], 1, 2e-6);
+  near(matrix[1][1], -0.4, 2e-6);
+  const stable = model.equilibriaAt(custom, -0.4);
+  assert.equal(stable.length, 1);
+  near(stable[0].x, 0, 2e-6);
+  near(stable[0].y, 0, 2e-6);
+  assert.equal(stable[0].type, "stable-focus");
+  assert.equal(model.equilibriaAt(custom, 0.4)[0].type, "unstable-focus");
+  assert.deepEqual(model.cyclesAt(custom, 0), []);
+  assert.deepEqual(model.connectionsAt(custom, 0), []);
+
+  const branches = model.sampleBranches(custom, { samples: 31 });
+  assert.equal(branches.observable, "y");
+  assert.ok(branches.branches.some((branch) => branch.points.length >= 25));
+}
+
+{
+  const saddle = model.createCustomPreset("x_1", "-x_2", {
+    x1Range: [-1, 1],
+    x2Range: [-1, 1],
+    parameterRange: [-1, 1]
+  });
+  const equilibrium = model.equilibriaAt(saddle, 0)[0];
+  assert.ok(equilibrium);
+  assert.equal(equilibrium.type, "saddle");
+
+  const vanDerPol = model.createCustomPreset("x2", "r*(1-x1^2)*x2-x1", {
+    x1Range: [-3, 3],
+    x2Range: [-3, 3],
+    parameterRange: [-1, 1]
+  });
+  assert.equal(model.equilibriaAt(vanDerPol, 0.5).length, 1);
+}
+
+{
+  const domainLimited = model.createCustomPreset("1/x1", "-x2", {
+    x1Range: [-2, 2],
+    x2Range: [-2, 2],
+    parameterRange: [-1, 1]
+  });
+  assert.ok(Number.isNaN(domainLimited.field(0, 1, 0)[0]));
+  assert.doesNotThrow(() => model.sampleBranches(domainLimited, { samples: 9 }));
+  assert.throws(
+    () => model.createCustomPreset("exp(10*x1)", "-x2"),
+    /becomes too large/
+  );
+  assert.throws(
+    () => model.createCustomPreset("x1", "x2", { x1Range: [1, 1] }),
+    /positive width/
+  );
+  assert.throws(
+    () => model.createCustomPreset("", "x2"),
+    /First equation: Enter a right-hand side/
+  );
+  assert.throws(
+    () => model.createCustomPreset("x1", "bad_name"),
+    /Second equation: Unknown name/
+  );
+  assert.throws(
+    () => model.createCustomPreset("r*x1", "r*x2"),
+    /every visible state is an equilibrium/
+  );
+}
+
 console.log("planar bifurcation model tests passed");
+

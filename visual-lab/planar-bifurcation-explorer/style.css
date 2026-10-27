@@ -43,7 +43,8 @@
 }
 
 .planar-app .control-panel select,
-.planar-app .control-panel input[type="number"] {
+.planar-app .control-panel input[type="number"],
+.planar-app .control-panel input[type="text"] {
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
@@ -57,6 +58,75 @@
 .planar-app .control-panel input[type="number"] {
   font-family: var(--mono);
   font-size: 0.92rem;
+}
+
+.planar-app .control-panel input[type="text"] {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.system-equation-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.system-equation-input > span {
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.custom-second-equation,
+.custom-observable-label {
+  margin-top: 0.75rem;
+}
+
+.control-details {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--hairline);
+  padding-top: 0.65rem;
+}
+
+.control-details summary {
+  cursor: pointer;
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.compact-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.compact-field-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+  color: var(--forest);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
+
+.control-error {
+  margin: 0.75rem 0 0;
+  border-left: 3px solid var(--rust);
+  padding: 0.6rem 0.7rem;
+  background: rgba(156, 69, 40, 0.08);
+  color: var(--rust);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.custom-system-controls [aria-invalid="true"] {
+  border-color: var(--rust) !important;
+  box-shadow: 0 0 0 1px var(--rust);
 }
 
 .planar-app .control-panel input[type="range"] {
@@ -1120,3 +1190,4 @@
     scroll-behavior: auto;
   }
 }
+

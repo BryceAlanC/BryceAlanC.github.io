@@ -2,12 +2,13 @@ import {
   PRESET_IDS,
   PRESETS,
   createPreset,
+  createCustomPreset,
   equilibriaAt,
   cyclesAt,
   connectionsAt,
   integrateTrajectory,
   sampleBranches
-} from "./model.js?v=20261005-2";
+} from "./model.js?v=20261027-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -39,6 +40,18 @@ const elements = {
   familyTitle: document.getElementById("family-title"),
   familyEquations: document.getElementById("family-equations"),
   familyNote: document.getElementById("family-note"),
+  customSystemControls: document.getElementById("custom-system-controls"),
+  customX1Equation: document.getElementById("custom-x1-equation"),
+  customX2Equation: document.getElementById("custom-x2-equation"),
+  customX1Min: document.getElementById("custom-x1-min"),
+  customX1Max: document.getElementById("custom-x1-max"),
+  customX2Min: document.getElementById("custom-x2-min"),
+  customX2Max: document.getElementById("custom-x2-max"),
+  customRMin: document.getElementById("custom-r-min"),
+  customRMax: document.getElementById("custom-r-max"),
+  customObservable: document.getElementById("custom-observable"),
+  customSystemError: document.getElementById("custom-system-error"),
+  applyCustomSystem: document.getElementById("apply-custom-system"),
   parameter: document.getElementById("parameter-r"),
   parameterValue: document.getElementById("parameter-r-value"),
   toggleSweep: document.getElementById("toggle-sweep"),
@@ -142,7 +155,9 @@ const state = {
   lastTrajectoryRefresh: 0,
   trajectoryRefreshPending: false,
   fullscreenActive: false,
-  fullscreenInitialized: false
+  fullscreenInitialized: false,
+  runtimeFault: false,
+  lastAnimationError: null
 };
 
 function clamp(value, minimum, maximum) {
@@ -381,15 +396,24 @@ function makeTrajectory(seed, previous = null) {
     Math.max(Math.abs(bounds.x[0]), Math.abs(bounds.x[1])),
     Math.max(Math.abs(bounds.y[0]), Math.abs(bounds.y[1]))
   );
-  const result = integrateTrajectory(state.family, {
-    initial: [seed.x, seed.y],
-    parameter: state.parameter,
-    dt: 0.018,
-    duration: trajectoryDuration(),
-    bounds,
-    maxRadius: Math.max(40, boundRadius * 1.05),
-    sampleEvery: 2
-  });
+  let result;
+  try {
+    result = integrateTrajectory(state.family, {
+      initial: [seed.x, seed.y],
+      parameter: state.parameter,
+      dt: 0.018,
+      duration: trajectoryDuration(),
+      bounds,
+      maxRadius: Math.max(40, boundRadius * 1.05),
+      sampleEvery: 2
+    });
+  } catch (error) {
+    console.warn("A trajectory could not be integrated.", error);
+    result = {
+      points: [{ t: 0, x: seed.x, y: seed.y }],
+      status: "non-finite"
+    };
+  }
   const previousFraction = previous && previous.points.length > 1
     ? previous.progress / (previous.points.length - 1)
     : 0;
@@ -545,12 +569,16 @@ function refreshObjects(options = {}) {
     }
     if (!state.cycles.length) {
       const item = document.createElement("li");
-      item.textContent = "No periodic orbit detected in the current window.";
+      item.textContent = state.family.sourceType === "custom"
+        ? "Periodic orbits are not detected automatically for custom systems."
+        : "No periodic orbit detected in the current window.";
       elements.objectList.append(item);
     }
     if (!state.objects.length) {
       const item = document.createElement("li");
-      item.textContent = "No equilibrium or periodic orbit lies in the current window.";
+      item.textContent = state.family.sourceType === "custom"
+        ? "No numerical equilibrium was found in the current window."
+        : "No equilibrium or periodic orbit lies in the current window.";
       elements.objectList.append(item);
     }
   }
@@ -692,9 +720,17 @@ function updateFamilyCopy() {
   }
   if (elements.familyEquations) {
     elements.familyEquations.replaceChildren();
-    const equation = document.createElement("code");
-    equation.textContent = state.family.formula.replaceAll("μ", "r");
-    elements.familyEquations.append(equation);
+    if (state.family.sourceType === "custom") {
+      const first = document.createElement("code");
+      const second = document.createElement("code");
+      first.textContent = `dx1/dt = ${state.family.expression1}`;
+      second.textContent = `dx2/dt = ${state.family.expression2}`;
+      elements.familyEquations.append(first, second);
+    } else {
+      const equation = document.createElement("code");
+      equation.textContent = state.family.formula.replaceAll("μ", "r");
+      elements.familyEquations.append(equation);
+    }
     if (state.family.polarFormula) {
       const polar = document.createElement("code");
       polar.textContent = state.family.polarFormula.replaceAll("μ", "r");
@@ -708,6 +744,15 @@ function updateFamilyCopy() {
   if (elements.bifurcationObservableLabel) elements.bifurcationObservableLabel.textContent = `Vertical axis: ${state.family.observableLabel}`;
   if (elements.eventList) {
     elements.eventList.replaceChildren();
+    if (state.family.sourceType === "custom" && !state.family.criticalValues.length) {
+      const item = document.createElement("li");
+      const strong = document.createElement("strong");
+      const span = document.createElement("span");
+      strong.textContent = "Numerical continuation";
+      span.textContent = "No events are marked automatically; equilibria and their branches are approximations in the selected window.";
+      item.append(strong, span);
+      elements.eventList.append(item);
+    }
     for (const event of state.family.criticalValues) {
       const item = document.createElement("li");
       const strong = document.createElement("strong");
@@ -742,7 +787,9 @@ function updateTelemetry() {
     const connectionText = state.connections.length
       ? ` · ${state.connections.length} homoclinic ${state.connections.length === 1 ? "loop" : "loops"}`
       : "";
-    elements.stageStatus.textContent = `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`;
+    elements.stageStatus.textContent = state.family.sourceType === "custom"
+      ? `${state.equilibria.length} numerical ${equilibriumWord} · periodic-orbit detection unavailable`
+      : `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`;
   }
 }
 
@@ -791,12 +838,91 @@ function setParameter(value, options = {}) {
 function configureParameterControl() {
   const [minimum, maximum] = state.family.parameterRange;
   const step = (maximum - minimum) / 700;
+  const parameterActive = state.family.sourceType !== "custom" || state.family.expressionUsesParameter;
   elements.parameter.min = String(minimum);
   elements.parameter.max = String(maximum);
   elements.parameter.step = String(step);
   elements.parameter.value = String(state.parameter);
+  elements.parameter.disabled = !parameterActive;
+  if (elements.toggleSweep) elements.toggleSweep.disabled = !parameterActive;
+  if (elements.centerParameter) elements.centerParameter.disabled = !parameterActive;
   elements.parameter.setAttribute("aria-valuetext", `r equals ${formatParameter(state.parameter)}`);
   if (elements.parameterValue) elements.parameterValue.textContent = formatParameter(state.parameter);
+}
+
+function customSystemOptions() {
+  return {
+    x1Range: [Number(elements.customX1Min?.value), Number(elements.customX1Max?.value)],
+    x2Range: [Number(elements.customX2Min?.value), Number(elements.customX2Max?.value)],
+    parameterRange: [Number(elements.customRMin?.value), Number(elements.customRMax?.value)],
+    observable: elements.customObservable?.value === "x2" ? "x2" : "x1"
+  };
+}
+
+function setCustomSystemControlsVisible(visible) {
+  if (elements.customSystemControls) elements.customSystemControls.hidden = !visible;
+}
+
+function customSystemInputs() {
+  return [
+    elements.customX1Equation,
+    elements.customX2Equation,
+    elements.customX1Min,
+    elements.customX1Max,
+    elements.customX2Min,
+    elements.customX2Max,
+    elements.customRMin,
+    elements.customRMax,
+    elements.customObservable
+  ].filter(Boolean);
+}
+
+function clearCustomSystemError() {
+  if (elements.customSystemError) {
+    elements.customSystemError.hidden = true;
+    elements.customSystemError.textContent = "";
+  }
+  customSystemInputs().forEach((input) => input.removeAttribute("aria-invalid"));
+}
+
+function showCustomSystemError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (elements.customSystemError) {
+    elements.customSystemError.textContent = message;
+    elements.customSystemError.hidden = false;
+  }
+  let invalidInputs = [elements.customX1Equation, elements.customX2Equation].filter(Boolean);
+  if (/first|x1 equation|dx1/i.test(message)) invalidInputs = [elements.customX1Equation].filter(Boolean);
+  else if (/second|x2 equation|dx2/i.test(message)) invalidInputs = [elements.customX2Equation].filter(Boolean);
+  else if (/x1 range/i.test(message)) invalidInputs = [elements.customX1Min, elements.customX1Max].filter(Boolean);
+  else if (/x2 range/i.test(message)) invalidInputs = [elements.customX2Min, elements.customX2Max].filter(Boolean);
+  else if (/parameter range/i.test(message)) invalidInputs = [elements.customRMin, elements.customRMax].filter(Boolean);
+  invalidInputs.forEach((input) => input.setAttribute("aria-invalid", "true"));
+  invalidInputs[0]?.focus();
+  announce(`Custom system not applied. ${message}`);
+}
+
+function prepareCustomSystem() {
+  return createCustomPreset(
+    elements.customX1Equation?.value || "",
+    elements.customX2Equation?.value || "",
+    customSystemOptions()
+  );
+}
+
+function applyCustomSystem(options = {}) {
+  clearCustomSystemError();
+  let preparedFamily;
+  try {
+    preparedFamily = prepareCustomSystem();
+  } catch (error) {
+    showCustomSystemError(error);
+    return false;
+  }
+  return loadFamily("custom", {
+    announce: options.announce !== false,
+    preparedFamily
+  });
 }
 
 function resetPhaseView() {
@@ -817,12 +943,32 @@ function resetBifurcationView() {
 function loadFamily(id, options = {}) {
   const requestedId = String(id);
   const normalizedId = normalizeFamilyId(requestedId);
-  const safeId = PRESET_IDS.includes(normalizedId) ? normalizedId : "supercritical-hopf";
-  state.family = createPreset(safeId, {
-    variant: requestedId === "pitchfork-subcritical" ? "subcritical" : "supercritical"
-  });
+  const isCustom = normalizedId === "custom";
+  const safeId = isCustom || PRESET_IDS.includes(normalizedId) ? normalizedId : "supercritical-hopf";
+  let nextFamily;
+  let nextBranchDiagram;
+  try {
+    nextFamily = isCustom
+      ? (options.preparedFamily || prepareCustomSystem())
+      : createPreset(safeId, {
+        variant: requestedId === "pitchfork-subcritical" ? "subcritical" : "supercritical"
+      });
+    nextBranchDiagram = sampleBranches(nextFamily, { samples: isCustom ? 141 : 241 });
+  } catch (error) {
+    if (isCustom) showCustomSystemError(error);
+    else {
+      console.error(error);
+      announce("The selected system could not be loaded.");
+    }
+    return false;
+  }
+  state.family = nextFamily;
+  state.runtimeFault = false;
+  state.lastAnimationError = null;
+  setCustomSystemControlsVisible(isCustom);
+  if (isCustom) clearCustomSystemError();
   state.parameter = state.family.defaultParameter;
-  state.branchDiagram = sampleBranches(state.family, { samples: 241 });
+  state.branchDiagram = nextBranchDiagram;
   state.userSeeds = [];
   state.trajectories = [];
   state.selectedTrajectoryId = null;
@@ -835,7 +981,9 @@ function loadFamily(id, options = {}) {
   resetBifurcationView();
   updateFamilyCopy();
   configureParameterControl();
-  if (elements.familySelect && normalizeFamilyId(elements.familySelect.value) !== safeId) {
+  if (elements.familySelect && isCustom) {
+    elements.familySelect.value = "custom";
+  } else if (elements.familySelect && normalizeFamilyId(elements.familySelect.value) !== safeId) {
     const matchingOption = [...elements.familySelect.options].find((option) => normalizeFamilyId(option.value) === safeId);
     if (matchingOption) elements.familySelect.value = matchingOption.value;
   }
@@ -843,11 +991,13 @@ function loadFamily(id, options = {}) {
   if (options.announce !== false) {
     announce(`${state.family.name} loaded. ${state.family.description}`);
   }
+  return true;
 }
 
 function initializeFamilyOptions() {
   if (!elements.familySelect) return;
   for (const option of [...elements.familySelect.options]) {
+    if (option.value === "custom") continue;
     const normalized = normalizeFamilyId(option.value);
     if (!PRESET_IDS.includes(normalized)) option.remove();
   }
@@ -921,6 +1071,7 @@ function nullclineSegments(values, analysis) {
         { x: xValues[column + 1], y: yValues[row + 1], value: valueAt(column + 1, row + 1) },
         { x: xValues[column], y: yValues[row + 1], value: valueAt(column, row + 1) }
       ];
+      if (!corners.every((corner) => Number.isFinite(corner.value))) continue;
       const edgePairs = [[0, 1], [1, 2], [2, 3], [3, 0]];
       const intersections = [];
       edgePairs.forEach(([firstIndex, secondIndex], edge) => {
@@ -1388,6 +1539,31 @@ function nearbyEigenvalueTrail(equilibrium) {
   const span = maximum - minimum;
   const start = clamp(state.parameter - span * 0.13, minimum, maximum);
   const end = clamp(state.parameter + span * 0.13, minimum, maximum);
+  if (state.family.sourceType === "custom" && state.branchDiagram?.branches?.length) {
+    const xSpan = state.family.phaseWindow.x[1] - state.family.phaseWindow.x[0];
+    const ySpan = state.family.phaseWindow.y[1] - state.family.phaseWindow.y[0];
+    let nearestBranch = null;
+    let nearestDistance = Infinity;
+    for (const branch of state.branchDiagram.branches) {
+      for (const point of branch.points) {
+        const distance = Math.hypot(
+          (point.parameter - state.parameter) / span,
+          (point.x - equilibrium.x) / xSpan,
+          (point.y - equilibrium.y) / ySpan
+        );
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestBranch = branch;
+        }
+      }
+    }
+    const trails = [[], []];
+    for (const point of nearestBranch?.points || []) {
+      if (point.parameter < start || point.parameter > end || !point.eigenvalues) continue;
+      point.eigenvalues.forEach((value, eigenIndex) => trails[eigenIndex].push(value));
+    }
+    return trails;
+  }
   const trails = [[], []];
   let anchor = equilibrium;
   for (let index = 0; index <= 44; index += 1) {
@@ -1787,6 +1963,10 @@ function handleBifurcationKey(event) {
 
 function startSweep() {
   if (state.sweepRunning) return;
+  if (state.family.sourceType === "custom" && !state.family.expressionUsesParameter) {
+    announce("This custom system does not use r, so there is no parameter to sweep.");
+    return;
+  }
   state.sweepRunning = true;
   if (elements.toggleSweep) {
     elements.toggleSweep.textContent = "Pause parameter sweep";
@@ -1870,8 +2050,22 @@ function initializeFullscreen() {
 
 elements.familySelect?.addEventListener("change", () => {
   stopSweep({ force: true });
-  loadFamily(elements.familySelect.value);
+  if (elements.familySelect.value === "custom") {
+    setCustomSystemControlsVisible(true);
+    applyCustomSystem({ announce: true });
+  } else {
+    loadFamily(elements.familySelect.value);
+  }
 });
+elements.applyCustomSystem?.addEventListener("click", () => applyCustomSystem({ announce: true }));
+for (const control of customSystemInputs()) {
+  control.addEventListener("input", clearCustomSystemError);
+  control.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyCustomSystem({ announce: true });
+  });
+}
 elements.parameter?.addEventListener("input", () => setParameter(elements.parameter.value, { stopSweep: true, preserveProgress: true }));
 elements.parameter?.addEventListener("change", () => setParameter(elements.parameter.value, { stopSweep: true, announce: true, immediate: true }));
 elements.toggleSweep?.addEventListener("click", () => state.sweepRunning ? stopSweep({ announce: true }) : startSweep());
@@ -2144,22 +2338,34 @@ motionQuery.addEventListener?.("change", (event) => {
 });
 
 function animate(now) {
-  const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
-  state.lastFrameTime = now;
-  state.animationTime += delta;
-  updateSweep(delta);
-  updateTrajectoryProgress(delta);
-  if (state.trajectoryRefreshPending && now - state.lastTrajectoryRefresh > 75) {
-    rebuildTrajectories({ preserveProgress: true });
-    state.lastTrajectoryRefresh = now;
+  try {
+    const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
+    state.lastFrameTime = now;
+    if (state.runtimeFault) return;
+    state.animationTime += delta;
+    updateSweep(delta);
+    updateTrajectoryProgress(delta);
+    if (state.trajectoryRefreshPending && now - state.lastTrajectoryRefresh > 75) {
+      rebuildTrajectories({ preserveProgress: true });
+      state.lastTrajectoryRefresh = now;
+    }
+    if (!document.hidden && now - state.lastRenderTime > 32) {
+      drawPhasePortrait();
+      drawBifurcationDiagram();
+      drawTimeTrace();
+      state.lastRenderTime = now;
+    }
+  } catch (error) {
+    state.runtimeFault = true;
+    state.lastAnimationError = error;
+    stopSweep({ force: true });
+    state.trajectoriesPaused = true;
+    syncTrajectoryButton();
+    console.error("The planar explorer recovered from a rendering error.", error);
+    announce("The current system could not be rendered safely. Apply a revised custom system or choose a preset to continue.");
+  } finally {
+    window.requestAnimationFrame(animate);
   }
-  if (!document.hidden && now - state.lastRenderTime > 32) {
-    drawPhasePortrait();
-    drawBifurcationDiagram();
-    drawTimeTrace();
-    state.lastRenderTime = now;
-  }
-  window.requestAnimationFrame(animate);
 }
 
 if (typeof ResizeObserver === "function") {
@@ -2175,3 +2381,4 @@ if (elements.sweepSpeedValue) elements.sweepSpeedValue.textContent = `${state.sw
 initializeFullscreen();
 loadFamily(elements.familySelect?.value || "supercritical-hopf", { announce: false });
 window.requestAnimationFrame(animate);
+

@@ -81,6 +81,10 @@ function makePreset(definition) {
     criticalValues: Object.freeze((definition.criticalValues || []).map(freezeCriticalValue)),
     variants: Object.freeze((definition.variants || []).map(String)),
     variant: definition.variant == null ? null : String(definition.variant),
+    sourceType: String(definition.sourceType || "preset"),
+    expression1: definition.expression1 == null ? null : String(definition.expression1),
+    expression2: definition.expression2 == null ? null : String(definition.expression2),
+    expressionUsesParameter: Boolean(definition.expressionUsesParameter),
     field: definition.field,
     jacobian: definition.jacobian,
     equilibria: definition.equilibria,
@@ -105,6 +109,445 @@ function dedupePoints(points, tolerance = 1e-8) {
     if (!duplicate) result.push(point);
   }
   return result;
+}
+
+const CUSTOM_EXPRESSION_FUNCTIONS = Object.freeze({
+  sin: Math.sin,
+  cos: Math.cos,
+  tan: Math.tan,
+  asin: Math.asin,
+  acos: Math.acos,
+  atan: Math.atan,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
+  tanh: Math.tanh,
+  exp: Math.exp,
+  log: Math.log,
+  ln: Math.log,
+  log1p: Math.log1p,
+  sqrt: Math.sqrt,
+  abs: Math.abs
+});
+
+const CUSTOM_SUPERSCRIPT_DIGITS = Object.freeze({
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+  "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9"
+});
+
+function customExpressionSyntaxError(message, position = 0) {
+  return new SyntaxError(`${message} at character ${Math.max(0, position) + 1}.`);
+}
+
+function normalizeCustomExpressionSource(source) {
+  const text = String(source ?? "").trim();
+  if (!text) throw customExpressionSyntaxError("Enter a right-hand side", 0);
+  if (text.length > 256) throw new RangeError("The equation is too long; use at most 256 characters.");
+  return text
+    .replace(/x_1/gi, "x1")
+    .replace(/x_2/gi, "x2")
+    .replace(/x₁/gi, "x1")
+    .replace(/x₂/gi, "x2")
+    .replace(/\*\*/g, "^")
+    .replace(/[−–—]/g, "-")
+    .replace(/[×·]/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/π/g, "pi")
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (digits) => `^${[...digits].map((digit) => CUSTOM_SUPERSCRIPT_DIGITS[digit]).join("")}`);
+}
+
+function tokenizeCustomExpression(source) {
+  const tokens = [];
+  let index = 0;
+  const push = (type, value, position = index) => {
+    tokens.push(Object.freeze({ type, value, position }));
+    if (tokens.length > 160) throw new RangeError("The equation has too many terms; simplify it and try again.");
+  };
+  while (index < source.length) {
+    if (/\s/.test(source[index])) {
+      index += 1;
+      continue;
+    }
+    const position = index;
+    const numberMatch = source.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (numberMatch) {
+      const value = Number(numberMatch[0]);
+      if (!Number.isFinite(value)) throw customExpressionSyntaxError("Numeric literal must be finite", position);
+      push("number", value, position);
+      index += numberMatch[0].length;
+      continue;
+    }
+    const nameMatch = source.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (nameMatch) {
+      push("name", nameMatch[0].toLowerCase(), position);
+      index += nameMatch[0].length;
+      continue;
+    }
+    const character = source[index];
+    if ("+-*/^".includes(character)) push("operator", character, position);
+    else if (character === "(") push("left", character, position);
+    else if (character === ")") push("right", character, position);
+    else throw customExpressionSyntaxError(`Unsupported character "${character}"`, position);
+    index += 1;
+  }
+  tokens.push(Object.freeze({ type: "end", value: "", position: source.length }));
+  return tokens;
+}
+
+function parseCustomExpressionTokens(tokens) {
+  let cursor = 0;
+  let nodeCount = 0;
+  let nesting = 0;
+  const variables = new Set();
+  const peek = () => tokens[cursor];
+  const consume = () => tokens[cursor++];
+  const makeNode = (node) => {
+    nodeCount += 1;
+    if (nodeCount > 96) throw new RangeError("The equation is too complex; use at most 96 operations and values.");
+    return Object.freeze(node);
+  };
+  const expectRight = () => {
+    if (peek().type !== "right") throw customExpressionSyntaxError("Expected a closing parenthesis", peek().position);
+    consume();
+  };
+  const beginsImplicitFactor = (token) => token.type === "number" || token.type === "name" || token.type === "left";
+  let parseAdditive;
+  let parseUnary;
+
+  const parsePrimary = () => {
+    const token = peek();
+    if (token.type === "number") {
+      consume();
+      return makeNode({ type: "number", value: token.value });
+    }
+    if (token.type === "name") {
+      consume();
+      const aliases = { x: "x1", y: "x2", x_1: "x1", x_2: "x2" };
+      const name = aliases[token.value] || token.value;
+      if (name === "x1" || name === "x2" || name === "r") {
+        variables.add(name);
+        return makeNode({ type: "variable", name });
+      }
+      if (name === "pi" || name === "e") {
+        return makeNode({ type: "number", value: name === "pi" ? Math.PI : Math.E });
+      }
+      if (!Object.prototype.hasOwnProperty.call(CUSTOM_EXPRESSION_FUNCTIONS, name)) {
+        throw customExpressionSyntaxError(`Unknown name "${token.value}"; use x1, x2, r, pi, e, or a supported function`, token.position);
+      }
+      if (peek().type !== "left") {
+        throw customExpressionSyntaxError(`Function "${token.value}" needs parentheses`, peek().position);
+      }
+      const left = consume();
+      nesting += 1;
+      if (nesting > 24) throw customExpressionSyntaxError("Parentheses are nested too deeply", left.position);
+      const argument = parseAdditive();
+      expectRight();
+      nesting -= 1;
+      return makeNode({ type: "function", name, argument });
+    }
+    if (token.type === "left") {
+      consume();
+      nesting += 1;
+      if (nesting > 24) throw customExpressionSyntaxError("Parentheses are nested too deeply", token.position);
+      const expression = parseAdditive();
+      expectRight();
+      nesting -= 1;
+      return expression;
+    }
+    throw customExpressionSyntaxError("Expected a number, x1, x2, r, a function, or an opening parenthesis", token.position);
+  };
+
+  const parsePower = () => {
+    const base = parsePrimary();
+    if (peek().type === "operator" && peek().value === "^") {
+      consume();
+      return makeNode({ type: "binary", operator: "^", left: base, right: parseUnary() });
+    }
+    return base;
+  };
+
+  parseUnary = () => {
+    const token = peek();
+    if (token.type === "operator" && (token.value === "+" || token.value === "-")) {
+      consume();
+      return makeNode({ type: "unary", operator: token.value, argument: parseUnary() });
+    }
+    return parsePower();
+  };
+
+  const parseMultiplicative = () => {
+    let left = parseUnary();
+    while (true) {
+      const token = peek();
+      if (token.type === "operator" && (token.value === "*" || token.value === "/")) {
+        consume();
+        left = makeNode({ type: "binary", operator: token.value, left, right: parseUnary() });
+      } else if (beginsImplicitFactor(token)) {
+        if (token.type === "number") throw customExpressionSyntaxError("Adjacent numbers need an operator", token.position);
+        left = makeNode({ type: "binary", operator: "*", left, right: parseUnary() });
+      } else break;
+    }
+    return left;
+  };
+
+  parseAdditive = () => {
+    let left = parseMultiplicative();
+    while (peek().type === "operator" && (peek().value === "+" || peek().value === "-")) {
+      const operator = consume().value;
+      left = makeNode({ type: "binary", operator, left, right: parseMultiplicative() });
+    }
+    return left;
+  };
+
+  const ast = parseAdditive();
+  if (peek().type !== "end") throw customExpressionSyntaxError(`Unexpected "${peek().value}"`, peek().position);
+  return Object.freeze({ ast, variables: Object.freeze([...variables]) });
+}
+
+function evaluateCustomExpressionNode(node, x1, x2, r) {
+  if (node.type === "number") return node.value;
+  if (node.type === "variable") return node.name === "x1" ? x1 : node.name === "x2" ? x2 : r;
+  if (node.type === "unary") {
+    const value = evaluateCustomExpressionNode(node.argument, x1, x2, r);
+    return node.operator === "-" ? -value : value;
+  }
+  if (node.type === "function") {
+    return CUSTOM_EXPRESSION_FUNCTIONS[node.name](evaluateCustomExpressionNode(node.argument, x1, x2, r));
+  }
+  const left = evaluateCustomExpressionNode(node.left, x1, x2, r);
+  const right = evaluateCustomExpressionNode(node.right, x1, x2, r);
+  if (node.operator === "+") return left + right;
+  if (node.operator === "-") return left - right;
+  if (node.operator === "*") return left * right;
+  if (node.operator === "/") return left / right;
+  return left ** right;
+}
+
+/** Compile a bounded mathematical expression without evaluating JavaScript. */
+export function compilePlanarExpression(source) {
+  const normalized = normalizeCustomExpressionSource(source);
+  const parsed = parseCustomExpressionTokens(tokenizeCustomExpression(normalized));
+  const variableSet = new Set(parsed.variables);
+  return Object.freeze({
+    source: String(source).trim(),
+    canonical: normalized,
+    variables: parsed.variables,
+    usesX1: variableSet.has("x1"),
+    usesX2: variableSet.has("x2"),
+    usesR: variableSet.has("r"),
+    evaluate(x1, x2, r) {
+      try {
+        const value = evaluateCustomExpressionNode(parsed.ast, Number(x1), Number(x2), Number(r));
+        return Number.isFinite(value) && Math.abs(value) <= 1e100 ? value : Number.NaN;
+      } catch {
+        return Number.NaN;
+      }
+    }
+  });
+}
+
+function finiteVector(value) {
+  return Array.isArray(value) && value.length >= 2
+    && Number.isFinite(value[0]) && Number.isFinite(value[1]);
+}
+
+function numericalCustomJacobian(field, x, y, parameter, xRange, yRange) {
+  const base = field(x, y, parameter);
+  const xStep = Math.max(1e-6, (xRange[1] - xRange[0]) * 2e-6, Math.abs(x) * 1e-6);
+  const yStep = Math.max(1e-6, (yRange[1] - yRange[0]) * 2e-6, Math.abs(y) * 1e-6);
+  const plusX = field(x + xStep, y, parameter);
+  const minusX = field(x - xStep, y, parameter);
+  const plusY = field(x, y + yStep, parameter);
+  const minusY = field(x, y - yStep, parameter);
+  const derivative = (plus, minus, center, step, component) => {
+    if (finiteVector(plus) && finiteVector(minus)) return (plus[component] - minus[component]) / (2 * step);
+    if (finiteVector(plus) && finiteVector(center)) return (plus[component] - center[component]) / step;
+    if (finiteVector(minus) && finiteVector(center)) return (center[component] - minus[component]) / step;
+    return Number.NaN;
+  };
+  return [
+    [derivative(plusX, minusX, base, xStep, 0), derivative(plusY, minusY, base, yStep, 0)],
+    [derivative(plusX, minusX, base, xStep, 1), derivative(plusY, minusY, base, yStep, 1)]
+  ];
+}
+
+function solveCustomEquilibrium(field, jacobian, seed, parameter, xRange, yRange) {
+  let x = seed.x;
+  let y = seed.y;
+  const spanX = xRange[1] - xRange[0];
+  const spanY = yRange[1] - yRange[0];
+  const scale = Math.max(spanX, spanY);
+  const inside = () => x >= xRange[0] - spanX * 0.02 && x <= xRange[1] + spanX * 0.02
+    && y >= yRange[0] - spanY * 0.02 && y <= yRange[1] + spanY * 0.02;
+  let residual = Infinity;
+  for (let iteration = 0; iteration < 28; iteration += 1) {
+    const value = field(x, y, parameter);
+    if (!finiteVector(value) || !inside()) return null;
+    residual = Math.hypot(value[0], value[1]);
+    if (residual <= 2e-8) break;
+    const matrix = jacobian(x, y, parameter);
+    if (!matrix.flat().every(Number.isFinite)) return null;
+    const determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    if (Math.abs(determinant) <= 1e-12 * Math.max(1, ...matrix.flat().map(Math.abs))) return null;
+    let stepX = (matrix[1][1] * value[0] - matrix[0][1] * value[1]) / determinant;
+    let stepY = (-matrix[1][0] * value[0] + matrix[0][0] * value[1]) / determinant;
+    const stepNorm = Math.hypot(stepX, stepY);
+    const maximumStep = scale * 0.42;
+    if (stepNorm > maximumStep) {
+      stepX *= maximumStep / stepNorm;
+      stepY *= maximumStep / stepNorm;
+    }
+    let accepted = false;
+    for (let lineSearch = 0; lineSearch < 10; lineSearch += 1) {
+      const factor = 2 ** (-lineSearch);
+      const candidateX = x - factor * stepX;
+      const candidateY = y - factor * stepY;
+      const candidate = field(candidateX, candidateY, parameter);
+      if (finiteVector(candidate) && Math.hypot(candidate[0], candidate[1]) < residual) {
+        x = candidateX;
+        y = candidateY;
+        accepted = true;
+        break;
+      }
+    }
+    if (!accepted) return null;
+  }
+  const finalValue = field(x, y, parameter);
+  if (!finiteVector(finalValue) || Math.hypot(finalValue[0], finalValue[1]) > 2e-6 || !inside()) return null;
+  const finalJacobian = jacobian(x, y, parameter);
+  if (!finalJacobian.flat().every(Number.isFinite)) return null;
+  return { x: clamp(x, xRange[0], xRange[1]), y: clamp(y, yRange[0], yRange[1]) };
+}
+
+function hashCustomSystem(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** Build a numerical planar family from two user-authored right-hand sides. */
+export function createCustomPreset(expression1, expression2, options = {}) {
+  let first;
+  let second;
+  try {
+    first = compilePlanarExpression(expression1);
+  } catch (error) {
+    throw new error.constructor(`First equation: ${error.message}`);
+  }
+  try {
+    second = compilePlanarExpression(expression2);
+  } catch (error) {
+    throw new error.constructor(`Second equation: ${error.message}`);
+  }
+  const xRange = freezeRange(options.x1Range || [-3, 3], "State x1 range");
+  const yRange = freezeRange(options.x2Range || [-3, 3], "State x2 range");
+  const parameterRange = freezeRange(options.parameterRange || [-2, 2], "Parameter r range");
+  const observable = options.observable === "x2" ? "y" : "x";
+  const field = (x, y, parameter) => [first.evaluate(x, y, parameter), second.evaluate(x, y, parameter)];
+  const jacobian = (x, y, parameter) => numericalCustomJacobian(field, x, y, parameter, xRange, yRange);
+
+  let finiteCount = 0;
+  let maximumMagnitude = 0;
+  let continuumSlice = false;
+  const sampleCount = 7;
+  for (let rIndex = 0; rIndex < 5; rIndex += 1) {
+    const parameter = parameterRange[0] + (parameterRange[1] - parameterRange[0]) * rIndex / 4;
+    let sliceFiniteCount = 0;
+    let sliceMaximumMagnitude = 0;
+    for (let row = 0; row < sampleCount; row += 1) {
+      const y = yRange[0] + (yRange[1] - yRange[0]) * row / (sampleCount - 1);
+      for (let column = 0; column < sampleCount; column += 1) {
+        const x = xRange[0] + (xRange[1] - xRange[0]) * column / (sampleCount - 1);
+        const value = field(x, y, parameter);
+        if (!finiteVector(value)) continue;
+        finiteCount += 1;
+        sliceFiniteCount += 1;
+        maximumMagnitude = Math.max(maximumMagnitude, Math.abs(value[0]), Math.abs(value[1]));
+        sliceMaximumMagnitude = Math.max(sliceMaximumMagnitude, Math.abs(value[0]), Math.abs(value[1]));
+      }
+    }
+    if (sliceFiniteCount >= Math.ceil(sampleCount * sampleCount * 0.75) && sliceMaximumMagnitude <= 1e-11) {
+      continuumSlice = true;
+    }
+  }
+  if (finiteCount < Math.ceil(5 * sampleCount * sampleCount * 0.25)) {
+    throw new RangeError("The system is undefined across too much of the selected window. Narrow the window or revise the equations.");
+  }
+  if (maximumMagnitude > 1e12) {
+    throw new RangeError("The system becomes too large in the selected window. Narrow the window or revise the equations.");
+  }
+  if (continuumSlice) {
+    throw new RangeError("At one parameter value, every visible state is an equilibrium. This viewer currently requires isolated equilibria.");
+  }
+
+  const equilibriumCache = new Map();
+  const findEquilibria = (parameter) => {
+    const key = Number(parameter).toPrecision(13);
+    if (equilibriumCache.has(key)) return equilibriumCache.get(key);
+    const roots = [];
+    const gridSize = 11;
+    for (let row = 0; row < gridSize; row += 1) {
+      const y = yRange[0] + (yRange[1] - yRange[0]) * row / (gridSize - 1);
+      for (let column = 0; column < gridSize; column += 1) {
+        const x = xRange[0] + (xRange[1] - xRange[0]) * column / (gridSize - 1);
+        const root = solveCustomEquilibrium(field, jacobian, { x, y }, parameter, xRange, yRange);
+        if (!root) continue;
+        const tolerance = Math.max(xRange[1] - xRange[0], yRange[1] - yRange[0]) * 2e-5;
+        if (!roots.some((other) => Math.hypot(root.x - other.x, root.y - other.y) <= tolerance)) roots.push(root);
+      }
+    }
+    roots.sort((left, right) => left.x - right.x || left.y - right.y);
+    const frozen = Object.freeze(roots.map((root, index) =>
+      Object.freeze({ ...root, label: `Numerical equilibrium ${index + 1}` })
+    ));
+    if (equilibriumCache.size > 700) equilibriumCache.clear();
+    equilibriumCache.set(key, frozen);
+    return frozen;
+  };
+
+  const defaultParameter = 0 >= parameterRange[0] && 0 <= parameterRange[1]
+    ? 0
+    : (parameterRange[0] + parameterRange[1]) / 2;
+  const observableName = observable === "y" ? "x2" : "x1";
+  const idSeed = [first.canonical, second.canonical, xRange, yRange, parameterRange, observable].join("|");
+  return makePreset({
+    id: `custom-${hashCustomSystem(idSeed)}`,
+    name: "Custom planar system",
+    shortName: "Custom system",
+    formula: `ẋ₁ = ${first.source},   ẋ₂ = ${second.source}`,
+    description: first.usesR || second.usesR
+      ? "A user-authored one-parameter planar system."
+      : "A user-authored planar flow with no parameter r in either equation.",
+    lesson: "Equilibria, Jacobians, and branches are detected numerically; periodic orbits are not inferred automatically.",
+    scope: "local",
+    genericity: "numerical",
+    sourceType: "custom",
+    expression1: first.source,
+    expression2: second.source,
+    expressionUsesParameter: first.usesR || second.usesR,
+    parameterRange,
+    defaultParameter,
+    phaseWindow: { x: xRange, y: yRange },
+    observable,
+    observableLabel: `equilibrium ${observableName}`,
+    observableRange: observable === "y" ? yRange : xRange,
+    criticalValues: [],
+    field,
+    jacobian,
+    equilibria: findEquilibria,
+    cycles: () => [],
+    connections: () => [],
+    branches(parameter) {
+      return findEquilibria(parameter).map((point, index) => ({
+        branchId: `numerical-${index}`,
+        kind: "equilibrium",
+        x: point.x,
+        y: point.y
+      }));
+    }
+  });
 }
 
 function saddleNodeDefinition() {
@@ -1216,12 +1659,116 @@ function sampleParameters(range, count, criticalValues) {
   return values.filter((value, index) => index === 0 || Math.abs(value - values[index - 1]) > 1e-12);
 }
 
+function customEquilibriumBranchPoint(preset, raw, parameter) {
+  const x = finiteNumber(raw.x, "branch equilibrium x");
+  const y = finiteNumber(raw.y, "branch equilibrium y");
+  const classification = classifyEquilibrium(preset, { x, y }, parameter);
+  return Object.freeze({
+    parameter,
+    kind: "equilibrium",
+    observable: preset.observable === "y" ? y : x,
+    x,
+    y,
+    stability: classification.stability,
+    type: classification.type,
+    eigenvalues: classification.eigenvalues
+  });
+}
+
+function sampleCustomBranches(preset, range, count) {
+  const parameters = sampleParameters(range, count, []);
+  const xSpan = preset.phaseWindow.x[1] - preset.phaseWindow.x[0];
+  const ySpan = preset.phaseWindow.y[1] - preset.phaseWindow.y[0];
+  const distance = (left, right) => Math.hypot(
+    (left.x - right.x) / xSpan,
+    (left.y - right.y) / ySpan
+  );
+  const tracks = [];
+  let active = [];
+  let serial = 0;
+
+  for (const parameter of parameters) {
+    const candidates = preset.branches(parameter).map((raw) =>
+      customEquilibriumBranchPoint(preset, raw, parameter)
+    );
+    const nextActive = [];
+    const usedCandidates = new Set();
+    const continuationLimit = Math.max(0.08, 5 / Math.max(2, count - 1));
+
+    if (candidates.length === 1 && active.length > 1) {
+      for (const track of active) {
+        if (distance(track.points.at(-1), candidates[0]) <= continuationLimit) {
+          track.points.push(candidates[0]);
+          nextActive.push(track);
+          usedCandidates.add(0);
+        }
+      }
+    } else {
+      const pairs = [];
+      active.forEach((track, trackIndex) => {
+        candidates.forEach((candidate, candidateIndex) => {
+          pairs.push({
+            track,
+            trackIndex,
+            candidate,
+            candidateIndex,
+            distance: distance(track.points.at(-1), candidate)
+          });
+        });
+      });
+      pairs.sort((left, right) => left.distance - right.distance);
+      const usedTracks = new Set();
+      for (const pair of pairs) {
+        if (pair.distance > continuationLimit
+          || usedTracks.has(pair.trackIndex)
+          || usedCandidates.has(pair.candidateIndex)) continue;
+        pair.track.points.push(pair.candidate);
+        nextActive.push(pair.track);
+        usedTracks.add(pair.trackIndex);
+        usedCandidates.add(pair.candidateIndex);
+      }
+    }
+
+    candidates.forEach((candidate, candidateIndex) => {
+      if (usedCandidates.has(candidateIndex)) return;
+      const nearestPrevious = active.reduce((nearest, track) => {
+        const gap = distance(track.points.at(-1), candidate);
+        return !nearest || gap < nearest.gap ? { track, gap } : nearest;
+      }, null);
+      const points = nearestPrevious && nearestPrevious.gap <= continuationLimit
+        ? [nearestPrevious.track.points.at(-1), candidate]
+        : [candidate];
+      const track = { id: `custom-numerical-${++serial}`, kind: "equilibrium", points };
+      tracks.push(track);
+      nextActive.push(track);
+    });
+    active = nextActive;
+  }
+
+  const branches = tracks
+    .filter((track) => track.points.length > 0)
+    .map((track) => Object.freeze({
+      id: track.id,
+      kind: track.kind,
+      points: Object.freeze(track.points)
+    }));
+  return Object.freeze({
+    presetId: preset.id,
+    observable: preset.observable,
+    observableLabel: preset.observableLabel,
+    parameterRange: Object.freeze([range[0], range[1]]),
+    criticalValues: preset.criticalValues,
+    branches: Object.freeze(branches)
+  });
+}
+
 export function sampleBranches(presetOrId, options = {}) {
   const preset = resolvePreset(presetOrId);
   const range = options.parameterRange == null
     ? preset.parameterRange
     : freezeRange(options.parameterRange, "branch parameter range");
   const count = clamp(Math.round(options.samples == null ? 181 : positiveNumber(options.samples, "branch samples")), 2, 5001);
+  if (preset.sourceType === "custom") return sampleCustomBranches(preset, range, count);
   const parameters = sampleParameters(range, count, preset.criticalValues);
   const branchMap = new Map();
 
@@ -1350,3 +1897,4 @@ export default Object.freeze({
   sampleBranchDiagram,
   sampleVectorField
 });
+
