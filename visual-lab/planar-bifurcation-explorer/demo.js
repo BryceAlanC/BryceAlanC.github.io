@@ -53,7 +53,7 @@ const elements = {
   customSystemError: document.getElementById("custom-system-error"),
   applyCustomSystem: document.getElementById("apply-custom-system"),
   parameter: document.getElementById("parameter-r"),
-  parameterValue: document.getElementById("parameter-r-value"),
+  parameterInput: document.getElementById("parameter-r-input"),
   toggleSweep: document.getElementById("toggle-sweep"),
   centerParameter: document.getElementById("center-parameter"),
   sweepSpeed: document.getElementById("sweep-speed"),
@@ -183,6 +183,12 @@ function formatNumber(value, digits = 3) {
 
 function formatParameter(value) {
   return formatNumber(value, state.family?.parameterDigits ?? 3);
+}
+
+function formatParameterInput(value) {
+  if (!Number.isFinite(value)) return "";
+  const clean = Math.abs(value) < Number.EPSILON ? 0 : value;
+  return String(Number(clean.toPrecision(10)));
 }
 
 function formatSigned(value, digits = 3) {
@@ -809,7 +815,7 @@ function setParameter(value, options = {}) {
   if (!state.family) return;
   let next = clamp(Number(value), state.family.parameterRange[0], state.family.parameterRange[1]);
   if (!Number.isFinite(next)) return;
-  if (options.stopSweep && state.family.criticalValues.length) {
+  if (options.stopSweep && options.snapToEvent !== false && state.family.criticalValues.length) {
     const snapDistance = (state.family.parameterRange[1] - state.family.parameterRange[0]) / 1100;
     const nearbyEvent = state.family.criticalValues.find((event) => Math.abs(event.parameter - next) <= snapDistance);
     if (nearbyEvent) next = nearbyEvent.parameter;
@@ -817,7 +823,7 @@ function setParameter(value, options = {}) {
   state.parameter = next;
   if (elements.parameter) elements.parameter.value = String(next);
   elements.parameter?.setAttribute("aria-valuetext", `r equals ${formatParameter(next)}`);
-  if (elements.parameterValue) elements.parameterValue.textContent = formatParameter(next);
+  if (elements.parameterInput) elements.parameterInput.value = formatParameterInput(next);
   refreshSlice({
     immediate: Boolean(options.immediate),
     preserveProgress: options.preserveProgress,
@@ -844,10 +850,36 @@ function configureParameterControl() {
   elements.parameter.step = String(step);
   elements.parameter.value = String(state.parameter);
   elements.parameter.disabled = !parameterActive;
+  if (elements.parameterInput) {
+    elements.parameterInput.min = String(minimum);
+    elements.parameterInput.max = String(maximum);
+    elements.parameterInput.step = "any";
+    elements.parameterInput.value = formatParameterInput(state.parameter);
+    elements.parameterInput.disabled = !parameterActive;
+  }
   if (elements.toggleSweep) elements.toggleSweep.disabled = !parameterActive;
   if (elements.centerParameter) elements.centerParameter.disabled = !parameterActive;
   elements.parameter.setAttribute("aria-valuetext", `r equals ${formatParameter(state.parameter)}`);
-  if (elements.parameterValue) elements.parameterValue.textContent = formatParameter(state.parameter);
+}
+
+function commitParameterInput(options = {}) {
+  if (!elements.parameterInput) return false;
+  const value = Number(elements.parameterInput.value);
+  if (elements.parameterInput.value.trim() === "" || !Number.isFinite(value)) {
+    elements.parameterInput.value = formatParameterInput(state.parameter);
+    if (options.announce !== false) announce(`Enter a finite value for r between ${state.family.parameterRange[0]} and ${state.family.parameterRange[1]}.`);
+    return false;
+  }
+  setParameter(value, {
+    stopSweep: true,
+    snapToEvent: false,
+    announce: options.announce !== false,
+    immediate: true
+  });
+  if (value >= state.family.parameterRange[0] && value <= state.family.parameterRange[1]) {
+    elements.parameterInput.value = String(value);
+  }
+  return true;
 }
 
 function customSystemOptions() {
@@ -2068,6 +2100,17 @@ for (const control of customSystemInputs()) {
 }
 elements.parameter?.addEventListener("input", () => setParameter(elements.parameter.value, { stopSweep: true, preserveProgress: true }));
 elements.parameter?.addEventListener("change", () => setParameter(elements.parameter.value, { stopSweep: true, announce: true, immediate: true }));
+elements.parameterInput?.addEventListener("input", () => stopSweep());
+elements.parameterInput?.addEventListener("change", () => commitParameterInput());
+elements.parameterInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    commitParameterInput();
+  } else if (event.key === "Escape") {
+    elements.parameterInput.value = formatParameterInput(state.parameter);
+    elements.parameterInput.blur();
+  }
+});
 elements.toggleSweep?.addEventListener("click", () => state.sweepRunning ? stopSweep({ announce: true }) : startSweep());
 elements.centerParameter?.addEventListener("click", () => {
   const eventNearestZero = state.family.criticalValues.reduce((nearest, event) =>

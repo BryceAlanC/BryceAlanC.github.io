@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261027-1" />
-    <script type="module" src="./demo.js?v=20261027-1"></script>
+    <link rel="stylesheet" href="./style.css?v=20261028-1" />
+    <script type="module" src="./demo.js?v=20261028-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -181,9 +181,16 @@
 
             <fieldset class="control-group">
               <legend>Parameter</legend>
-              <div class="field-label">
-                <label for="parameter-r">Parameter <span class="math-symbol">r</span></label>
-                <output id="parameter-r-value" for="parameter-r">0.550</output>
+              <div class="field-label parameter-entry">
+                <label for="parameter-r-input">Parameter <span class="math-symbol">r</span></label>
+                <input
+                  id="parameter-r-input"
+                  type="number"
+                  value="0.55"
+                  step="any"
+                  inputmode="decimal"
+                  aria-describedby="parameter-help"
+                />
               </div>
               <input
                 id="parameter-r"
@@ -192,6 +199,7 @@
                 max="1.2"
                 value="0.55"
                 step="0.002"
+                aria-label="Parameter r slider"
                 aria-describedby="parameter-help"
               />
               <div class="control-row control-row-spaced">
@@ -208,8 +216,9 @@
               </div>
               <input id="sweep-speed" type="range" min="0.1" max="1.2" value="0.35" step="0.05" />
               <p class="control-help" id="parameter-help">
-                The sweep changes the vector field continuously; it is a tour through
-                autonomous systems, not a trajectory of one fixed system.
+                Type an exact value for r and press Enter, or use the slider. The sweep
+                changes the vector field continuously; it is a tour through autonomous
+                systems, not a trajectory of one fixed system.
               </p>
             </fieldset>
 

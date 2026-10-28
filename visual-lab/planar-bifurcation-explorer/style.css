@@ -66,6 +66,23 @@
   font-size: 0.82rem;
 }
 
+.parameter-entry {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 7.5rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.parameter-entry label {
+  min-width: 0;
+}
+
+.planar-app .control-panel .parameter-entry input[type="number"] {
+  min-height: 40px;
+  padding-block: 0.4rem;
+  text-align: right;
+}
+
 .system-equation-input {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
