@@ -521,4 +521,220 @@ for (const phase of [0.01, 0.35, 0.37, Math.PI / 2, Math.PI - 0.01]) {
   assert.ok(equilibriumNear(equilibria, phase + Math.PI, 1e-7));
 }
 
+// Custom expressions use a bounded mathematical grammar. Greek and ASCII
+// state/parameter aliases, constants, powers, and implicit multiplication all
+// compile to the same two canonical variables.
+{
+  const compiled = model.compileCircleExpression(
+    "2x + θ + r + mu + μ + omega + ω + pi + π + e"
+  );
+  assert.deepEqual(compiled.variables, ["theta", "r"]);
+  assert.equal(compiled.usesTheta, true);
+  assert.equal(compiled.usesR, true);
+  near(
+    compiled.evaluate(0.25, 0.5),
+    0.75 + 2.5 + 2 * Math.PI + Math.E,
+    1e-12
+  );
+
+  const implicit = model.compileCircleExpression("2sin(3theta) + (r + 1)(cos(x)) + x²");
+  const theta = 0.37;
+  const r = -0.2;
+  near(
+    implicit.evaluate(theta, r),
+    2 * Math.sin(3 * theta) + (r + 1) * Math.cos(theta) + theta ** 2,
+    1e-12
+  );
+  const unicodeImplicit = model.compileCircleExpression("rθ + πθ");
+  near(unicodeImplicit.evaluate(0.25, 0.5), 0.125 + Math.PI * 0.25, 1e-12);
+
+  const functions = model.compileCircleExpression(
+    "ln(e) + log(exp(1)) + sqrt(4) + abs(-3) + tanh(0) + atan(1)"
+  );
+  near(functions.evaluate(0, 0), 7 + Math.PI / 4, 1e-12);
+  assert.equal(model.default.compileCircleExpression, model.compileCircleExpression);
+  assert.equal(model.default.createCustomCircleFlow, model.createCustomCircleFlow);
+}
+
+// JavaScript syntax, property access, unknown identifiers, and malformed
+// mathematical input are rejected by the parser rather than executed.
+for (const expression of [
+  "",
+  "globalThis",
+  "this",
+  "Math.sin(theta)",
+  "theta;globalThis.alert(1)",
+  "constructor.constructor('return 1')()",
+  "sin theta",
+  "theta = 1",
+  "1, 2",
+  "(sin(theta)"
+]) {
+  assert.throws(() => model.compileCircleExpression(expression), /./, expression);
+}
+assert.throws(
+  () => model.createCustomCircleFlow({ source: "sin(theta)", evaluate: Math.sin }),
+  /compileCircleExpression/
+);
+
+// r - sin(theta) reproduces the Adler locking thresholds and exposes the
+// custom-flow metadata expected by the controls and bifurcation sampler.
+{
+  const compiled = model.compileCircleExpression("r - sin(theta)");
+  const flow = model.createCustomCircleFlow(compiled, {
+    r: 0.5,
+    parameterRange: [-1.2, 1.2]
+  });
+  assert.equal(flow.sourceType, "custom");
+  assert.equal(flow.expression, "r - sin(theta)");
+  assert.equal(flow.expressionUsesParameter, true);
+  assert.deepEqual(flow.params, { omega: 0.5 });
+  assert.equal(flow.parameters.length, 1);
+  assert.equal(flow.parameters[0].key, "omega");
+  assert.equal(flow.parameters[0].symbol, "r");
+  assert.equal(flow.parameters[0].label, "Parameter r");
+  near(flow.eval(0.4), 0.5 - Math.sin(0.4), 1e-14);
+  near(flow.eval(0.4 + TWO_PI), flow.eval(0.4), 1e-14);
+
+  const locked = model.findEquilibria(flow, { samples: 512 });
+  assert.equal(locked.length, 2);
+  assert.equal(equilibriumNear(locked, Math.PI / 6).stability, "stable");
+  assert.equal(equilibriumNear(locked, 5 * Math.PI / 6).stability, "unstable");
+
+  const positiveThreshold = model.findEquilibria(flow.withParameters({ r: 1 }), { samples: 512 });
+  assert.equal(positiveThreshold.length, 1);
+  assert.equal(positiveThreshold[0].stability, "semistable");
+  near(positiveThreshold[0].angle, Math.PI / 2, 2e-7);
+  const negativeThreshold = model.findEquilibria(flow.withParameters({ "μ": -1 }), { samples: 512 });
+  assert.equal(negativeThreshold.length, 1);
+  near(negativeThreshold[0].angle, 3 * Math.PI / 2, 2e-7);
+  assert.equal(model.findEquilibria(flow.withParameters({ omega: 1.01 })).length, 0);
+}
+
+// Several harmonics and parameter-independent constants remain ordinary
+// circle fields. The identically zero field is a valid equilibrium continuum.
+{
+  const harmonic = model.createCustomCircleFlow("sin(3theta)");
+  const equilibria = model.findEquilibria(harmonic, { samples: 512 });
+  assert.equal(equilibria.length, 6);
+  for (let index = 0; index < equilibria.length; index += 1) {
+    assert.notEqual(equilibria[index].stability, equilibria[(index + 1) % equilibria.length].stability);
+  }
+
+  // This half-angle expression is nevertheless a smooth 2π-periodic field:
+  // sin²(theta/2) = (1 - cos(theta))/2.
+  const squaredHalfAngle = model.createCustomCircleFlow("sin(theta/2)^2");
+  near(squaredHalfAngle.eval(0), squaredHalfAngle.eval(TWO_PI), 1e-14);
+  near(squaredHalfAngle.eval(1.1), (1 - Math.cos(1.1)) / 2, 1e-14);
+
+  // tan is allowed when its argument remains safely inside one branch.
+  const poleFreeTangent = model.createCustomCircleFlow("tan(0.1*sin(theta))");
+  near(poleFreeTangent.eval(0.7), Math.tan(0.1 * Math.sin(0.7)), 1e-14);
+
+  const constant = model.createCustomCircleFlow("2");
+  assert.equal(constant.expressionUsesParameter, false);
+  assert.equal(model.findEquilibria(constant).length, 0);
+
+  const zero = model.createCustomCircleFlow("0", { r: 0.7 });
+  const zeroEquilibria = model.findEquilibria(zero);
+  assert.equal(zeroEquilibria.length, 1);
+  assert.equal(zeroEquilibria[0].continuum, true);
+  assert.equal(model.findEquilibria(zero.withParameters({ r: -1 }))[0].continuum, true);
+
+  const constantZeroFunctions = model.createCustomCircleFlow("sqrt(0) + abs(0)");
+  assert.equal(model.findEquilibria(constantZeroFunctions)[0].continuum, true);
+
+  const parameterOnly = model.createCustomCircleFlow("r", {
+    r: 0,
+    parameterRange: [-1, 1]
+  });
+  assert.equal(model.findEquilibria(parameterOnly)[0].continuum, true);
+  assert.equal(model.findEquilibria(parameterOnly.withParameters({ omega: 0.2 })).length, 0);
+}
+
+// A custom vector field must be finite and reasonably bounded everywhere on
+// the circle and must form a smooth periodic seam, not merely matching values
+// at the two displayed endpoints.
+for (const [expression, pattern] of [
+  ["theta", /join continuously/],
+  ["sin(theta\/2)", /join smoothly/],
+  ["theta*(2*pi-theta)", /join smoothly/],
+  ["1\/sin(theta)", /denominator|finite/],
+  ["1\/(cos(theta)-0.5)", /denominator/],
+  ["1\/(cos(theta)-0.5)^2", /denominator/],
+  ["sqrt(-1)", /finite/],
+  ["log(0)", /finite|denominator/],
+  ["log((cos(theta)-0.123)^2)", /denominator/],
+  ["tan(theta)", /denominator|too large/],
+  ["tan(theta + 0.001)", /denominator/],
+  ["1e13", /too large/],
+  ["exp(1000*cos(theta))", /finite|too large/],
+  ["1e11*sin(theta) + theta", /join continuously/],
+  ["1e11*sin(theta) + sin(theta\/2)", /join smoothly/]
+]) {
+  assert.throws(
+    () => model.createCustomCircleFlow(expression, { parameterRange: [-1, 1] }),
+    pattern,
+    expression
+  );
+}
+
+// The existing family sampler accepts a custom flow object or a factory and
+// reconstructs each r slice through withParameters().
+{
+  const flow = model.createCustomCircleFlow("r - sin(theta)", {
+    r: 0.4,
+    parameterRange: [-1.2, 1.2]
+  });
+  const diagram = model.sampleCircleBifurcation(
+    flow,
+    { omega: 0.4 },
+    "r",
+    [-1.2, 1.2],
+    { parameterSamples: 13, equilibriumSamples: 512, anchors: [-1, 1] }
+  );
+  assert.equal(diagram.familyId, flow.id);
+  assert.equal(diagram.parameterKey, "omega");
+  assert.equal(bifurcationSlice(diagram, -1.2).equilibria.length, 0);
+  assert.equal(bifurcationSlice(diagram, -1).equilibria.length, 1);
+  assert.equal(bifurcationSlice(diagram, 0).equilibria.length, 2);
+  assert.equal(bifurcationSlice(diagram, 1).equilibria.length, 1);
+  assert.equal(bifurcationSlice(diagram, 1.2).equilibria.length, 0);
+
+  const factory = (parameters = {}) => flow.withParameters(parameters);
+  const factoryDiagram = model.sampleCircleBifurcation(
+    factory,
+    { r: 0.4 },
+    "omega",
+    [-1.2, 1.2],
+    { parameterSamples: 9, equilibriumSamples: 256, anchors: [-1, 0, 1] }
+  );
+  assert.equal(bifurcationSlice(factoryDiagram, 0).equilibria.length, 2);
+
+  const parameterOnly = model.createCustomCircleFlow("r", {
+    parameterRange: [-1, 1]
+  });
+  const parameterDiagram = model.sampleCircleBifurcation(
+    parameterOnly,
+    {},
+    "r",
+    [-1, 1],
+    { parameterSamples: 9, equilibriumSamples: 128 }
+  );
+  assert.equal(bifurcationSlice(parameterDiagram, 0).continuum, true);
+  assert.ok(parameterDiagram.slices
+    .filter((slice) => slice.parameter !== 0)
+    .every((slice) => !slice.continuum && slice.equilibria.length === 0));
+
+  const zero = model.createCustomCircleFlow("0", { parameterRange: [-1, 1] });
+  const zeroDiagram = model.sampleCircleBifurcation(
+    zero,
+    {},
+    "r",
+    [-1, 1],
+    { parameterSamples: 9, equilibriumSamples: 128 }
+  );
+  assert.ok(zeroDiagram.slices.every((slice) => slice.continuum));
+}
+
 console.log("circle-flow model tests passed");

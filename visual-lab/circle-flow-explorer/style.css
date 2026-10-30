@@ -111,6 +111,89 @@
   line-height: 1.45;
 }
 
+.custom-equation-group[hidden] {
+  display: none;
+}
+
+.custom-equation-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.36rem;
+}
+
+.custom-equation-prefix {
+  color: var(--forest);
+  font-family: var(--serif);
+  font-size: 1.05rem;
+}
+
+.custom-equation-row input,
+.custom-range-grid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 0.52rem 0.62rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
+.custom-equation-row input:focus-visible,
+.custom-range-grid input:focus-visible {
+  border-color: var(--forest);
+  outline: 3px solid rgba(217, 167, 63, 0.4);
+  outline-offset: 1px;
+}
+
+.custom-equation-row input[aria-invalid="true"],
+.custom-range-grid input[aria-invalid="true"] {
+  border-color: var(--rust);
+  background: rgba(168, 79, 36, 0.06);
+}
+
+.custom-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
+
+.custom-range-grid label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.custom-equation-apply {
+  width: 100%;
+  margin-top: 0.7rem;
+}
+
+.custom-equation-status,
+.custom-equation-error {
+  margin: 0.58rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.custom-equation-status {
+  color: var(--forest);
+}
+
+.custom-equation-error {
+  padding: 0.55rem 0.62rem;
+  border-left: 3px solid var(--rust);
+  background: rgba(168, 79, 36, 0.08);
+  color: #7c3517;
+}
+
 .parameter-control + .parameter-control {
   margin-top: 0.88rem;
 }
@@ -206,6 +289,13 @@
 .parameter-play[aria-pressed="true"] {
   background: var(--forest);
   color: var(--white);
+}
+
+.parameter-value-input:disabled,
+.parameter-play:disabled,
+.parameter-control input[type="range"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .parameter-play:focus-visible {

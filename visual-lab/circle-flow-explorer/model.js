@@ -428,6 +428,591 @@ export function createCircleFlow(id = "overdamped-pendulum", parameters = {}) {
 
 export const createFlow = createCircleFlow;
 
+const CUSTOM_EXPRESSION_FUNCTIONS = Object.freeze({
+  sin: Math.sin,
+  cos: Math.cos,
+  tan: Math.tan,
+  asin: Math.asin,
+  acos: Math.acos,
+  atan: Math.atan,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
+  tanh: Math.tanh,
+  exp: Math.exp,
+  log: Math.log,
+  ln: Math.log,
+  log1p: Math.log1p,
+  sqrt: Math.sqrt,
+  abs: Math.abs
+});
+
+const CUSTOM_SUPERSCRIPT_DIGITS = Object.freeze({
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+  "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9"
+});
+
+const compiledCircleExpressions = new WeakMap();
+
+function customExpressionSyntaxError(message, position = 0) {
+  return new SyntaxError(`${message} at character ${Math.max(0, position) + 1}.`);
+}
+
+function normalizeCircleExpressionSource(source) {
+  const text = String(source ?? "").trim();
+  if (!text) throw customExpressionSyntaxError("Enter a right-hand side", 0);
+  if (text.length > 256) {
+    throw new RangeError("The equation is too long; use at most 256 characters.");
+  }
+  return text
+    .replace(/\*\*/g, "^")
+    .replace(/[−–—]/g, "-")
+    .replace(/[×·]/g, "*")
+    .replace(/÷/g, "/")
+    // Surround symbolic names with spaces so adjacency such as rθ or πθ
+    // retains the same implicit-multiplication meaning as `r theta`.
+    .replace(/[θϑΘ]/g, " theta ")
+    .replace(/[μΜ]/g, " mu ")
+    .replace(/[ωΩ]/g, " omega ")
+    .replace(/π/g, " pi ")
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (digits) =>
+      `^${[...digits].map((digit) => CUSTOM_SUPERSCRIPT_DIGITS[digit]).join("")}`
+    );
+}
+
+function tokenizeCircleExpression(source) {
+  const tokens = [];
+  let index = 0;
+  const push = (type, value, position = index) => {
+    tokens.push(Object.freeze({ type, value, position }));
+    if (tokens.length > 160) {
+      throw new RangeError("The equation has too many terms; simplify it and try again.");
+    }
+  };
+  while (index < source.length) {
+    if (/\s/.test(source[index])) {
+      index += 1;
+      continue;
+    }
+    const position = index;
+    const numberMatch = source.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (numberMatch) {
+      const value = Number(numberMatch[0]);
+      if (!Number.isFinite(value)) {
+        throw customExpressionSyntaxError("Numeric literal must be finite", position);
+      }
+      push("number", value, position);
+      index += numberMatch[0].length;
+      continue;
+    }
+    const nameMatch = source.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (nameMatch) {
+      push("name", nameMatch[0].toLowerCase(), position);
+      index += nameMatch[0].length;
+      continue;
+    }
+    const character = source[index];
+    if ("+-*/^".includes(character)) push("operator", character, position);
+    else if (character === "(") push("left", character, position);
+    else if (character === ")") push("right", character, position);
+    else throw customExpressionSyntaxError(`Unsupported character "${character}"`, position);
+    index += 1;
+  }
+  tokens.push(Object.freeze({ type: "end", value: "", position: source.length }));
+  return tokens;
+}
+
+function parseCircleExpressionTokens(tokens) {
+  let cursor = 0;
+  let nodeCount = 0;
+  let nesting = 0;
+  const variables = new Set();
+  const peek = () => tokens[cursor];
+  const consume = () => tokens[cursor++];
+  const makeNode = (node) => {
+    nodeCount += 1;
+    if (nodeCount > 96) {
+      throw new RangeError("The equation is too complex; use at most 96 operations and values.");
+    }
+    return Object.freeze(node);
+  };
+  const expectRight = () => {
+    if (peek().type !== "right") {
+      throw customExpressionSyntaxError("Expected a closing parenthesis", peek().position);
+    }
+    consume();
+  };
+  const beginsImplicitFactor = (token) =>
+    token.type === "number" || token.type === "name" || token.type === "left";
+  let parseAdditive;
+  let parseUnary;
+
+  const parsePrimary = () => {
+    const token = peek();
+    if (token.type === "number") {
+      consume();
+      return makeNode({ type: "number", value: token.value });
+    }
+    if (token.type === "name") {
+      consume();
+      const aliases = { x: "theta", theta: "theta", r: "r", mu: "r", omega: "r" };
+      const name = aliases[token.value] || token.value;
+      if (name === "theta" || name === "r") {
+        variables.add(name);
+        return makeNode({ type: "variable", name });
+      }
+      if (name === "pi" || name === "e") {
+        return makeNode({ type: "number", value: name === "pi" ? Math.PI : Math.E });
+      }
+      if (!Object.prototype.hasOwnProperty.call(CUSTOM_EXPRESSION_FUNCTIONS, name)) {
+        throw customExpressionSyntaxError(
+          `Unknown name "${token.value}"; use theta, x, r, pi, e, or a supported function`,
+          token.position
+        );
+      }
+      if (peek().type !== "left") {
+        throw customExpressionSyntaxError(`Function "${token.value}" needs parentheses`, peek().position);
+      }
+      const left = consume();
+      nesting += 1;
+      if (nesting > 24) {
+        throw customExpressionSyntaxError("Parentheses are nested too deeply", left.position);
+      }
+      const argument = parseAdditive();
+      expectRight();
+      nesting -= 1;
+      return makeNode({ type: "function", name, argument });
+    }
+    if (token.type === "left") {
+      consume();
+      nesting += 1;
+      if (nesting > 24) {
+        throw customExpressionSyntaxError("Parentheses are nested too deeply", token.position);
+      }
+      const expression = parseAdditive();
+      expectRight();
+      nesting -= 1;
+      return expression;
+    }
+    throw customExpressionSyntaxError(
+      "Expected a number, theta, x, r, a function, or an opening parenthesis",
+      token.position
+    );
+  };
+
+  const parsePower = () => {
+    const base = parsePrimary();
+    if (peek().type === "operator" && peek().value === "^") {
+      consume();
+      return makeNode({ type: "binary", operator: "^", left: base, right: parseUnary() });
+    }
+    return base;
+  };
+
+  parseUnary = () => {
+    const token = peek();
+    if (token.type === "operator" && (token.value === "+" || token.value === "-")) {
+      consume();
+      return makeNode({ type: "unary", operator: token.value, argument: parseUnary() });
+    }
+    return parsePower();
+  };
+
+  const parseMultiplicative = () => {
+    let left = parseUnary();
+    while (true) {
+      const token = peek();
+      if (token.type === "operator" && (token.value === "*" || token.value === "/")) {
+        consume();
+        left = makeNode({ type: "binary", operator: token.value, left, right: parseUnary() });
+      } else if (beginsImplicitFactor(token)) {
+        if (token.type === "number") {
+          throw customExpressionSyntaxError("Adjacent numbers need an operator", token.position);
+        }
+        left = makeNode({ type: "binary", operator: "*", left, right: parseUnary() });
+      } else {
+        break;
+      }
+    }
+    return left;
+  };
+
+  parseAdditive = () => {
+    let left = parseMultiplicative();
+    while (peek().type === "operator" && (peek().value === "+" || peek().value === "-")) {
+      const operator = consume().value;
+      left = makeNode({ type: "binary", operator, left, right: parseMultiplicative() });
+    }
+    return left;
+  };
+
+  const ast = parseAdditive();
+  if (peek().type !== "end") {
+    throw customExpressionSyntaxError(`Unexpected "${peek().value}"`, peek().position);
+  }
+  return Object.freeze({ ast, variables: Object.freeze([...variables]) });
+}
+
+function evaluateCircleExpressionNode(node, theta, r) {
+  if (node.type === "number") return node.value;
+  if (node.type === "variable") return node.name === "theta" ? theta : r;
+  if (node.type === "unary") {
+    const value = evaluateCircleExpressionNode(node.argument, theta, r);
+    return node.operator === "-" ? -value : value;
+  }
+  if (node.type === "function") {
+    return CUSTOM_EXPRESSION_FUNCTIONS[node.name](
+      evaluateCircleExpressionNode(node.argument, theta, r)
+    );
+  }
+  const left = evaluateCircleExpressionNode(node.left, theta, r);
+  const right = evaluateCircleExpressionNode(node.right, theta, r);
+  if (node.operator === "+") return left + right;
+  if (node.operator === "-") return left - right;
+  if (node.operator === "*") return left * right;
+  if (node.operator === "/") return left / right;
+  return left ** right;
+}
+
+/** Compile a bounded mathematical expression without evaluating JavaScript. */
+export function compileCircleExpression(source) {
+  const normalized = normalizeCircleExpressionSource(source);
+  const parsed = parseCircleExpressionTokens(tokenizeCircleExpression(normalized));
+  const variableSet = new Set(parsed.variables);
+  const compiled = Object.freeze({
+    source: String(source).trim(),
+    canonical: normalized,
+    variables: parsed.variables,
+    usesTheta: variableSet.has("theta"),
+    usesR: variableSet.has("r"),
+    evaluate(theta, r) {
+      try {
+        const value = evaluateCircleExpressionNode(parsed.ast, Number(theta), Number(r));
+        return Number.isFinite(value) && Math.abs(value) <= 1e100 ? value : Number.NaN;
+      } catch {
+        return Number.NaN;
+      }
+    }
+  });
+  compiledCircleExpressions.set(compiled, parsed.ast);
+  return compiled;
+}
+
+function customParameterRange(range = [-2, 2]) {
+  if (!Array.isArray(range) || range.length < 2) {
+    throw new TypeError("Parameter r range must be a two-number array");
+  }
+  const minimum = finiteNumber(range[0], "Parameter r minimum");
+  const maximum = finiteNumber(range[1], "Parameter r maximum");
+  if (!(maximum > minimum)) throw new RangeError("Parameter r range must have positive width");
+  return Object.freeze([minimum, maximum]);
+}
+
+function hashCustomCircleFlow(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function expressionNodeUsesTheta(node) {
+  if (node.type === "number") return false;
+  if (node.type === "variable") return node.name === "theta";
+  if (node.type === "unary" || node.type === "function") {
+    return expressionNodeUsesTheta(node.argument);
+  }
+  return expressionNodeUsesTheta(node.left) || expressionNodeUsesTheta(node.right);
+}
+
+function evaluateCircleExpressionDerivative(node, theta, r) {
+  // This structural check matters at constant boundary values: sqrt(0) and
+  // abs(0) are perfectly smooth constant subexpressions even though their
+  // generic derivative formulas are singular at zero.
+  if (!expressionNodeUsesTheta(node)) return 0;
+  if (node.type === "number") return 0;
+  if (node.type === "variable") return node.name === "theta" ? 1 : 0;
+  if (node.type === "unary") {
+    const derivative = evaluateCircleExpressionDerivative(node.argument, theta, r);
+    return node.operator === "-" ? -derivative : derivative;
+  }
+  if (node.type === "function") {
+    const value = evaluateCircleExpressionNode(node.argument, theta, r);
+    const derivative = evaluateCircleExpressionDerivative(node.argument, theta, r);
+    let outerDerivative;
+    if (node.name === "sin") outerDerivative = Math.cos(value);
+    else if (node.name === "cos") outerDerivative = -Math.sin(value);
+    else if (node.name === "tan") outerDerivative = 1 / Math.cos(value) ** 2;
+    else if (node.name === "asin") outerDerivative = 1 / Math.sqrt(1 - value ** 2);
+    else if (node.name === "acos") outerDerivative = -1 / Math.sqrt(1 - value ** 2);
+    else if (node.name === "atan") outerDerivative = 1 / (1 + value ** 2);
+    else if (node.name === "sinh") outerDerivative = Math.cosh(value);
+    else if (node.name === "cosh") outerDerivative = Math.sinh(value);
+    else if (node.name === "tanh") outerDerivative = 1 - Math.tanh(value) ** 2;
+    else if (node.name === "exp") outerDerivative = Math.exp(value);
+    else if (node.name === "log" || node.name === "ln") outerDerivative = 1 / value;
+    else if (node.name === "log1p") outerDerivative = 1 / (1 + value);
+    else if (node.name === "sqrt") outerDerivative = 1 / (2 * Math.sqrt(value));
+    else outerDerivative = value === 0 ? Number.NaN : Math.sign(value);
+    return outerDerivative * derivative;
+  }
+
+  const left = evaluateCircleExpressionNode(node.left, theta, r);
+  const right = evaluateCircleExpressionNode(node.right, theta, r);
+  const leftDerivative = evaluateCircleExpressionDerivative(node.left, theta, r);
+  const rightDerivative = evaluateCircleExpressionDerivative(node.right, theta, r);
+  if (node.operator === "+") return leftDerivative + rightDerivative;
+  if (node.operator === "-") return leftDerivative - rightDerivative;
+  if (node.operator === "*") return leftDerivative * right + left * rightDerivative;
+  if (node.operator === "/") {
+    return (leftDerivative * right - left * rightDerivative) / right ** 2;
+  }
+  if (rightDerivative === 0) {
+    if (right === 0) return 0;
+    return right * left ** (right - 1) * leftDerivative;
+  }
+  if (!(left > 0)) return Number.NaN;
+  const value = left ** right;
+  return value * (rightDerivative * Math.log(left) + right * leftDerivative / left);
+}
+
+function collectPotentialDenominators(node, denominators = []) {
+  if (node.type === "binary") {
+    if (node.operator === "/") denominators.push(node.right);
+    collectPotentialDenominators(node.left, denominators);
+    collectPotentialDenominators(node.right, denominators);
+  } else if (node.type === "unary" || node.type === "function") {
+    // tan(u) has the implicit denominator cos(u). Treat it exactly like an
+    // explicit division so shifted poles cannot hide between grid points.
+    if (node.type === "function" && node.name === "tan") {
+      denominators.push(Object.freeze({
+        type: "function",
+        name: "cos",
+        argument: node.argument
+      }));
+    }
+    // log(u) and log1p(u) have domain boundaries at u = 0 and 1 + u = 0.
+    // Collect those boundary expressions so isolated logarithmic poles are
+    // refined even when they fall between the dense validation samples.
+    if (node.type === "function" && (node.name === "log" || node.name === "ln")) {
+      denominators.push(node.argument);
+    }
+    if (node.type === "function" && node.name === "log1p") {
+      denominators.push(Object.freeze({
+        type: "binary",
+        operator: "+",
+        left: Object.freeze({ type: "number", value: 1 }),
+        right: node.argument
+      }));
+    }
+    collectPotentialDenominators(node.argument, denominators);
+  }
+  return denominators;
+}
+
+function minimizeExpressionNodeAbsolute(node, parameterValue, left, right) {
+  let a = left;
+  let b = right;
+  let c = b - GOLDEN_RATIO_COMPLEMENT * (b - a);
+  let d = a + GOLDEN_RATIO_COMPLEMENT * (b - a);
+  let fc = Math.abs(evaluateCircleExpressionNode(node, c, parameterValue));
+  let fd = Math.abs(evaluateCircleExpressionNode(node, d, parameterValue));
+  for (let iteration = 0; iteration < 72; iteration += 1) {
+    if (!Number.isFinite(fc) || !Number.isFinite(fd)) return Number.NaN;
+    if (fc <= fd) {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - GOLDEN_RATIO_COMPLEMENT * (b - a);
+      fc = Math.abs(evaluateCircleExpressionNode(node, c, parameterValue));
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + GOLDEN_RATIO_COMPLEMENT * (b - a);
+      fd = Math.abs(evaluateCircleExpressionNode(node, d, parameterValue));
+    }
+  }
+  return Math.min(fc, fd);
+}
+
+function validateDivisionDenominators(compiled, parameterValue) {
+  const ast = compiledCircleExpressions.get(compiled);
+  const denominators = collectPotentialDenominators(ast);
+  const samples = 1024;
+  const spacing = TWO_PI / samples;
+  for (const denominator of denominators) {
+    const values = new Array(samples + 1);
+    let maximumAbsolute = 0;
+    for (let index = 0; index <= samples; index += 1) {
+      const value = evaluateCircleExpressionNode(denominator, index * spacing, parameterValue);
+      if (!Number.isFinite(value)) {
+        throw new RangeError("A denominator is undefined on the circle.");
+      }
+      values[index] = value;
+      maximumAbsolute = Math.max(maximumAbsolute, Math.abs(value));
+    }
+    const zeroTolerance = 5e-13 * Math.max(1, maximumAbsolute);
+    if (values.some((value) => Math.abs(value) <= zeroTolerance)) {
+      throw new RangeError("A denominator reaches zero on the circle.");
+    }
+    for (let index = 0; index < samples; index += 1) {
+      if (values[index] * values[index + 1] < 0) {
+        throw new RangeError("A denominator crosses zero on the circle.");
+      }
+    }
+    for (let index = 1; index < samples; index += 1) {
+      const previous = Math.abs(values[index - 1]);
+      const current = Math.abs(values[index]);
+      const next = Math.abs(values[index + 1]);
+      if (current <= previous && current <= next) {
+        const minimum = minimizeExpressionNodeAbsolute(
+          denominator,
+          parameterValue,
+          (index - 1) * spacing,
+          (index + 1) * spacing
+        );
+        if (!Number.isFinite(minimum) || minimum <= zeroTolerance) {
+          throw new RangeError("A denominator reaches zero on the circle.");
+        }
+      }
+    }
+  }
+}
+
+function validateCustomCircleExpression(compiled, parameterRange, selectedParameter) {
+  const parameters = Array.from({ length: 5 }, (_, index) =>
+    parameterRange[0] + (parameterRange[1] - parameterRange[0]) * index / 4
+  );
+  const selectionTolerance = 1e-13 * Math.max(1, Math.abs(selectedParameter));
+  if (!parameters.some((value) => Math.abs(value - selectedParameter) <= selectionTolerance)) {
+    parameters.push(selectedParameter);
+  }
+
+  const angleSamples = 4096;
+  const magnitudeLimit = 1e12;
+  const ast = compiledCircleExpressions.get(compiled);
+  for (const parameterValue of parameters) {
+    validateDivisionDenominators(compiled, parameterValue);
+    let maximumMagnitude = 0;
+    for (let index = 0; index <= angleSamples; index += 1) {
+      const theta = TWO_PI * index / angleSamples;
+      const value = compiled.evaluate(theta, parameterValue);
+      if (!Number.isFinite(value)) {
+        throw new RangeError(
+          "The equation must be finite at every angle throughout the selected parameter range."
+        );
+      }
+      maximumMagnitude = Math.max(maximumMagnitude, Math.abs(value));
+      if (maximumMagnitude > magnitudeLimit) {
+        throw new RangeError(
+          "The equation becomes too large on the circle; keep angular velocities below 1e12."
+        );
+      }
+    }
+
+    const startValue = compiled.evaluate(0, parameterValue);
+    const endValue = compiled.evaluate(TWO_PI, parameterValue);
+    const seamScale = Math.max(1, maximumMagnitude, Math.abs(startValue), Math.abs(endValue));
+    const seamTolerance = 1024 * Number.EPSILON * seamScale + 1e-12;
+    if (Math.abs(startValue - endValue) > seamTolerance) {
+      throw new RangeError("The equation must join continuously at theta = 0 and theta = 2*pi.");
+    }
+
+    const startDerivative = evaluateCircleExpressionDerivative(ast, 0, parameterValue);
+    const endDerivative = evaluateCircleExpressionDerivative(ast, TWO_PI, parameterValue);
+    const derivativeScale = Math.max(
+      1,
+      Math.abs(startDerivative),
+      Math.abs(endDerivative)
+    );
+    if (
+      !Number.isFinite(startDerivative)
+      || !Number.isFinite(endDerivative)
+      || Math.abs(startDerivative - endDerivative)
+        > 1024 * Number.EPSILON * derivativeScale + 1e-12
+    ) {
+      throw new RangeError(
+        "The equation must join smoothly at theta = 0 and theta = 2*pi (matching derivatives)."
+      );
+    }
+  }
+}
+
+function customParameterValue(source, fallback, label = "Parameter r") {
+  if (!source || typeof source !== "object") return fallback;
+  for (const key of ["omega", "r", "mu", "μ", "ω"]) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
+      return finiteNumber(source[key], label);
+    }
+  }
+  return fallback;
+}
+
+/** Build a smooth numerical circle flow from a user-authored right-hand side. */
+export function createCustomCircleFlow(expressionOrCompiled, options = {}) {
+  const compiled = typeof expressionOrCompiled === "string"
+    ? compileCircleExpression(expressionOrCompiled)
+    : expressionOrCompiled;
+  if (!compiledCircleExpressions.has(compiled)) {
+    throw new TypeError("Expected an equation string or the result of compileCircleExpression()");
+  }
+  const parameterRange = customParameterRange(options.parameterRange || [-2, 2]);
+  const rangeDefault = parameterRange[0] <= 0 && parameterRange[1] >= 0
+    ? 0
+    : (parameterRange[0] + parameterRange[1]) / 2;
+  const initialParameter = customParameterValue(options, rangeDefault);
+  validateCustomCircleExpression(compiled, parameterRange, initialParameter);
+
+  const expression = compiled.source;
+  const descriptor = parameter(
+    "omega",
+    "r",
+    "Parameter r",
+    initialParameter,
+    parameterRange[0],
+    parameterRange[1],
+    Math.max((parameterRange[1] - parameterRange[0]) / 400, 1e-6)
+  );
+  const id = `custom-${hashCustomCircleFlow(`${compiled.canonical}|${parameterRange.join("|")}`)}`;
+
+  const makeCustomFlow = (parameterValue) => {
+    const r = finiteNumber(parameterValue, "Parameter r");
+    const params = Object.freeze({ omega: r });
+    return Object.freeze({
+      id,
+      name: "Custom circle flow",
+      shortName: "Custom",
+      formula: `θ̇ = ${expression}`,
+      description: compiled.usesR
+        ? "A user-authored one-parameter vector field on the circle."
+        : "A user-authored vector field on the circle that does not depend on r.",
+      lesson: "Equilibria and bifurcations are detected numerically.",
+      sourceType: "custom",
+      expression,
+      expressionUsesParameter: compiled.usesR,
+      compiledExpression: compiled,
+      period: TWO_PI,
+      origin: 0,
+      parameterRange,
+      defaultParameter: initialParameter,
+      parameters: Object.freeze([descriptor]),
+      params,
+      eval(theta) {
+        return compiled.evaluate(wrapAngle(theta), r);
+      },
+      velocity(theta) {
+        return compiled.evaluate(wrapAngle(theta), r);
+      },
+      withParameters(overrides = {}) {
+        return makeCustomFlow(customParameterValue(overrides, r));
+      }
+    });
+  };
+
+  return makeCustomFlow(initialParameter);
+}
+
 function resolveFlow(flowOrId) {
   if (typeof flowOrId === "string") return createCircleFlow(flowOrId);
   if (typeof flowOrId === "function") {
@@ -704,16 +1289,75 @@ export function findEquilibria(flowOrId, options = {}) {
  * parameter varies. Each slice keeps the other parameters fixed. A continuum
  * slice is represented explicitly rather than as one artificial branch point.
  */
+function resolveBifurcationFamily(flowOrId, baseParameters) {
+  const overrides = baseParameters && typeof baseParameters === "object" ? baseParameters : {};
+  if (typeof flowOrId === "string") {
+    const baseFlow = createCircleFlow(flowOrId, overrides);
+    return {
+      baseFlow,
+      makeFlow(parameters) {
+        return createCircleFlow(baseFlow.id, parameters);
+      }
+    };
+  }
+
+  if (typeof flowOrId === "function") {
+    const produced = flowOrId(overrides);
+    const baseFlow = resolveFlow(produced);
+    return {
+      baseFlow,
+      makeFlow(parameters) {
+        if (typeof baseFlow.withParameters === "function") {
+          return resolveFlow(baseFlow.withParameters(parameters));
+        }
+        return resolveFlow(flowOrId(parameters));
+      }
+    };
+  }
+
+  let baseFlow = resolveFlow(flowOrId);
+  const hasOverrides = Object.keys(overrides).length > 0;
+  if (hasOverrides) {
+    if (typeof baseFlow.withParameters === "function") {
+      baseFlow = resolveFlow(baseFlow.withParameters(overrides));
+    } else if (presetDefinitions[baseFlow.id]) {
+      baseFlow = createCircleFlow(baseFlow.id, overrides);
+    }
+  }
+  if (typeof baseFlow.withParameters === "function") {
+    return {
+      baseFlow,
+      makeFlow(parameters) {
+        return resolveFlow(baseFlow.withParameters(parameters));
+      }
+    };
+  }
+  if (presetDefinitions[baseFlow.id]) {
+    return {
+      baseFlow,
+      makeFlow(parameters) {
+        return createCircleFlow(baseFlow.id, parameters);
+      }
+    };
+  }
+  throw new TypeError(
+    "A sampled circle-flow object must provide withParameters(overrides), or be supplied as a factory."
+  );
+}
+
 export function sampleCircleBifurcation(
-  id,
+  flowOrId,
   baseParameters,
   parameterKey,
   range,
   options = {}
 ) {
   const canonicalKey = canonicalCircleParameterKey(parameterKey);
-  const baseFlow = createCircleFlow(id, baseParameters);
-  const descriptor = baseFlow.parameters.find((parameterDescriptor) => parameterDescriptor.key === canonicalKey);
+  const family = resolveBifurcationFamily(flowOrId, baseParameters);
+  const { baseFlow } = family;
+  const descriptor = Array.isArray(baseFlow.parameters)
+    ? baseFlow.parameters.find((parameterDescriptor) => parameterDescriptor.key === canonicalKey)
+    : null;
   if (!descriptor) {
     throw new RangeError(`${baseFlow.name} does not use the ${canonicalKey} parameter`);
   }
@@ -745,9 +1389,9 @@ export function sampleCircleBifurcation(
   }
   values.sort((left, right) => left - right);
 
-  const base = { ...baseFlow.params };
+  const base = { ...(baseFlow.params || {}) };
   const slices = values.map((value) => {
-    const flow = createCircleFlow(baseFlow.id, { ...base, [canonicalKey]: value });
+    const flow = family.makeFlow({ ...base, [canonicalKey]: value });
     const equilibria = findEquilibria(flow, { samples: equilibriumSamples });
     const continuum = Boolean(equilibria[0]?.continuum);
     return Object.freeze({
@@ -921,6 +1565,8 @@ export default Object.freeze({
   PRESETS,
   createCircleFlow,
   createFlow,
+  compileCircleExpression,
+  createCustomCircleFlow,
   evaluateFlow,
   velocityAt,
   wrapAngle,

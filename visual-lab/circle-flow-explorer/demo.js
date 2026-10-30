@@ -4,13 +4,14 @@ import {
   canonicalCircleParameterKey,
   circularDifference,
   createCircleFlow,
+  createCustomCircleFlow,
   evaluateFlow,
   sampleCircleBifurcation,
   sampleFlow,
   seamCrossings,
   stepLiftedRK4,
   wrapAngle
-} from "./model.js?v=20261015-1";
+} from "./model.js?v=20261030-1";
 
 const byId = (id) => document.getElementById(id);
 
@@ -20,6 +21,13 @@ const elements = {
   familyKind: byId("family-kind"),
   familyEquation: byId("family-equation"),
   familyDescription: byId("family-description"),
+  customEquationGroup: byId("custom-equation-group"),
+  customEquation: byId("custom-equation"),
+  customRMin: byId("custom-r-min"),
+  customRMax: byId("custom-r-max"),
+  applyCustomEquation: byId("apply-custom-equation"),
+  customEquationStatus: byId("custom-equation-status"),
+  customEquationError: byId("custom-equation-error"),
   omegaControl: byId("parameter-omega-control"),
   omegaLabel: byId("parameter-omega-label"),
   omega: byId("parameter-omega"),
@@ -172,6 +180,14 @@ const FAMILY_UI = Object.freeze({
     ranges: { omega: [-1.8, 1.8, 0.002], a: [0, 1.5, 0.002], b: [-1.2, 1.2, 0.002], n: [2, 6, 1], phase: [-Math.PI, Math.PI, 0.002] },
     labels: { omega: "Bias ω", a: "First harmonic a", b: "Higher harmonic b", n: "Higher harmonic n", phase: "Phase shift φ" },
     help: "Mix two Fourier modes to make a richer periodic vector field. Simple equilibria still alternate stable and unstable around the circle."
+  },
+  custom: {
+    visible: ["omega"],
+    bifurcationDefault: "omega",
+    defaults: { omega: 0 },
+    ranges: { omega: [-1.5, 1.5, 0.0015] },
+    labels: { omega: "Parameter r" },
+    help: "Type r exactly or use the slider. Custom equilibria and branches are found numerically."
   }
 });
 
@@ -220,6 +236,13 @@ const state = {
     tubeGeometry: null,
     view: "plane"
   },
+  custom: {
+    flow: null,
+    expression: "r - sin(theta)",
+    range: [-1.5, 1.5],
+    parameterValue: 0
+  },
+  runtimeFault: "",
   fullscreenInitialized: false,
   lastAnnouncement: "",
   dirty: true
@@ -342,6 +365,57 @@ function currentParameters() {
   };
 }
 
+function isCustomFamily() {
+  return elements.familySelect.value === "custom";
+}
+
+function customFlowUsesParameter(flow = state.custom.flow) {
+  return flow?.expressionUsesParameter !== false;
+}
+
+function customSliderRange(range = state.custom.range) {
+  const [minimum, maximum] = range;
+  // Keep typed values exact instead of snapping them to a slider step. Pointer
+  // and playback updates still move continuously across the configured span.
+  return [minimum, maximum, "any"];
+}
+
+function setCustomEquationError(message = "") {
+  const hasError = Boolean(message);
+  elements.customEquationError.hidden = !hasError;
+  elements.customEquationError.textContent = message;
+  [elements.customEquation, elements.customRMin, elements.customRMax].forEach((input) => {
+    if (hasError) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  });
+}
+
+function setCustomEquationStatus(message = "") {
+  elements.customEquationStatus.hidden = !message;
+  elements.customEquationStatus.textContent = message;
+}
+
+function syncCustomParameterAvailability() {
+  const custom = isCustomFamily();
+  const available = !custom || customFlowUsesParameter();
+  elements.omega.disabled = !available;
+  elements.omegaValue.disabled = !available;
+  elements.playOmega.disabled = !available;
+  if (elements.bifurcationParameter) elements.bifurcationParameter.disabled = !available;
+  if (elements.bifurcationCanvas) {
+    elements.bifurcationCanvas.setAttribute("aria-disabled", String(!available));
+  }
+  if (custom && !available) {
+    setParameterPlayer("omega", false);
+    elements.parameterHelp.textContent = "This equation does not use r, so the parameter control and animation are disabled.";
+    setCustomEquationStatus("This equation is independent of r. Its circle flow is the same throughout the displayed range.");
+  } else if (custom) {
+    elements.parameterHelp.textContent = FAMILY_UI.custom.help;
+    setCustomEquationStatus("");
+  }
+  syncParameterPlayButton("omega");
+}
+
 function parameterInputValue(name) {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const value = Number(config.control.value) / (config.scale || 1);
@@ -379,7 +453,9 @@ function updateParameterOutputs(options = {}) {
   const phase = Number(elements.phase.value);
   const harmonics = Math.round(Number(elements.n.value));
   const pitchforkFamily = elements.familySelect.value === "symmetric-pitchfork";
-  const namedMuFamily = pitchforkFamily || elements.familySelect.value === "transcritical";
+  const namedMuFamily = pitchforkFamily
+    || elements.familySelect.value === "transcritical"
+    || elements.familySelect.value === "custom";
   Object.keys(PARAMETER_PLAYER_CONFIG).forEach((name) => {
     syncParameterValueInput(name, options);
   });
@@ -399,6 +475,7 @@ function updateParameterOutputs(options = {}) {
 function configureFamilyControls(id, resetValues = true) {
   const config = FAMILY_UI[id];
   if (!config) return;
+  elements.customEquationGroup.hidden = id !== "custom";
   const controls = {
     omega: [elements.omegaControl, elements.omega, elements.omegaLabel],
     a: [elements.aControl, elements.a, elements.aLabel],
@@ -408,12 +485,16 @@ function configureFamilyControls(id, resetValues = true) {
   };
   Object.entries(controls).forEach(([key, [wrapper, input, label]]) => {
     wrapper.hidden = !config.visible.includes(key);
-    if (config.ranges[key]) setRange(input, config.ranges[key]);
+    const range = id === "custom" && key === "omega" ? customSliderRange() : config.ranges[key];
+    if (range) setRange(input, range);
     if (config.labels[key]) label.textContent = config.labels[key];
-    if (resetValues && config.defaults[key] != null) input.value = String(config.defaults[key]);
+    if (resetValues && config.defaults[key] != null) {
+      input.value = String(id === "custom" && key === "omega" ? state.custom.parameterValue : config.defaults[key]);
+    }
   });
   elements.parameterHelp.textContent = config.help;
   updateParameterOutputs({ force: true });
+  syncCustomParameterAvailability();
   syncParameterPlayButtons();
   configureBifurcationControls(id, resetValues);
 }
@@ -524,7 +605,10 @@ function bifurcationCacheKey() {
   const fixed = family.visible
     .filter((name) => name !== selected)
     .map((name) => [name, Number(PARAMETER_PLAYER_CONFIG[name].control.value)]);
-  return JSON.stringify({ familyId, selected, fixed });
+  const custom = familyId === "custom"
+    ? { expression: state.custom.expression, range: state.custom.range }
+    : null;
+  return JSON.stringify({ familyId, selected, fixed, custom });
 }
 
 function symmetricPitchforkMuFolds(bias) {
@@ -591,13 +675,13 @@ function rebuildBifurcationData(options = {}) {
   const familyId = elements.familySelect.value;
   try {
     state.bifurcation.data = sampleCircleBifurcation(
-      familyId,
+      familyId === "custom" ? state.flow : familyId,
       currentParameters(),
       canonicalCircleParameterKey(name),
       [Number(config.control.min), Number(config.control.max)],
       {
         parameterSamples: 181,
-        equilibriumSamples: 512,
+        equilibriumSamples: familyId === "custom" ? 1024 : 512,
         anchors: bifurcationAnchors(familyId, name)
       }
     );
@@ -614,6 +698,72 @@ function rebuildBifurcationData(options = {}) {
     state.bifurcation.lastSampleTime = performance.now();
     state.dirty = true;
     return false;
+  }
+}
+
+function readCustomParameterRange() {
+  const minimumText = elements.customRMin.value.trim();
+  const maximumText = elements.customRMax.value.trim();
+  const minimum = Number(minimumText);
+  const maximum = Number(maximumText);
+  if (!minimumText || !maximumText || !Number.isFinite(minimum) || !Number.isFinite(maximum)) {
+    throw new Error("Enter finite minimum and maximum values for r.");
+  }
+  if (minimum >= maximum) throw new Error("The maximum r value must be greater than the minimum.");
+  if (maximum - minimum > 1e6) throw new Error("Choose an r range no wider than 1,000,000.");
+  return [minimum, maximum];
+}
+
+function applyCustomEquation(options = {}) {
+  const source = elements.customEquation.value.trim();
+  if (!source) {
+    setCustomEquationError("Enter a right-hand side for the equation.");
+    return false;
+  }
+
+  elements.applyCustomEquation.disabled = true;
+  try {
+    const range = readCustomParameterRange();
+    const parameterValue = clamp(Number(elements.omega.value) || 0, range[0], range[1]);
+    const candidate = createCustomCircleFlow(source, { r: parameterValue, parameterRange: range });
+    const candidateAnalysis = analyzeCircleFlow(candidate, { equilibriumOptions: { samples: 2048 } });
+    const candidateSamples = sampleFlow(candidate, { samples: 481 }).points;
+    const candidateBifurcation = sampleCircleBifurcation(
+      candidate,
+      { ...currentParameters(), omega: parameterValue },
+      "omega",
+      range,
+      { parameterSamples: 181, equilibriumSamples: 1024, anchors: [] }
+    );
+
+    state.custom.flow = candidate;
+    state.custom.expression = candidate.expression || source;
+    state.custom.range = range;
+    state.custom.parameterValue = parameterValue;
+    state.runtimeFault = "";
+    elements.customEquation.value = state.custom.expression;
+    elements.customRMin.value = String(range[0]);
+    elements.customRMax.value = String(range[1]);
+    setCustomEquationError("");
+    configureFamilyControls("custom", false);
+    elements.omega.value = String(parameterValue);
+    refreshFlow({
+      flow: candidate,
+      analysis: candidateAnalysis,
+      samples: candidateSamples,
+      bifurcationData: candidateBifurcation,
+      resetParticles: options.resetParticles !== false,
+      announce: true
+    });
+    announce(`Custom equation applied. ${elements.telemetryRegime.textContent}.`);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "This equation could not be plotted.";
+    setCustomEquationError(message);
+    announce(`Custom equation not applied. ${message}`);
+    return false;
+  } finally {
+    elements.applyCustomEquation.disabled = false;
   }
 }
 
@@ -813,9 +963,22 @@ function updateTelemetry() {
 function refreshFlow(options = {}) {
   const id = elements.familySelect.value;
   const previousRegime = state.analysis?.regime || null;
-  state.flow = createCircleFlow(id, currentParameters());
-  state.analysis = analyzeCircleFlow(state.flow, { equilibriumOptions: { samples: 2048 } });
-  state.samples = sampleFlow(state.flow, { samples: 481 }).points;
+  const parameters = currentParameters();
+  const nextFlow = options.flow || (id === "custom"
+    ? state.custom.flow?.withParameters(parameters)
+      || createCustomCircleFlow(state.custom.expression, {
+        r: parameters.omega,
+        parameterRange: state.custom.range
+      })
+    : createCircleFlow(id, parameters));
+  state.flow = nextFlow;
+  state.analysis = options.analysis || analyzeCircleFlow(state.flow, { equilibriumOptions: { samples: 2048 } });
+  state.samples = options.samples || sampleFlow(state.flow, { samples: 481 }).points;
+  if (id === "custom") {
+    state.custom.flow = state.flow;
+    state.custom.parameterValue = Number(elements.omega.value);
+  }
+  state.runtimeFault = "";
   state.maximumVelocity = Math.max(0.05, ...state.samples.map((point) => Math.abs(point.velocity)));
   state.minimumVelocityPoint = minimumVelocitySample(state.samples);
   elements.familyKind.textContent = state.flow.name;
@@ -831,7 +994,15 @@ function refreshFlow(options = {}) {
   updateEquilibriumList();
   updateTelemetry();
   updateRegimeCopy();
-  rebuildBifurcationData({ force: Boolean(options.forceBifurcation) });
+  syncCustomParameterAvailability();
+  if (options.bifurcationData) {
+    state.bifurcation.data = options.bifurcationData;
+    state.bifurcation.cacheKey = bifurcationCacheKey();
+    state.bifurcation.pending = false;
+    state.bifurcation.lastSampleTime = performance.now();
+  } else {
+    rebuildBifurcationData({ force: Boolean(options.forceBifurcation) });
+  }
   state.dirty = true;
   if (options.resetParticles) resetParticles({ announce: false });
   if (previousRegime && previousRegime !== state.analysis.regime && !options.announce) {
@@ -2285,7 +2456,7 @@ function cancelParameterValueEdit(name) {
 function commitParameterValue(name, options = {}) {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const input = config?.valueInput;
-  if (!config || !input || input.dataset.dirty !== "true") return false;
+  if (!config || !input || config.control.disabled || input.dataset.dirty !== "true") return false;
   const rawValue = input.value.trim();
   const typedValue = Number(rawValue);
   if (!rawValue || !Number.isFinite(typedValue)) {
@@ -2313,6 +2484,7 @@ function syncParameterPlayButton(name) {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const player = state.parameterPlayers[name];
   if (!config?.button || !player) return;
+  config.button.disabled = config.control.disabled;
   const label = parameterPlayerLabel(name);
   config.button.setAttribute("aria-pressed", String(player.playing));
   config.button.setAttribute(
@@ -2330,7 +2502,7 @@ function syncParameterPlayButtons() {
 function setParameterPlayer(name, playing, options = {}) {
   const config = PARAMETER_PLAYER_CONFIG[name];
   const player = state.parameterPlayers[name];
-  if (!config || !player || (playing && config.wrapper.hidden) || player.playing === playing) return false;
+  if (!config || !player || (playing && (config.wrapper.hidden || config.control.disabled)) || player.playing === playing) return false;
   player.playing = playing;
   if (playing) {
     player.position = Number(config.control.value);
@@ -2369,7 +2541,7 @@ function updateParameterPlayers(delta) {
   for (const [name, config] of Object.entries(PARAMETER_PLAYER_CONFIG)) {
     const player = state.parameterPlayers[name];
     if (!player.playing) continue;
-    if (config.wrapper.hidden) {
+    if (config.wrapper.hidden || config.control.disabled) {
       setParameterPlayer(name, false);
       continue;
     }
@@ -2649,7 +2821,7 @@ function bifurcationValueFromPointer(event) {
 function setBifurcationParameterValue(value, options = {}) {
   const name = selectedBifurcationParameter();
   const config = PARAMETER_PLAYER_CONFIG[name];
-  if (!config?.control) return;
+  if (!config?.control || config.control.disabled) return;
   setParameterPlayer(name, false);
   cancelParameterValueEdit(name);
   const minimum = Number(config.control.min);
@@ -2667,6 +2839,8 @@ function setBifurcationParameterValue(value, options = {}) {
 
 function beginBifurcationPointer(event) {
   if (event.button !== 0 || event.isPrimary === false) return;
+  const parameterControl = PARAMETER_PLAYER_CONFIG[selectedBifurcationParameter()]?.control;
+  if (parameterControl?.disabled && state.bifurcation.view !== "tube") return;
   elements.bifurcationCanvas.focus({ preventScroll: true });
   const position = pointerPosition(elements.bifurcationCanvas, event);
   const tube = state.bifurcation.view === "tube";
@@ -2751,7 +2925,7 @@ function handleBifurcationKey(event) {
   if (handleTubeCameraKey(event, "bifurcation")) return;
   const name = selectedBifurcationParameter();
   const config = PARAMETER_PLAYER_CONFIG[name];
-  if (!config?.control) return;
+  if (!config?.control || config.control.disabled) return;
   const minimum = Number(config.control.min);
   const maximum = Number(config.control.max);
   const current = Number(config.control.value);
@@ -2827,15 +3001,47 @@ function scheduleFlowRefresh(options = {}) {
   if (refreshRequest) return;
   refreshRequest = window.requestAnimationFrame(() => {
     refreshRequest = 0;
-    refreshFlow(options);
+    try {
+      refreshFlow(options);
+    } catch (error) {
+      handleRuntimeFault(error);
+    }
   });
 }
 
 function installEvents() {
   elements.familySelect.addEventListener("change", () => {
     stopParameterPlayers();
-    configureFamilyControls(elements.familySelect.value, true);
-    refreshFlow({ resetParticles: true, announce: true, forceBifurcation: true });
+    state.runtimeFault = "";
+    setCustomEquationError("");
+    setCustomEquationStatus("");
+    const id = elements.familySelect.value;
+    if (id === "custom") {
+      elements.customEquation.value = state.custom.expression;
+      elements.customRMin.value = String(state.custom.range[0]);
+      elements.customRMax.value = String(state.custom.range[1]);
+      configureFamilyControls(id, true);
+      if (state.custom.flow) {
+        refreshFlow({ resetParticles: true, announce: true, forceBifurcation: true });
+      } else {
+        applyCustomEquation({ resetParticles: true });
+      }
+    } else {
+      configureFamilyControls(id, true);
+      refreshFlow({ resetParticles: true, announce: true, forceBifurcation: true });
+    }
+  });
+  elements.applyCustomEquation.addEventListener("click", () => applyCustomEquation());
+  elements.customEquation.addEventListener("input", () => {
+    elements.customEquation.removeAttribute("aria-invalid");
+  });
+  [elements.customEquation, elements.customRMin, elements.customRMax].forEach((input) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        applyCustomEquation();
+      }
+    });
   });
   elements.bifurcationParameter.addEventListener("change", () => {
     state.bifurcation.data = null;
@@ -2941,19 +3147,41 @@ function installEvents() {
   });
 }
 
+function handleRuntimeFault(error) {
+  const detail = error instanceof Error ? error.message : "The current flow could not be evaluated.";
+  console.warn("The circle flow paused after a recoverable error.", error);
+  state.running = false;
+  stopParameterPlayers();
+  syncAnimationButton();
+  state.dirty = false;
+  if (state.runtimeFault !== detail) {
+    state.runtimeFault = detail;
+    elements.stageStatus.textContent = `Motion paused: ${detail}`;
+    if (isCustomFamily()) {
+      setCustomEquationError(`Motion paused: ${detail} Edit the equation or parameter and apply it again.`);
+    }
+    announce(`Motion paused after an evaluation error. ${detail}`);
+  }
+}
+
 function animate(now) {
-  const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
-  state.lastFrameTime = now;
-  updateParameterPlayers(delta);
-  updateParticles(delta);
-  if (state.bifurcation.pending && now - state.bifurcation.lastSampleTime >= 140) {
-    rebuildBifurcationData();
+  try {
+    const delta = Math.min(0.06, Math.max(0, (now - state.lastFrameTime) / 1000));
+    state.lastFrameTime = now;
+    updateParameterPlayers(delta);
+    updateParticles(delta);
+    if (state.bifurcation.pending && now - state.bifurcation.lastSampleTime >= 140) {
+      rebuildBifurcationData();
+    }
+    if (state.dirty && !document.hidden && now - state.lastRenderTime >= 30) {
+      drawAll();
+      state.lastRenderTime = now;
+    }
+  } catch (error) {
+    handleRuntimeFault(error);
+  } finally {
+    window.requestAnimationFrame(animate);
   }
-  if (state.dirty && !document.hidden && now - state.lastRenderTime >= 30) {
-    drawAll();
-    state.lastRenderTime = now;
-  }
-  window.requestAnimationFrame(animate);
 }
 
 function initialize() {

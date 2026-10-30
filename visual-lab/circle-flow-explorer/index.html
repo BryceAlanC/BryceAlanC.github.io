@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261014-4" />
-    <script type="module" src="./demo.js?v=20261015-1"></script>
+    <link rel="stylesheet" href="./style.css?v=20261030-1" />
+    <script type="module" src="./demo.js?v=20261030-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -109,12 +109,50 @@
                 <option value="josephson-junction">Josephson junction</option>
                 <option value="repeated-locking-sites">Repeated locking sites</option>
                 <option value="fourier-workshop">Fourier workshop</option>
+                <option value="custom">Custom equation…</option>
               </select>
               <div class="equation-card">
                 <span id="family-kind">Overdamped pendulum</span>
                 <code id="family-equation">θ̇ = ω − a sin θ</code>
                 <small id="family-description">Drive competes with a restoring torque.</small>
               </div>
+            </fieldset>
+
+            <fieldset class="control-group custom-equation-group" id="custom-equation-group" hidden>
+              <legend>Custom equation</legend>
+              <label class="field-label" for="custom-equation">Right-hand side</label>
+              <div class="custom-equation-row">
+                <span class="custom-equation-prefix" aria-hidden="true">θ̇ =</span>
+                <input
+                  id="custom-equation"
+                  type="text"
+                  value="r - sin(theta)"
+                  maxlength="256"
+                  spellcheck="false"
+                  autocomplete="off"
+                  aria-describedby="custom-equation-help custom-equation-error custom-equation-status"
+                />
+              </div>
+              <div class="custom-range-grid" aria-label="Custom parameter range">
+                <label for="custom-r-min">
+                  <span>Minimum r</span>
+                  <input id="custom-r-min" type="number" inputmode="decimal" value="-1.5" step="any" />
+                </label>
+                <label for="custom-r-max">
+                  <span>Maximum r</span>
+                  <input id="custom-r-max" type="number" inputmode="decimal" value="1.5" step="any" />
+                </label>
+              </div>
+              <button class="lab-button lab-button-primary custom-equation-apply" id="apply-custom-equation" type="button">
+                Plot this equation
+              </button>
+              <p class="control-help" id="custom-equation-help">
+                Use theta (or θ or x), r, pi, e, arithmetic, and functions such as sin,
+                cos, exp, log, sqrt, and abs. The equation must be finite and join
+                smoothly at 0 and 2π. Equilibria and branches are numerical approximations.
+              </p>
+              <p class="custom-equation-status" id="custom-equation-status" hidden></p>
+              <p class="custom-equation-error" id="custom-equation-error" role="alert" hidden></p>
             </fieldset>
 
             <fieldset class="control-group parameter-group">
