@@ -1946,6 +1946,73 @@ export function sampleVectorField(presetOrId, parameter, options = {}) {
   });
 }
 
+function refineNullclineZero(first, second, evaluate) {
+  let left = 0;
+  let right = 1;
+  let leftValue = first.value;
+  const tolerance = 1e-10 * Math.max(1, Math.min(Math.abs(first.value), Math.abs(second.value)));
+  for (let iteration = 0; iteration < 48; iteration += 1) {
+    const amount = (left + right) / 2;
+    const point = { x: first.x + (second.x - first.x) * amount, y: first.y + (second.y - first.y) * amount };
+    const value = evaluate(point.x, point.y);
+    if (!Number.isFinite(value)) return null;
+    if (Math.abs(value) <= tolerance) return point;
+    if (Math.sign(value) === Math.sign(leftValue)) { left = amount; leftValue = value; }
+    else right = amount;
+  }
+  // A sign change across a singularity is not a nullcline.
+  return null;
+}
+
+/** Contour one sampled velocity component, verifying each edge intersection. */
+export function sampleNullclineSegments(values, analysis, evaluate) {
+  if (typeof evaluate !== "function") throw new TypeError("Nullcline sampling requires a field-component evaluator");
+  const segments = [];
+  const { columns, rows, xValues, yValues } = analysis;
+  const valueAt = (column, row) => values[row * columns + column];
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let column = 0; column < columns - 1; column += 1) {
+      const corners = [
+        { x: xValues[column], y: yValues[row], value: valueAt(column, row) },
+        { x: xValues[column + 1], y: yValues[row], value: valueAt(column + 1, row) },
+        { x: xValues[column + 1], y: yValues[row + 1], value: valueAt(column + 1, row + 1) },
+        { x: xValues[column], y: yValues[row + 1], value: valueAt(column, row + 1) }
+      ];
+      if (!corners.every((corner) => Number.isFinite(corner.value))) continue;
+      const edgePairs = [[0, 1], [1, 2], [2, 3], [3, 0]];
+      const intersections = [];
+      edgePairs.forEach(([firstIndex, secondIndex], edge) => {
+        const first = corners[firstIndex];
+        const second = corners[secondIndex];
+        const firstZero = Math.abs(first.value) < 1e-12;
+        const secondZero = Math.abs(second.value) < 1e-12;
+        if (firstZero && secondZero) return;
+        if (firstZero || secondZero || Math.sign(first.value) !== Math.sign(second.value)) {
+          const point = firstZero
+            ? { x: first.x, y: first.y }
+            : secondZero
+              ? { x: second.x, y: second.y }
+              : refineNullclineZero(first, second, evaluate);
+          if (!point) return;
+          if (!intersections.some((record) => Math.hypot(record.point.x - point.x, record.point.y - point.y) < 1e-11)) {
+            intersections.push({ edge, point });
+          }
+        }
+      });
+      if (intersections.length === 2) {
+        segments.push([intersections[0].point, intersections[1].point]);
+      } else if (intersections.length === 4) {
+        const centerValue = evaluate((corners[0].x + corners[2].x) / 2, (corners[0].y + corners[2].y) / 2);
+        if (!Number.isFinite(centerValue)) continue;
+        const firstPairing = Math.sign(centerValue) === Math.sign(corners[0].value);
+        const pairs = firstPairing ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]];
+        for (const [first, second] of pairs) segments.push([intersections[first].point, intersections[second].point]);
+      }
+    }
+  }
+  return segments;
+}
+
 export default Object.freeze({
   PRESET_IDS,
   PRESETS,
@@ -1963,6 +2030,6 @@ export default Object.freeze({
   integrateTrajectory,
   sampleBranches,
   sampleBranchDiagram,
+  sampleNullclineSegments,
   sampleVectorField
 });
-

@@ -7,8 +7,9 @@ import {
   cyclesAt,
   connectionsAt,
   integrateTrajectory,
-  sampleBranches
-} from "./model.js?v=20261102-1";
+  sampleBranches,
+  sampleNullclineSegments
+} from "./model.js?v=20261102-2";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -1095,57 +1096,6 @@ function samplePhaseAnalysis() {
   return state.phaseCache;
 }
 
-function interpolateZero(first, second, firstValue, secondValue) {
-  const denominator = firstValue - secondValue;
-  const amount = Math.abs(denominator) < 1e-15 ? 0.5 : clamp(firstValue / denominator, 0, 1);
-  return { x: lerp(first.x, second.x, amount), y: lerp(first.y, second.y, amount) };
-}
-
-function nullclineSegments(values, analysis) {
-  const segments = [];
-  const { columns, rows, xValues, yValues } = analysis;
-  const valueAt = (column, row) => values[row * columns + column];
-  for (let row = 0; row < rows - 1; row += 1) {
-    for (let column = 0; column < columns - 1; column += 1) {
-      const corners = [
-        { x: xValues[column], y: yValues[row], value: valueAt(column, row) },
-        { x: xValues[column + 1], y: yValues[row], value: valueAt(column + 1, row) },
-        { x: xValues[column + 1], y: yValues[row + 1], value: valueAt(column + 1, row + 1) },
-        { x: xValues[column], y: yValues[row + 1], value: valueAt(column, row + 1) }
-      ];
-      if (!corners.every((corner) => Number.isFinite(corner.value))) continue;
-      const edgePairs = [[0, 1], [1, 2], [2, 3], [3, 0]];
-      const intersections = [];
-      edgePairs.forEach(([firstIndex, secondIndex], edge) => {
-        const first = corners[firstIndex];
-        const second = corners[secondIndex];
-        const firstZero = Math.abs(first.value) < 1e-12;
-        const secondZero = Math.abs(second.value) < 1e-12;
-        if (firstZero && secondZero) return;
-        if (firstZero || secondZero || Math.sign(first.value) !== Math.sign(second.value)) {
-          const point = firstZero
-            ? { x: first.x, y: first.y }
-            : secondZero
-              ? { x: second.x, y: second.y }
-              : interpolateZero(first, second, first.value, second.value);
-          if (!intersections.some((record) => Math.hypot(record.point.x - point.x, record.point.y - point.y) < 1e-11)) {
-            intersections.push({ edge, point });
-          }
-        }
-      });
-      if (intersections.length === 2) {
-        segments.push([intersections[0].point, intersections[1].point]);
-      } else if (intersections.length === 4) {
-        const centerValue = corners.reduce((sum, corner) => sum + corner.value, 0) / 4;
-        const firstPairing = Math.sign(centerValue) === Math.sign(corners[0].value);
-        const pairs = firstPairing ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]];
-        for (const [first, second] of pairs) segments.push([intersections[first].point, intersections[second].point]);
-      }
-    }
-  }
-  return segments;
-}
-
 function drawArrow(context, startX, startY, endX, endY, color, width = 1) {
   const angle = Math.atan2(endY - startY, endX - startX);
   const head = 3.5;
@@ -1445,11 +1395,11 @@ function drawPhasePortrait() {
   const analysis = samplePhaseAnalysis();
   if (elements.showVectorField?.checked) drawVectorField(context, box, ranges, analysis);
   if (elements.showNullclines?.checked) {
-    drawNullcline(context, box, ranges, nullclineSegments(analysis.valuesX, analysis), {
+    drawNullcline(context, box, ranges, sampleNullclineSegments(analysis.valuesX, analysis, (x, y) => state.family.field(x, y, state.parameter)[0]), {
       color: COLORS.nullclineX,
       label: "ẋ = 0"
     });
-    drawNullcline(context, box, ranges, nullclineSegments(analysis.valuesY, analysis), {
+    drawNullcline(context, box, ranges, sampleNullclineSegments(analysis.valuesY, analysis, (x, y) => state.family.field(x, y, state.parameter)[1]), {
       color: COLORS.nullclineY,
       label: "ẏ = 0",
       dash: [5, 4]

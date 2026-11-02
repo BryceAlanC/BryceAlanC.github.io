@@ -517,5 +517,25 @@ for (const id of ["subcritical-hopf", "fold-cycles"]) {
   assert.deepEqual(failed.final, { x: 1, y: 1 }, "a rejected trial must never become the trajectory endpoint");
 }
 
+{
+  const analysis = {
+    columns: 45, rows: 45,
+    xValues: Array.from({ length: 45 }, (_, index) => -3 + 6 * index / 44),
+    yValues: Array.from({ length: 45 }, (_, index) => -3 + 6 * index / 44)
+  };
+  const contour = (evaluate) => {
+    const values = Float64Array.from(analysis.yValues.flatMap((y) => analysis.xValues.map((x) => evaluate(x, y))));
+    return model.sampleNullclineSegments(values, analysis, evaluate);
+  };
+  for (const evaluate of [(x) => 1 / (x - 0.47), (_x, y) => 1 / (y + 0.13), (x, y) => 1 / (x + y - 0.47)]) {
+    assert.equal(contour(evaluate).length, 0, "a reciprocal has no nullcline at its pole");
+  }
+  for (const evaluate of [(x) => x, (_x, y) => y, (x, y) => x * x + y * y - 1]) {
+    const segments = contour(evaluate);
+    assert.ok(segments.length > 20, "keep genuine straight and curved nullclines");
+    for (const segment of segments) for (const point of segment) near(evaluate(point.x, point.y), 0, 1e-8);
+  }
+}
+
 console.log("planar bifurcation model tests passed");
 
