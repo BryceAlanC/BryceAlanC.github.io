@@ -1442,16 +1442,65 @@ export function sampleFlow(flowOrId, options = {}) {
   });
 }
 
-/** One fourth-order Runge–Kutta step that preserves the real-valued lift. */
+function adaptiveScalarStep(evaluate, initial, startTime, interval, autonomous = false) {
+  if (interval === 0) return initial;
+  const direction = Math.sign(interval);
+  const duration = Math.abs(interval);
+  let elapsed = 0;
+  let value = initial;
+  let nextStep = duration;
+  let constantStages;
+  let firstSlope;
+  const trial = (x, time, step) => {
+    const k1 = evaluate(x, time);
+    const k2 = evaluate(x + step * k1 / 2, time + step / 2);
+    const k3 = evaluate(x + step * k2 / 2, time + step / 2);
+    const k4 = evaluate(x + step * k3, time + step);
+    if (firstSlope === undefined) firstSlope = k1;
+    if (k1 !== firstSlope || k2 !== firstSlope || k3 !== firstSlope || k4 !== firstSlope) constantStages = false;
+    return x + step * (k1 + 2 * k2 + 2 * k3 + k4) / 6;
+  };
+  if (!Number.isFinite(evaluate(value, startTime))) return NaN;
+  for (let attempt = 0; attempt < 4096 && elapsed < duration; attempt += 1) {
+    const magnitude = Math.min(nextStep, duration - elapsed);
+    if (elapsed + magnitude === elapsed || startTime + direction * (elapsed + magnitude) === startTime + direction * elapsed) return NaN;
+    const step = direction * magnitude;
+    const time = startTime + direction * elapsed;
+    constantStages = true;
+    firstSlope = undefined;
+    const coarse = trial(value, time, step);
+    const half = trial(value, time, step / 2);
+    const fine = Number.isFinite(half) ? trial(half, time + step / 2, step / 2) : NaN;
+    let error = Number.isFinite(coarse) && Number.isFinite(fine)
+      ? Math.abs(fine - coarse) / 15 / (1e-11 + 1e-9 * Math.min(TWO_PI, Math.max(Math.abs(value), Math.abs(fine))))
+      : Infinity;
+    // A scalar autonomous solution cannot reverse direction or cross a fixed point.
+    if (autonomous && Number.isFinite(fine)) {
+      const movement = Math.sign(fine - value);
+      const expected = direction * Math.sign(firstSlope);
+      const lastSlope = evaluate(fine, time + step);
+      if ((movement !== 0 && movement !== expected)
+        || (lastSlope !== 0 && Math.sign(lastSlope) !== Math.sign(firstSlope))) error = Infinity;
+    }
+    nextStep = magnitude * (error === 0 ? 2 : clamp(0.9 * error ** -0.2, 0.1, 2));
+    if (error > 1) continue;
+    // A constant field needs only one addition; avoid extra rounding at full laps.
+    value = constantStages ? value + step * firstSlope : fine;
+    elapsed += magnitude;
+    if (duration - elapsed <= 8 * Number.EPSILON * duration) elapsed = duration;
+  }
+  // Never return an inaccurate trial or pretend an incomplete step reached its target.
+  return elapsed >= duration ? value : NaN;
+}
+
+/** Advance the real-valued lift with error-controlled RK4 substeps. */
 export function stepLiftedRK4(flowOrId, liftedTheta, dt) {
   const flow = resolveFlow(flowOrId);
   const theta = finiteNumber(liftedTheta, "lifted angle");
   const step = finiteNumber(dt, "time step");
-  const k1 = evaluateFlow(flow, theta);
-  const k2 = evaluateFlow(flow, theta + step * k1 / 2);
-  const k3 = evaluateFlow(flow, theta + step * k2 / 2);
-  const k4 = evaluateFlow(flow, theta + step * k3);
-  return theta + step * (k1 + 2 * k2 + 2 * k3 + k4) / 6;
+  const next = adaptiveScalarStep((angle) => evaluateFlow(flow, angle), theta, 0, step, true);
+  if (!Number.isFinite(next)) throw new RangeError("The angular trajectory could not be resolved at this time step");
+  return next;
 }
 
 export const rk4LiftedStep = stepLiftedRK4;

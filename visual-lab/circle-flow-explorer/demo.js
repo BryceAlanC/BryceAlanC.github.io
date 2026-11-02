@@ -11,7 +11,7 @@ import {
   seamCrossings,
   stepLiftedRK4,
   wrapAngle
-} from "./model.js?v=20261102-1";
+} from "./model.js?v=20261102-2";
 
 const byId = (id) => document.getElementById(id);
 

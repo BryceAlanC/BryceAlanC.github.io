@@ -2301,16 +2301,63 @@ export function taylorEvaluate(data, x, r) {
   return total;
 }
 
-/** One fixed-parameter fourth-order Runge–Kutta step for x-dot = f(x,r). */
+function adaptiveScalarStep(evaluate, initial, startTime, interval, autonomous = false) {
+  if (interval === 0) return initial;
+  const direction = Math.sign(interval);
+  const duration = Math.abs(interval);
+  let elapsed = 0;
+  let value = initial;
+  let nextStep = duration;
+  let constantStages;
+  let firstSlope;
+  const trial = (x, time, step) => {
+    const k1 = evaluate(x, time);
+    const k2 = evaluate(x + step * k1 / 2, time + step / 2);
+    const k3 = evaluate(x + step * k2 / 2, time + step / 2);
+    const k4 = evaluate(x + step * k3, time + step);
+    if (firstSlope === undefined) firstSlope = k1;
+    if (k1 !== firstSlope || k2 !== firstSlope || k3 !== firstSlope || k4 !== firstSlope) constantStages = false;
+    return x + step * (k1 + 2 * k2 + 2 * k3 + k4) / 6;
+  };
+  if (!Number.isFinite(evaluate(value, startTime))) return NaN;
+  for (let attempt = 0; attempt < 4096 && elapsed < duration; attempt += 1) {
+    const magnitude = Math.min(nextStep, duration - elapsed);
+    if (elapsed + magnitude === elapsed || startTime + direction * (elapsed + magnitude) === startTime + direction * elapsed) return NaN;
+    const step = direction * magnitude;
+    const time = startTime + direction * elapsed;
+    constantStages = true;
+    firstSlope = undefined;
+    const coarse = trial(value, time, step);
+    const half = trial(value, time, step / 2);
+    const fine = Number.isFinite(half) ? trial(half, time + step / 2, step / 2) : NaN;
+    let error = Number.isFinite(coarse) && Number.isFinite(fine)
+      ? Math.abs(fine - coarse) / 15 / (1e-10 + 1e-8 * Math.max(Math.abs(value), Math.abs(fine)))
+      : Infinity;
+    // A scalar autonomous solution cannot reverse direction or cross a fixed point.
+    if (autonomous && Number.isFinite(fine)) {
+      const movement = Math.sign(fine - value);
+      const expected = direction * Math.sign(firstSlope);
+      const lastSlope = evaluate(fine, time + step);
+      if ((movement !== 0 && movement !== expected)
+        || (lastSlope !== 0 && Math.sign(lastSlope) !== Math.sign(firstSlope))) error = Infinity;
+    }
+    nextStep = magnitude * (error === 0 ? 2 : clamp(0.9 * error ** -0.2, 0.1, 2));
+    if (error > 1) continue;
+    // A constant field needs only one addition; avoid extra rounding at full laps.
+    value = constantStages ? value + step * firstSlope : fine;
+    elapsed += magnitude;
+    if (duration - elapsed <= 8 * Number.EPSILON * duration) elapsed = duration;
+  }
+  // Never return an inaccurate trial or pretend an incomplete step reached its target.
+  return elapsed >= duration ? value : NaN;
+}
+
+/** Advance x-dot = f(x,r) with error-controlled RK4 substeps. */
 export function rk4Step(family, x, r, dt) {
   assertFinite(x, "x");
   assertFinite(r, "r");
   assertFinite(dt, "dt");
-  const k1 = evaluateFamily(family, x, r);
-  const k2 = evaluateFamily(family, x + dt * k1 / 2, r);
-  const k3 = evaluateFamily(family, x + dt * k2 / 2, r);
-  const k4 = evaluateFamily(family, x + dt * k3, r);
-  return x + dt * (k1 + 2 * k2 + 2 * k3 + k4) / 6;
+  return adaptiveScalarStep((value) => evaluateFamily(family, value, r), x, 0, dt, true);
 }
 
 /** Integrate a trajectory until duration, bounds exit, or non-finite escape. */
@@ -2318,7 +2365,9 @@ export function integrateTrajectory(family, options = {}) {
   const rSource = options.r ?? family.defaultR;
   const rAt = typeof rSource === "function" ? rSource : () => Number(rSource);
   const dt = Number(options.dt ?? 0.02);
-  const duration = Math.abs(Number(options.duration ?? 8));
+  assertFinite(dt, "time step");
+  if (dt === 0) throw new RangeError("time step must be nonzero");
+  const duration = Math.abs(assertFinite(Number(options.duration ?? 8), "duration"));
   const direction = dt < 0 ? -1 : 1;
   const maximumSteps = Math.max(1, Math.floor(options.maximumSteps || 20000));
   const xMin = options.xMin ?? family.xRange[0];
@@ -2333,12 +2382,7 @@ export function integrateTrajectory(family, options = {}) {
     const stepSize = direction * Math.min(Math.abs(dt), remaining);
     const r = rAt(t);
     if (typeof rSource === "function") {
-      // Nonautonomous RK4 with r sampled at the corresponding stage times.
-      const k1 = evaluateFamily(family, x, rAt(t));
-      const k2 = evaluateFamily(family, x + stepSize * k1 / 2, rAt(t + stepSize / 2));
-      const k3 = evaluateFamily(family, x + stepSize * k2 / 2, rAt(t + stepSize / 2));
-      const k4 = evaluateFamily(family, x + stepSize * k3, rAt(t + stepSize));
-      x += stepSize * (k1 + 2 * k2 + 2 * k3 + k4) / 6;
+      x = adaptiveScalarStep((value, time) => evaluateFamily(family, value, rAt(time)), x, t, stepSize);
     } else x = rk4Step(family, x, r, stepSize);
     t += stepSize;
     points.push({ t, x, r: rAt(t) });
@@ -2350,7 +2394,7 @@ export function integrateTrajectory(family, options = {}) {
       reason = "bounds";
       break;
     }
-    if (step === maximumSteps - 1) reason = "step-limit";
+    if (step === maximumSteps - 1 && Math.abs(t - points[0].t) < duration) reason = "step-limit";
   }
 
   return Object.freeze({

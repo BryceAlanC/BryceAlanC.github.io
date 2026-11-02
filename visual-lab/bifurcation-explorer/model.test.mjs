@@ -741,4 +741,26 @@ for (const expression of ["1/(x-0.47)", "(r+x^2)/(x-0.47)"]) {
   assert.equal(diagram.candidates[0].type, "saddle-node");
 }
 
+for (const rate of [100, 200, 1000]) {
+  const family = model.createCustomFamily(`-${rate}*x`);
+  const trajectory = model.integrateTrajectory(family, { x0: 1, r: 0, dt: 0.035, duration: 0.5 });
+  assert.equal(trajectory.reason, "duration", "a strongly attracting flow must not escape");
+  for (const point of trajectory.points) near(point.x, Math.exp(-rate * point.t), 2e-8);
+}
+{
+  const family = model.createCustomFamily("-100*(x-r)");
+  const trajectory = model.integrateTrajectory(family, { x0: 1, r: (t) => t, dt: 0.035, duration: 0.5 });
+  assert.equal(trajectory.reason, "duration");
+  for (const point of trajectory.points) near(point.x, point.t - 0.01 + 1.01 * Math.exp(-100 * point.t), 2e-8);
+  assert.throws(() => model.integrateTrajectory(family, { dt: 0 }), /nonzero/);
+  assert.throws(() => model.integrateTrajectory(family, { dt: NaN }), /finite/);
+  const single = model.integrateTrajectory(family, { x0: 1, r: 0, dt: 0.02, duration: 0.02, maximumSteps: 1 });
+  assert.equal(single.reason, "duration", "finishing on the last allowed step is not a step-limit failure");
+  const reverse = model.integrateTrajectory(model.createCustomFamily("100*x"), { x0: 1, r: 0, dt: -0.035, duration: 0.5 });
+  assert.equal(reverse.reason, "duration");
+  for (const point of reverse.points) near(point.x, Math.exp(100 * point.t), 2e-8);
+  const growing = model.integrateTrajectory(model.createCustomFamily("100*x"), { x0: 1, r: 0, dt: 0.035, duration: 0.5 });
+  assert.equal(growing.reason, "bounds", "a genuine outward trajectory still exits the window");
+}
+
 console.log("bifurcation model tests: ok");

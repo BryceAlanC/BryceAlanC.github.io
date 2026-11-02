@@ -752,4 +752,21 @@ for (const expression of ["cos(theta+0.1)^(-1)", "1/cos(theta+0.1)", "cos(theta+
   assert.equal(model.findEquilibria(discontinuous).length, 0, "poles have large residuals, not roots");
 }
 
+for (const rate of [100, 200, 1000]) {
+  for (const direction of [-1, 1]) {
+    const flow = model.createCustomCircleFlow(`${-direction * rate}*sin(theta)`);
+    const trajectory = model.integrateLiftedTrajectory(flow, { theta0: 1, dt: direction * 0.025, duration: 0.5 });
+    assert.equal(trajectory.reason, "duration");
+    for (const point of trajectory.points) {
+      near(point.theta, 2 * Math.atan(Math.tan(0.5) * Math.exp(-rate * Math.abs(point.t))), 2e-8);
+      assert.equal(Math.abs(point.laps), 0, "attraction to a fixed point must not create full rotations");
+    }
+  }
+}
+{
+  const rotating = model.createCustomCircleFlow("100*(2+cos(theta))");
+  const trajectory = model.integrateLiftedTrajectory(rotating, { theta0: 0, dt: 0.025, duration: 2 * Math.PI / (100 * Math.sqrt(3)) });
+  near(trajectory.final.theta, 2 * Math.PI, 2e-7, "fast smooth rotation retains its exact period");
+}
+
 console.log("circle-flow model tests passed");

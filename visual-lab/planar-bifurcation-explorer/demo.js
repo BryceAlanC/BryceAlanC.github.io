@@ -1017,8 +1017,8 @@ function loadFamily(id, options = {}) {
   state.selectedTrajectoryId = null;
   state.selectedObjectId = null;
   state.phaseCursor = {
-    x: Number(elements.initialX?.value) || 0.8,
-    y: Number(elements.initialY?.value) || 0.2
+    x: Number.isFinite(elements.initialX?.valueAsNumber) ? elements.initialX.valueAsNumber : 0.8,
+    y: Number.isFinite(elements.initialY?.valueAsNumber) ? elements.initialY.valueAsNumber : 0.2
   };
   resetPhaseView();
   resetBifurcationView();
