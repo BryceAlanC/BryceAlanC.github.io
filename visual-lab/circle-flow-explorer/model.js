@@ -776,11 +776,19 @@ function evaluateCircleExpressionDerivative(node, theta, r) {
   return value * (rightDerivative * Math.log(left) + right * leftDerivative / left);
 }
 
-function collectPotentialDenominators(node, denominators = []) {
+function collectPotentialDenominators(node, parameterValue, denominators = []) {
   if (node.type === "binary") {
     if (node.operator === "/") denominators.push(node.right);
-    collectPotentialDenominators(node.left, denominators);
-    collectPotentialDenominators(node.right, denominators);
+    if (node.operator === "^") {
+      const exponent = evaluateCircleExpressionNode(node.right, 0, parameterValue);
+      // A negative power is a reciprocal too. Noninteger or angle-dependent
+      // powers also require a nonzero base to be smooth around the circle.
+      if (expressionNodeUsesTheta(node.right) || !Number.isInteger(exponent) || exponent < 0) {
+        denominators.push(node.left);
+      }
+    }
+    collectPotentialDenominators(node.left, parameterValue, denominators);
+    collectPotentialDenominators(node.right, parameterValue, denominators);
   } else if (node.type === "unary" || node.type === "function") {
     // tan(u) has the implicit denominator cos(u). Treat it exactly like an
     // explicit division so shifted poles cannot hide between grid points.
@@ -805,7 +813,7 @@ function collectPotentialDenominators(node, denominators = []) {
         right: node.argument
       }));
     }
-    collectPotentialDenominators(node.argument, denominators);
+    collectPotentialDenominators(node.argument, parameterValue, denominators);
   }
   return denominators;
 }
@@ -838,7 +846,7 @@ function minimizeExpressionNodeAbsolute(node, parameterValue, left, right) {
 
 function validateDivisionDenominators(compiled, parameterValue) {
   const ast = compiledCircleExpressions.get(compiled);
-  const denominators = collectPotentialDenominators(ast);
+  const denominators = collectPotentialDenominators(ast, parameterValue);
   const samples = 1024;
   const spacing = TWO_PI / samples;
   for (const denominator of denominators) {
@@ -1275,7 +1283,11 @@ export function findEquilibria(flowOrId, options = {}) {
     }
   }
 
-  const angles = dedupeCircularAngles(candidates, period, dedupeTolerance);
+  // Bracketing a sign change is insufficient at a discontinuity. In particular,
+  // bisection can converge to a pole with an arbitrarily large residual.
+  const verified = candidates.filter((angle) => Number.isFinite(angle)
+    && Math.abs(evaluateFlow(flow, angle)) <= tangencyTolerance);
+  const angles = dedupeCircularAngles(verified, period, dedupeTolerance);
   return Object.freeze(angles.map((angle) => classifyEquilibrium(flow, angle, {
     velocityScale,
     derivativeTolerance: config.derivativeTolerance,

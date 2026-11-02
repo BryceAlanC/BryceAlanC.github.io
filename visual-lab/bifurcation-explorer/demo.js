@@ -7,7 +7,7 @@ import {
   taylorData,
   taylorEvaluate,
   rk4Step
-} from "./model.js?v=20261002-4";
+} from "./model.js?v=20261102-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",

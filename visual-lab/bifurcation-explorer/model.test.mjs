@@ -636,7 +636,34 @@ assert.deepEqual(model.PRESET_IDS, [
     near(model.taylorEvaluate(data, x, r), family.eval(x, r), 2e-5, "cubic Taylor polynomial should recover quadratic preset");
   }
   const normalTerms = data.coefficients.filter((coefficient) => coefficient.normalFormTerm);
-  assert.deepEqual(normalTerms.map(({ xOrder, rOrder }) => [xOrder, rOrder]), [[2, 0], [1, 1]]);
+  assert.deepEqual(normalTerms.map(({ xOrder, rOrder }) => [xOrder, rOrder]), [[2, 0], [1, 1], [0, 2]]);
+}
+
+// The microscope uses translated original coordinates, so retain all terms of
+// the leading quadratic form, including after a parameter-dependent shear.
+for (const expression of ["(x-r)*(x+2*r)", "x^2-r^2"]) {
+  const family = model.createCustomFamily(expression);
+  const data = model.taylorData(family, { x: 0, r: 0 });
+  assert.equal(data.classification.type, "transcritical");
+  for (const r of [-0.1, 0.1]) {
+    const roots = expression.startsWith("(x-r)") ? [r, -2 * r] : [r, -r];
+    for (const x of roots) {
+      const normal = data.coefficients.filter((term) => term.normalFormTerm)
+        .reduce((sum, term) => sum + term.value * x ** term.xOrder * r ** term.rOrder, 0);
+      near(normal, 0, 1e-10, "normal-form overlay must keep the exact quadratic branch slopes");
+    }
+  }
+}
+
+for (const expression of ["1/(x-0.47)", "(r+x^2)/(x-0.47)"]) {
+  const family = model.createCustomFamily(expression);
+  const contour = model.sampleZeroContour(family.eval,
+    { rMin: -0.52, rMax: 0.52, xMin: -0.9, xMax: 0.9 },
+    { rCells: 180, xCells: 120, rAnchors: [0], xAnchors: [0] });
+  assert.equal(contour.segments.filter((s) => s.every((p) => p.r > 0.1)).length, 0,
+    "the root-free positive-parameter region must not acquire a branch at a pole");
+  if (expression.startsWith("1/")) assert.equal(contour.segments.length, 0);
+  else assert.ok(contour.segments.length > 50, "keep the genuine saddle-node parabola");
 }
 
 {

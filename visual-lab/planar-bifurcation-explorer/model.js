@@ -370,7 +370,7 @@ function numericalCustomJacobian(field, x, y, parameter, xRange, yRange) {
   ];
 }
 
-function solveCustomEquilibrium(field, jacobian, seed, parameter, xRange, yRange) {
+function solveCustomEquilibrium(field, jacobian, seed, parameter, xRange, yRange, tolerance = 2e-8) {
   let x = seed.x;
   let y = seed.y;
   const spanX = xRange[1] - xRange[0];
@@ -379,17 +379,25 @@ function solveCustomEquilibrium(field, jacobian, seed, parameter, xRange, yRange
   const inside = () => x >= xRange[0] - spanX * 0.02 && x <= xRange[1] + spanX * 0.02
     && y >= yRange[0] - spanY * 0.02 && y <= yRange[1] + spanY * 0.02;
   let residual = Infinity;
-  for (let iteration = 0; iteration < 28; iteration += 1) {
+  for (let iteration = 0; iteration < 48; iteration += 1) {
     const value = field(x, y, parameter);
     if (!finiteVector(value) || !inside()) return null;
     residual = Math.hypot(value[0], value[1]);
-    if (residual <= 2e-8) break;
+    if (residual <= tolerance) break;
     const matrix = jacobian(x, y, parameter);
     if (!matrix.flat().every(Number.isFinite)) return null;
     const determinant = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
-    if (Math.abs(determinant) <= 1e-12 * Math.max(1, ...matrix.flat().map(Math.abs))) return null;
-    let stepX = (matrix[1][1] * value[0] - matrix[0][1] * value[1]) / determinant;
-    let stepY = (-matrix[1][0] * value[0] + matrix[0][0] * value[1]) / determinant;
+    const normSquared = matrix.flat().reduce((sum, entry) => sum + entry * entry, 0);
+    if (!(normSquared > 0)) return null;
+    const singular = Math.abs(determinant) <= 1e-12 * normSquared;
+    // A rank-one least-squares step can reach a zero curve. Ordinary Newton
+    // cannot, which previously made a stationary circle disappear entirely.
+    let stepX = singular
+      ? (matrix[0][0] * value[0] + matrix[1][0] * value[1]) / normSquared
+      : (matrix[1][1] * value[0] - matrix[0][1] * value[1]) / determinant;
+    let stepY = singular
+      ? (matrix[0][1] * value[0] + matrix[1][1] * value[1]) / normSquared
+      : (-matrix[1][0] * value[0] + matrix[0][0] * value[1]) / determinant;
     const stepNorm = Math.hypot(stepX, stepY);
     const maximumStep = scale * 0.42;
     if (stepNorm > maximumStep) {
@@ -412,10 +420,44 @@ function solveCustomEquilibrium(field, jacobian, seed, parameter, xRange, yRange
     if (!accepted) return null;
   }
   const finalValue = field(x, y, parameter);
-  if (!finiteVector(finalValue) || Math.hypot(finalValue[0], finalValue[1]) > 2e-6 || !inside()) return null;
+  if (!finiteVector(finalValue) || Math.hypot(finalValue[0], finalValue[1]) > tolerance * 100
+    || x < xRange[0] || x > xRange[1] || y < yRange[0] || y > yRange[1]) return null;
   const finalJacobian = jacobian(x, y, parameter);
   if (!finalJacobian.flat().every(Number.isFinite)) return null;
-  return { x: clamp(x, xRange[0], xRange[1]), y: clamp(y, yRange[0], yRange[1]) };
+  return { x, y };
+}
+
+function nonisolatedEquilibria() {
+  // Preserve the array API without inventing isolated points or a finite count.
+  return Object.freeze(Object.defineProperty([], "nonisolated", { value: true }));
+}
+
+function hasNearbyEquilibriumCurve(field, jacobian, root, parameter, xRange, yRange) {
+  const rankDeficient = (point) => {
+    const j = jacobian(point.x, point.y, parameter);
+    const norm = j.flat().reduce((sum, entry) => sum + entry * entry, 0);
+    return Number.isFinite(norm) && Math.abs(j[0][0] * j[1][1] - j[0][1] * j[1][0]) <= 1e-8 * norm;
+  };
+  if (!rankDeficient(root)) return false;
+  const probe = 0.01 * Math.min(xRange[1] - xRange[0], yRange[1] - yRange[0]);
+  const neighbors = [];
+  // A singular Jacobian alone does not establish a continuum: isolated fold
+  // and pitchfork points are singular too. Require distinct nearby zeros that
+  // remain rank deficient, reached from several displaced seeds.
+  for (let index = 0; index < 16; index += 1) {
+    const angle = 2 * Math.PI * (index % 8) / 8;
+    const distance = probe * (index < 8 ? 1 : 2);
+    const point = solveCustomEquilibrium(field, jacobian, {
+      x: root.x + distance * Math.cos(angle), y: root.y + distance * Math.sin(angle)
+    }, parameter, xRange, yRange, 1e-12);
+    if (!point || !rankDeficient(point)) continue;
+    const separation = Math.hypot(point.x - root.x, point.y - root.y);
+    if (separation < probe / 4 || separation > probe * 3) continue;
+    if (neighbors.some((other) => Math.hypot(point.x - other.x, point.y - other.y) < probe / 4)) continue;
+    neighbors.push(point);
+    if (neighbors.length >= 3) return true;
+  }
+  return false;
 }
 
 function hashCustomSystem(text) {
@@ -494,6 +536,12 @@ export function createCustomPreset(expression1, expression2, options = {}) {
         const x = xRange[0] + (xRange[1] - xRange[0]) * column / (gridSize - 1);
         const root = solveCustomEquilibrium(field, jacobian, { x, y }, parameter, xRange, yRange);
         if (!root) continue;
+        if (hasNearbyEquilibriumCurve(field, jacobian, root, parameter, xRange, yRange)) {
+          const unresolved = nonisolatedEquilibria();
+          if (equilibriumCache.size > 700) equilibriumCache.clear();
+          equilibriumCache.set(key, unresolved);
+          return unresolved;
+        }
         const tolerance = Math.max(xRange[1] - xRange[0], yRange[1] - yRange[0]) * 2e-5;
         if (!roots.some((other) => Math.hypot(root.x - other.x, root.y - other.y) <= tolerance)) roots.push(root);
       }
@@ -1453,7 +1501,9 @@ export function equilibriaAt(presetOrId, parameter, options = {}) {
   const preset = resolvePreset(presetOrId);
   const mu = finiteNumber(parameter, "parameter");
   const tolerance = options.tolerance == null ? 1e-8 : positiveNumber(options.tolerance, "tolerance");
-  const raw = dedupePoints(preset.equilibria(mu), tolerance);
+  const candidates = preset.equilibria(mu);
+  if (candidates.nonisolated) return nonisolatedEquilibria();
+  const raw = dedupePoints(candidates, tolerance);
   return Object.freeze(raw.map((point) => {
     const x = finiteNumber(point.x, "equilibrium x");
     const y = finiteNumber(point.y, "equilibrium y");
@@ -1601,6 +1651,9 @@ export function integrateTrajectory(presetOrId, options = {}) {
   const direction = options.direction === -1 || Number(options.dt) < 0 ? -1 : 1;
   const maxRadius = options.maxRadius == null ? 50 : positiveNumber(options.maxRadius, "maximum radius");
   const sampleEvery = Math.max(1, Math.round(options.sampleEvery == null ? 1 : positiveNumber(options.sampleEvery, "sample interval")));
+  const absoluteTolerance = options.absoluteTolerance == null ? 1e-9 : positiveNumber(options.absoluteTolerance, "absolute integration tolerance");
+  const relativeTolerance = options.relativeTolerance == null ? 1e-7 : positiveNumber(options.relativeTolerance, "relative integration tolerance");
+  const maxSteps = options.maxSteps == null ? 100000 : Math.ceil(positiveNumber(options.maxSteps, "maximum integration steps"));
   const bounds = options.bounds == null ? null : {
     x: freezeRange(options.bounds.x, "integration x bounds"),
     y: freezeRange(options.bounds.y, "integration y bounds")
@@ -1611,28 +1664,43 @@ export function integrateTrajectory(presetOrId, options = {}) {
   let status = "completed";
   const points = [Object.freeze({ t: 0, x: state.x, y: state.y })];
   const maximumSteps = Math.ceil(duration / requestedStep);
+  let nextStep = requestedStep;
+  let attempts = 0;
+  const finitePoint = (point) => Number.isFinite(point.x) && Number.isFinite(point.y);
 
-  for (let index = 1; index <= maximumSteps; index += 1) {
-    const remaining = duration - Math.abs(time);
-    const stepMagnitude = Math.min(requestedStep, remaining);
-    if (!(stepMagnitude > 0)) break;
-    const step = direction * stepMagnitude;
-    state = rk4Step(preset, state, parameter, step);
-    time += step;
-
-    if (!Number.isFinite(state.x) || !Number.isFinite(state.y)) {
-      status = "non-finite";
-      break;
-    }
-    if (Math.hypot(state.x, state.y) > maxRadius || outsideBounds(state, bounds)) {
-      status = "escaped";
-      points.push(Object.freeze({ t: time, x: state.x, y: state.y }));
-      break;
+  integration: for (let index = 1; index <= maximumSteps; index += 1) {
+    // Keep the requested, uniformly timed output grid for the animation. Only
+    // the internal steps adapt; rejected trials never become plotted escapes.
+    const target = Math.min(duration, index * requestedStep);
+    while (Math.abs(time) < target) {
+      const stepMagnitude = Math.min(nextStep, target - Math.abs(time));
+      if (++attempts > maxSteps || stepMagnitude <= 32 * Number.EPSILON * Math.max(1, Math.abs(time))) {
+        status = "integration-failed";
+        break integration;
+      }
+      const step = direction * stepMagnitude;
+      const coarse = rk4Step(preset, state, parameter, step);
+      const half = rk4Step(preset, state, parameter, step / 2);
+      const fine = finitePoint(half) ? rk4Step(preset, half, parameter, step / 2) : half;
+      const error = finitePoint(coarse) && finitePoint(fine)
+        ? Math.max(...["x", "y"].map((key) => Math.abs(fine[key] - coarse[key]) / 15
+          / (absoluteTolerance + relativeTolerance * Math.max(Math.abs(state[key]), Math.abs(fine[key])))))
+        : Infinity;
+      nextStep = stepMagnitude * (error === 0 ? 2 : clamp(0.9 * error ** (-0.2), 0.1, 2));
+      if (error > 1) continue;
+      state = fine;
+      time += step;
+      if (target - Math.abs(time) <= 32 * Number.EPSILON * Math.max(1, target)) time = direction * target;
+      if (Math.hypot(state.x, state.y) > maxRadius || outsideBounds(state, bounds)) {
+        status = "escaped";
+        break integration;
+      }
     }
     if (index % sampleEvery === 0 || index === maximumSteps || Math.abs(time) >= duration - 1e-14) {
       points.push(Object.freeze({ t: time, x: state.x, y: state.y }));
     }
   }
+  if (points.at(-1).t !== time) points.push(Object.freeze({ t: time, x: state.x, y: state.y }));
 
   return Object.freeze({
     presetId: preset.id,

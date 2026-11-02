@@ -737,4 +737,19 @@ for (const [expression, pattern] of [
   assert.ok(zeroDiagram.slices.every((slice) => slice.continuum));
 }
 
+for (const expression of ["cos(theta+0.1)^(-1)", "1/cos(theta+0.1)", "cos(theta+0.1)^r"]) {
+  assert.throws(() => model.createCustomCircleFlow(expression), /denominator/,
+    "equivalent reciprocal expressions must reject poles");
+}
+{
+  const smooth = model.createCustomCircleFlow("(2+cos(theta+0.1))^(-1)");
+  assert.equal(model.findEquilibria(smooth).length, 0);
+  near(model.rotationPeriod(smooth), 4 * Math.PI, 1e-8);
+  const squared = model.createCustomCircleFlow("sin(theta)^2");
+  assert.equal(model.findEquilibria(squared).length, 2, "positive integer powers may have genuine zeros");
+  // Defense in depth for callers supplying an evaluator without AST validation.
+  const discontinuous = { eval: (theta) => 1 / Math.cos(theta + 0.1) };
+  assert.equal(model.findEquilibria(discontinuous).length, 0, "poles have large residuals, not roots");
+}
+
 console.log("circle-flow model tests passed");

@@ -8,7 +8,7 @@ import {
   connectionsAt,
   integrateTrajectory,
   sampleBranches
-} from "./model.js?v=20261027-1";
+} from "./model.js?v=20261102-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -555,7 +555,9 @@ function refreshObjects(options = {}) {
     }
     if (!state.objects.length) {
       const option = document.createElement("option");
-      option.textContent = "No invariant object in the current window";
+      option.textContent = state.equilibria.nonisolated
+        ? "Nonisolated equilibrium set — point list unavailable"
+        : "No invariant object in the current window";
       option.value = "";
       elements.objectSelect.append(option);
     }
@@ -582,7 +584,9 @@ function refreshObjects(options = {}) {
     }
     if (!state.objects.length) {
       const item = document.createElement("li");
-      item.textContent = state.family.sourceType === "custom"
+      item.textContent = state.equilibria.nonisolated
+        ? "Nearby equilibria form a nonisolated set. This viewer cannot enumerate it as isolated points."
+        : state.family.sourceType === "custom"
         ? "No numerical equilibrium was found in the current window."
         : "No equilibrium or periodic orbit lies in the current window.";
       elements.objectList.append(item);
@@ -638,7 +642,9 @@ function updateSelectedObjectPanels() {
   const object = selectedObject();
   const summaryStrong = elements.selectedObjectSummary?.querySelector("strong");
   if (!object) {
-    if (summaryStrong) summaryStrong.textContent = "No invariant object selected";
+    if (summaryStrong) summaryStrong.textContent = state.equilibria.nonisolated
+      ? "Nonisolated equilibrium set — isolated-point analysis unavailable"
+      : "No invariant object selected";
     if (elements.telemetryObject) elements.telemetryObject.textContent = "None";
     if (elements.stabilityObjectLabel) elements.stabilityObjectLabel.textContent = "No equilibrium selected";
     if (elements.linearizationTitle) elements.linearizationTitle.textContent = "Jacobian";
@@ -793,7 +799,9 @@ function updateTelemetry() {
     const connectionText = state.connections.length
       ? ` · ${state.connections.length} homoclinic ${state.connections.length === 1 ? "loop" : "loops"}`
       : "";
-    elements.stageStatus.textContent = state.family.sourceType === "custom"
+    elements.stageStatus.textContent = state.equilibria.nonisolated
+      ? "Nonisolated equilibrium set · isolated-point analysis unavailable"
+      : state.family.sourceType === "custom"
       ? `${state.equilibria.length} numerical ${equilibriumWord} · periodic-orbit detection unavailable`
       : `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`;
   }
@@ -837,7 +845,9 @@ function setParameter(value, options = {}) {
       : "";
     const equilibriumWord = state.equilibria.length === 1 ? "equilibrium" : "equilibria";
     const orbitWord = state.cycles.length === 1 ? "periodic orbit" : "periodic orbits";
-    announce(`Parameter r is ${formatParameter(next)}. ${state.equilibria.length} ${equilibriumWord} and ${state.cycles.length} ${orbitWord}.${eventText}`);
+    announce(state.equilibria.nonisolated
+      ? `Parameter r is ${formatParameter(next)}. A nonisolated equilibrium set was detected; isolated-point analysis is unavailable.`
+      : `Parameter r is ${formatParameter(next)}. ${state.equilibria.length} ${equilibriumWord} and ${state.cycles.length} ${orbitWord}.${eventText}`);
   }
 }
 

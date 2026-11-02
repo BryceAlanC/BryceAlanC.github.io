@@ -472,5 +472,50 @@ for (const id of model.PRESET_IDS) {
   );
 }
 
+// Curves of equilibria need an explicit unsupported-set result, not a finite
+// count. Singular isolated equilibria must remain available at bifurcations.
+for (const [first, second] of [["x1", "0"], ["x1*x2", "0"], ["x1^2+x2^2-1", "0"],
+  ["x1+x2", "2*(x1+x2)"], ["(x1-x2)^2", "0"]]) {
+  const family = model.createCustomPreset(first, second);
+  const equilibria = model.equilibriaAt(family, 0);
+  assert.equal(equilibria.nonisolated, true, first + "; " + second);
+  assert.equal(equilibria.length, 0, "do not enumerate a curve as isolated points");
+  assert.equal(model.sampleBranches(family, { samples: 5 }).branches.length, 0);
+}
+for (const first of ["x1^2", "x1^3"]) {
+  const equilibria = model.equilibriaAt(model.createCustomPreset(first, "-x2"), 0);
+  assert.ok(equilibria.length > 0);
+  assert.ok(!equilibria.nonisolated, "a singular Jacobian does not alone imply a continuum");
+}
+{
+  const family = model.createCustomPreset("r*x1", "-x2");
+  assert.equal(model.equilibriaAt(family, 0).nonisolated, true);
+  assert.equal(model.equilibriaAt(family, 0.5).length, 1);
+  const outside = model.createCustomPreset("x1-1.02", "-x2", { x1Range: [-1, 1], x2Range: [-1, 1] });
+  assert.equal(model.equilibriaAt(outside, 0).length, 0, "never clamp an off-window root onto the boundary");
+}
+
+// Independent radial bound, not another RK4 computation: both quintic radial
+// fields point inward everywhere outside the initial radius sqrt(18).
+for (const id of ["subcritical-hopf", "fold-cycles"]) {
+  const family = model.createPreset(id);
+  const trajectory = model.integrateTrajectory(family, {
+    initial: [3, 3], parameter: family.defaultParameter, duration: 3, dt: 0.018, sampleEvery: 2
+  });
+  assert.equal(trajectory.status, "completed");
+  assert.ok(trajectory.points.every((p) => Math.hypot(p.x, p.y) <= Math.sqrt(18) + 1e-8));
+  near(trajectory.points[1].t, 0.036, 1e-12, "adaptation must preserve the animation's output times");
+}
+{
+  const family = model.createCustomPreset("-200*x1", "-x2");
+  const trajectory = model.integrateTrajectory(family, { initial: [1, 1], duration: 1, dt: 0.018 });
+  assert.equal(trajectory.status, "completed");
+  near(trajectory.final.x, Math.exp(-200), 1e-8);
+  near(trajectory.final.y, Math.exp(-1), 1e-8);
+  const failed = model.integrateTrajectory(family, { initial: [1, 1], duration: 1, dt: 0.018, maxSteps: 1 });
+  assert.equal(failed.status, "integration-failed", "an exhausted numerical solve is not physical escape");
+  assert.deepEqual(failed.final, { x: 1, y: 1 }, "a rejected trial must never become the trajectory endpoint");
+}
+
 console.log("planar bifurcation model tests passed");
 

@@ -1733,12 +1733,13 @@ export function classifyCandidate(family, candidate, options = {}) {
   } else if (
     Math.abs(derivatives.fr) <= zeroTolerance
     && Math.abs(derivatives.fxx) > zeroTolerance
-    && Math.abs(derivatives.fxr) > zeroTolerance
     && (guaranteedPersistentBranch || hessianDiscriminant > zeroTolerance * zeroTolerance)
   ) {
     type = "transcritical";
-    normalForm = "ẏ ≈ aμy + by²";
-    normalFormTerms = [[1, 1], [2, 0]];
+    // These plots use translation only, not a parameter-dependent state shear.
+    // Retain the entire quadratic form so both branch slopes are preserved.
+    normalForm = "ẏ ≈ by² + aμy + cμ²";
+    normalFormTerms = [[2, 0], [1, 1], [0, 2]];
   } else if (
     Math.abs(derivatives.fr) <= zeroTolerance
     && Math.abs(derivatives.fxx) <= zeroTolerance
@@ -2003,14 +2004,25 @@ export function sampleZeroContour(evaluate, bounds, options = {}) {
     if (leftZero) return { point: { r: left.r, x: left.x, exact: true } };
     if (rightZero) return { point: { r: right.r, x: right.x, exact: true } };
     if (!Number.isFinite(left.value) || !Number.isFinite(right.value) || Math.sign(left.value) === Math.sign(right.value)) return null;
-    const fraction = clamp(left.value / (left.value - right.value), 0, 1);
-    return {
-      point: {
+    // Refine the intersection and require a small residual. A linear sign
+    // interpolation across a pole otherwise invents a whole equilibrium branch.
+    let a = 0;
+    let b = 1;
+    let fa = left.value;
+    for (let iteration = 0; iteration < 48; iteration += 1) {
+      const fraction = (a + b) / 2;
+      const point = {
         r: left.r + (right.r - left.r) * fraction,
         x: left.x + (right.x - left.x) * fraction,
         exact: false
-      }
-    };
+      };
+      const value = Number(evaluate(point.x, point.r));
+      if (!Number.isFinite(value)) return null;
+      if (isZero(value)) return { point };
+      if (Math.sign(value) === Math.sign(fa)) { a = fraction; fa = value; }
+      else b = fraction;
+    }
+    return null;
   };
   for (let xIndex = 0; xIndex < xValues.length - 1; xIndex += 1) {
     for (let rIndex = 0; rIndex < rValues.length - 1; rIndex += 1) {
@@ -2056,7 +2068,8 @@ export function sampleZeroContour(evaluate, bounds, options = {}) {
           x: (corners[0].x + corners[2].x) / 2
         };
         const centerValue = Number(evaluate(center.x, center.r));
-        if (!Number.isFinite(centerValue) || Math.abs(centerValue) <= zeroTolerance) {
+        if (!Number.isFinite(centerValue)) continue;
+        if (Math.abs(centerValue) <= zeroTolerance) {
           uniquePoints.forEach((point) => addSegment(center, point));
         } else {
           const centerSign = Math.sign(centerValue);
@@ -2148,7 +2161,7 @@ export function sampleZeroContour(evaluate, bounds, options = {}) {
           }
           rootAngle = (leftAngle + rightAngle) / 2;
         }
-        if (rootAngle == null) continue;
+        if (rootAngle == null || !isZero(ringValue(rootAngle))) continue;
         const normalized = (rootAngle + 2 * Math.PI) % (2 * Math.PI);
         const duplicate = ringRoots.some((root) => {
           const separation = Math.abs(root.angle - normalized);
