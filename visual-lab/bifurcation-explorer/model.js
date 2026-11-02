@@ -1470,7 +1470,10 @@ export function findEquilibria(family, r, xMin = family.xRange[0], xMax = family
     sampledMagnitudes[Math.floor(0.9 * Math.max(0, sampledMagnitudes.length - 1))] || 1
   );
   const valueTolerance = options.valueTolerance || 5e-11 * robustMagnitude;
-  const tangentTolerance = options.tangentTolerance || 2e-7 * robustMagnitude;
+  // A small extremum is not evidence of a zero. Allow only roundoff-sized
+  // residuals for unbracketed tangent roots, rather than a plotting tolerance.
+  const tangentTolerance = options.tangentTolerance || 32 * EPSILON * robustMagnitude;
+  const refinementTolerance = Math.min(valueTolerance, tangentTolerance);
   const fn = (x) => evaluateFamily(family, x, r);
   const candidates = scanSignChangeRoots(fn, xMin, xMax, samples, valueTolerance);
 
@@ -1479,13 +1482,25 @@ export function findEquilibria(family, r, xMin = family.xRange[0], xMax = family
   const derivativeFn = (x) => partialDerivative(family, x, r, 1, 0);
   const criticalPoints = scanSignChangeRoots(derivativeFn, xMin, xMax, Math.max(80, Math.floor(samples / 2)), 1e-9);
   for (const criticalPoint of criticalPoints) {
-    const refined = refineRootNewton(family, r, criticalPoint, xMin, xMax, valueTolerance);
+    const refined = refineRootNewton(family, r, criticalPoint, xMin, xMax, refinementTolerance);
     if (Math.abs(fn(refined)) <= tangentTolerance) candidates.push(refined);
+  }
+
+  // A close pair can lie entirely between two grid samples. Critical points
+  // split that interval so each genuine sign-changing root can be bracketed.
+  const partitions = [xMin, ...criticalPoints, xMax].sort((left, right) => left - right);
+  for (let index = 1; index < partitions.length; index += 1) {
+    const left = partitions[index - 1];
+    const right = partitions[index];
+    if (fn(left) * fn(right) < 0) {
+      const root = bisectRoot(fn, left, right, refinementTolerance);
+      if (root != null) candidates.push(root);
+    }
   }
 
   const dedupeTolerance = options.dedupeTolerance || Math.max(2e-7, span * 2e-6);
   const roots = uniqueSorted(
-    candidates.map((candidate) => refineRootNewton(family, r, candidate, xMin, xMax, valueTolerance)),
+    candidates.map((candidate) => refineRootNewton(family, r, candidate, xMin, xMax, refinementTolerance)),
     dedupeTolerance
   ).filter((root) => Math.abs(fn(root)) <= tangentTolerance);
 

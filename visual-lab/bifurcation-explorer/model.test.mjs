@@ -38,6 +38,54 @@ assert.deepEqual(model.PRESET_IDS, [
 }
 
 {
+  const family = model.createFamily("saddle-node");
+  // Odd and even grids, plus a shifted window, must agree near the fold.
+  for (const options of [{}, { samples: 722 }, { samples: 721, xMin: -2.3, xMax: 2.6 }]) {
+    for (const r of [1e-8, 1e-12]) {
+      assert.equal(model.findEquilibria(family, r, options).length, 0,
+        `a strictly positive saddle-node field has no equilibria at r=${r}`);
+    }
+    const collision = model.findEquilibria(family, 0, options);
+    assert.equal(collision.length, 1, "the double root must survive off-grid sampling");
+    near(collision[0].x, 0, 1e-9);
+    assert.equal(collision[0].stability, "semistable");
+
+    const pair = model.findEquilibria(family, -1e-8, options);
+    assert.equal(pair.length, 2, "the nearby pair must not acquire a spurious central root");
+    near(pair[0].x, -1e-4, 1e-9);
+    near(pair[1].x, 1e-4, 1e-9);
+    assert.equal(pair[0].stability, "stable");
+    assert.equal(pair[1].stability, "unstable");
+  }
+
+  const diagram = model.sampleBifurcation(family, -1e-8, 1e-8, -2.6, 2.6, {
+    rSamples: 9,
+    xSamples: 722,
+    detectCandidates: false
+  });
+  assert.deepEqual(diagram.slices.map((slice) => slice.equilibria.length),
+    [2, 2, 2, 2, 1, 0, 0, 0, 0], "diagram slices must distinguish all three regimes");
+}
+
+{
+  // Genuine tangent roots need not be at zero or on the sampling grid.
+  // Reversing time turns a minimum into a maximum without changing the roots.
+  for (const sign of [1, -1]) {
+    const center = 0.123456789;
+    const family = model.createCustomFamily(`${sign}*(r+(x-${center})^2)`);
+    const options = { samples: 722 };
+    assert.equal(model.findEquilibria(family, 1e-8, options).length, 0);
+    const collision = model.findEquilibria(family, 0, options);
+    assert.equal(collision.length, 1);
+    near(collision[0].x, center, 1e-9);
+    const pair = model.findEquilibria(family, -1e-8, options);
+    assert.equal(pair.length, 2);
+    near(pair[0].x, center - 1e-4, 1e-9);
+    near(pair[1].x, center + 1e-4, 1e-9);
+  }
+}
+
+{
   const family = model.createFamily("transcritical");
   const negative = model.findEquilibria(family, -1, -2, 2);
   assert.equal(equilibriumNear(negative, 0).stability, "stable");
@@ -360,6 +408,9 @@ assert.deepEqual(model.PRESET_IDS, [
     near(family.eval(fold.x, fold.r), 0, 1e-12, "fold must lie on f=0");
     near(model.partialDerivative(family, fold.x, fold.r, 1, 0), 0, 1e-7, "fold must satisfy f_x=0");
     assert.equal(model.classifyCandidate(family, fold).type, "saddle-node");
+    const atFold = model.findEquilibria(family, fold.r);
+    assert.equal(atFold.length, 2, "retain the tangent root and the separate simple root at a fold");
+    assert.ok(equilibriumNear(atFold, fold.x, 1e-6), "the off-grid hysteresis double root must be retained");
   }
 }
 
