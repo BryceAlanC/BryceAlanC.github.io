@@ -800,6 +800,8 @@
         return;
       }
       const target = enemiesByRow[defender.row].find((enemy) => !enemy.dead && enemy.x > point.x - board.cw * .05);
+      // An idle lane can ready one attack, but must not bank missed attacks.
+      if (!target) defender.cooldown = Math.max(0, defender.cooldown);
       if (target && defender.cooldown <= 0) {
         shoot(defender);
         defender.cooldown += stats.rate;

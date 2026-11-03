@@ -421,7 +421,7 @@
     });
     ui.drawerLabel.textContent = 'SUMMONS';
     ui.drawerToggle.setAttribute('aria-label', summonOpen ? 'Close summon contracts' : 'Open summon contracts');
-    if (next) updateUI(true);
+    updateUI(true);
     if (moveFocus && next === 'summons') requestAnimationFrame(() => ui.drawerClose.focus());
     else if (moveFocus && forgeOpen) requestAnimationFrame(() => ui.forgeClose.focus());
     else if (moveFocus && !next && (previous || focusWasInHub)) {
@@ -794,7 +794,7 @@
   }
 
   function ability(name) {
-    if (!game.started || game.paused || game.over || game.cooldowns[name] > 0) return;
+    if (!game.started || game.paused || game.over || game.drawerOpen || game.cooldowns[name] > 0) return;
     const hero = game.hero;
     if (name === 'dash') {
       let dx = hero.aimX, dy = hero.aimY;
@@ -1898,6 +1898,7 @@
     });
     document.querySelectorAll('.ability').forEach(button => {
       const name = button.dataset.ability, cooldown = game.cooldowns[name], maximum = game.maxCooldowns[name] * (1 - hero.focus);
+      button.disabled = game.drawerOpen;
       button.classList.toggle('cooling', cooldown > 0);
       button.querySelector('.cooldown').style.height = `${cooldown / maximum * 100}%`;
       button.querySelector('.cooldown-text').textContent = cooldown > 0 ? cooldown.toFixed(1) : '';
