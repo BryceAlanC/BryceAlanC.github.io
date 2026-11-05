@@ -819,11 +819,11 @@ function varyingSpeedHopfDefinition() {
   return {
     ...supercriticalHopfDefinition(),
     id: "varying-speed-hopf",
-    name: "Supercritical Hopf (varying speed)",
-    shortName: "Hopf (varying speed)",
+    name: "Supercritical Hopf",
+    shortName: "Supercritical Hopf",
     formula: "ẋ = (μ − ρ²)x − (1 + y)y,   ẏ = (1 + y)x + (μ − ρ²)y",
     polarFormula: "ρ̇ = μρ − ρ³,   θ̇ = 1 + ρ sin θ",
-    description: "The same circular orbit grows from a Hopf point, but the angular speed varies around it.",
+    description: "An attracting circular orbit grows from the Hopf point, with angular speed that varies around the circle.",
     lesson: "Frozen Jacobian eigenvalues vary around the attracting cycle. Its transverse Floquet multiplier, computed over a full lap, measures its stability.",
     parameterRange: [-0.24, 0.4],
     defaultParameter: 0.16,
@@ -1962,7 +1962,7 @@ function spectrumPoint(classification, parameter, position, label) {
     x: position.x, y: position.y, label };
 }
 
-function spectrumAtPosition(preset, parameter, position, label) {
+export function spectrumAtPosition(preset, parameter, position, label) {
   return spectrumPoint(classifyEquilibrium(preset, position, parameter), parameter, position, label);
 }
 
@@ -2202,6 +2202,7 @@ export default Object.freeze({
   sampleBranches,
   sampleBranchDiagram,
   buildSpectrum,
+  spectrumAtPosition,
   spectrumSlice,
   sampleNullclineSegments,
   sampleVectorField

@@ -10,9 +10,10 @@ import {
   sampleBranches,
   sampleNullclineSegments,
   buildSpectrum,
+  spectrumAtPosition,
   spectrumSlice
-} from "./model.js?v=20261105-1";
-import { drawSpectrumView } from "./spectrum-view.js?v=20261105-1";
+} from "./model.js?v=20261105-2";
+import { drawSpectrumView } from "./spectrum-view.js?v=20261105-2";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -85,6 +86,11 @@ const elements = {
   phaseParameterLabel: document.getElementById("phase-parameter-label"),
   homoclinicLegendItem: document.getElementById("homoclinic-legend-item"),
   showSpectrumRegions: document.getElementById("show-spectrum-regions"),
+  spectrumPhaseControls: document.getElementById("spectrum-phase-controls"),
+  spectrumPhase: document.getElementById("spectrum-phase"),
+  spectrumPhaseAngle: document.getElementById("spectrum-phase-angle"),
+  spectrumPhaseJacobian: document.getElementById("spectrum-phase-jacobian"),
+  spectrumPhaseStability: document.getElementById("spectrum-phase-stability"),
   stabilityObjectLabel: document.getElementById("stability-object-label"),
   linearizationTitle: document.getElementById("linearization-title"),
   jacobianMatrix: document.getElementById("jacobian-matrix"),
@@ -123,7 +129,9 @@ const FAMILY_ALIASES = Object.freeze({
   "cycle-fold": "fold-cycles",
   "pitchfork-subcritical": "pitchfork"
 });
+const HOPF_PRESET_ID = "varying-speed-hopf";
 const DEFAULT_SPECTRUM_VIEW = Object.freeze({ azimuth: -0.65, elevation: 0.51, zoom: 1 });
+const HOPF_SPECTRUM_VIEW = Object.freeze({ azimuth: 32 * Math.PI / 180, elevation: 0.56, zoom: 1 });
 const SPECTRUM_ROTATION_STEP = Math.PI / 12;
 const SPECTRUM_DIRECTIONS = {
   ArrowLeft: [-1, 0],
@@ -152,6 +160,8 @@ const state = {
   phaseView: null,
   spectrumData: null,
   spectrumSlice: null,
+  spectrumPhasePoint: null,
+  spectrumRegionsPreference: null,
   spectrumView: { ...DEFAULT_SPECTRUM_VIEW },
   spectrumRenderKey: null,
   phaseBox: null,
@@ -811,12 +821,38 @@ function updateTelemetry() {
   }
 }
 
+function updateSpectrumPhase() {
+  const orbit = state.family.id === HOPF_PRESET_ID ? state.cycles[0] : null;
+  const phase = Number(elements.spectrumPhase.value);
+  elements.spectrumPhase.disabled = !orbit;
+  elements.spectrumPhaseAngle.textContent = orbit ? `${phase}\u00b0` : "";
+  elements.spectrumPhase.setAttribute("aria-valuetext", `${phase} degrees`);
+  state.spectrumPhasePoint = null;
+  if (!orbit) {
+    elements.spectrumPhaseJacobian.textContent = state.parameter === 0
+      ? "Hopf point. The equilibrium eigenvalues are \u00b1i."
+      : "The periodic orbit appears for r > 0.";
+    elements.spectrumPhaseStability.textContent = "";
+    return;
+  }
+  const radians = phase * Math.PI / 180;
+  const position = { x: orbit.radius * Math.cos(radians), y: orbit.radius * Math.sin(radians) };
+  const point = spectrumAtPosition(state.family, state.parameter, position, orbit.label);
+  state.spectrumPhasePoint = point;
+  const frozenType = point.boundary
+    ? point.boundary.replaceAll("-", " ")
+    : point.type.replace("focus", "spiral").replaceAll("-", " ");
+  elements.spectrumPhaseJacobian.textContent = `Frozen Jacobian at this phase: ${formatEigenvalues(point.eigenvalues)} (${frozenType})`;
+  elements.spectrumPhaseStability.textContent = `Whole orbit: attracting (transverse multiplier ${formatNumber(orbit.floquetMultiplier)})`;
+}
+
 function refreshSlice(options = {}) {
   const preferredObjectId = state.selectedObjectId;
   state.equilibria = equilibriaAt(state.family, state.parameter);
   state.cycles = cyclesAt(state.family, state.parameter);
   state.connections = connectionsAt(state.family, state.parameter);
   state.spectrumSlice = spectrumSlice(state.family, state.parameter, state.equilibria, state.cycles, state.connections);
+  if (state.family.id === HOPF_PRESET_ID) updateSpectrumPhase();
   state.spectrumRenderKey = null;
   state.phaseCache = null;
   refreshObjects({ preferredId: preferredObjectId });
@@ -859,7 +895,7 @@ function setParameter(value, options = {}) {
 
 function configureParameterControl() {
   const [minimum, maximum] = state.family.parameterRange;
-  const step = (maximum - minimum) / 700;
+  const step = state.family.id === HOPF_PRESET_ID ? 0.001 : (maximum - minimum) / 700;
   const parameterActive = state.family.sourceType !== "custom" || state.family.expressionUsesParameter;
   elements.parameter.min = String(minimum);
   elements.parameter.max = String(maximum);
@@ -980,14 +1016,14 @@ function resetPhaseView() {
 }
 
 function resetBifurcationView() {
-  state.spectrumView = { ...DEFAULT_SPECTRUM_VIEW };
+  state.spectrumView = { ...(state.family.id === HOPF_PRESET_ID ? HOPF_SPECTRUM_VIEW : DEFAULT_SPECTRUM_VIEW) };
 }
 
 function loadFamily(id, options = {}) {
   const requestedId = String(id);
   const normalizedId = normalizeFamilyId(requestedId);
   const isCustom = normalizedId === "custom";
-  const safeId = isCustom || PRESET_IDS.includes(normalizedId) ? normalizedId : "supercritical-hopf";
+  const safeId = isCustom || PRESET_IDS.includes(normalizedId) ? normalizedId : HOPF_PRESET_ID;
   let nextFamily;
   let nextBranchDiagram;
   let nextSpectrum;
@@ -1015,6 +1051,10 @@ function loadFamily(id, options = {}) {
   state.parameter = state.family.defaultParameter;
   state.branchDiagram = nextBranchDiagram;
   state.spectrumData = nextSpectrum;
+  state.spectrumPhasePoint = null;
+  const isHopf = state.family.id === HOPF_PRESET_ID;
+  elements.spectrumPhaseControls.hidden = !isHopf;
+  elements.showSpectrumRegions.checked = state.spectrumRegionsPreference ?? !isHopf;
   state.userSeeds = [];
   state.trajectories = [];
   state.selectedTrajectoryId = null;
@@ -1048,6 +1088,8 @@ function initializeFamilyOptions() {
     if (!PRESET_IDS.includes(normalized)) option.remove();
   }
   for (const id of PRESET_IDS) {
+    // The varying-speed system is the Hopf example shown in this explorer.
+    if (id === "supercritical-hopf") continue;
     const existing = [...elements.familySelect.options].some((option) => normalizeFamilyId(option.value) === id);
     if (existing) continue;
     const option = document.createElement("option");
@@ -1431,7 +1473,9 @@ function drawBifurcationDiagram() {
     azimuth,
     elevation,
     zoom,
-    showRegions
+    showRegions,
+    hopfView: state.family.id === HOPF_PRESET_ID,
+    phasePoint: state.spectrumPhasePoint
   });
   state.spectrumRenderKey = key;
 }
@@ -2024,7 +2068,15 @@ for (const [control, direction] of [
   control?.addEventListener("click", () => rotateBifurcation(...direction));
 }
 elements.bifurcationFit?.addEventListener("click", fitBifurcation);
-elements.showSpectrumRegions?.addEventListener("change", drawBifurcationDiagram);
+elements.showSpectrumRegions?.addEventListener("change", () => {
+  state.spectrumRegionsPreference = elements.showSpectrumRegions.checked;
+  drawBifurcationDiagram();
+});
+elements.spectrumPhase?.addEventListener("input", () => {
+  updateSpectrumPhase();
+  state.spectrumRenderKey = null;
+  drawBifurcationDiagram();
+});
 elements.objectSelect?.addEventListener("change", () => selectObject(elements.objectSelect.value));
 elements.fullscreenToggle?.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", syncFullscreenState);
@@ -2198,6 +2250,6 @@ initializeFamilyOptions();
 syncTrajectoryButton();
 if (elements.sweepSpeedValue) elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 initializeFullscreen();
-loadFamily(elements.familySelect?.value || "supercritical-hopf", { announce: false });
+loadFamily(elements.familySelect?.value || HOPF_PRESET_ID, { announce: false });
 window.requestAnimationFrame(animate);
 

@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261105-1" />
-    <script type="module" src="./demo.js?v=20261105-1"></script>
+    <link rel="stylesheet" href="./style.css?v=20261105-2" />
+    <script type="module" src="./demo.js?v=20261105-2"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -97,8 +97,7 @@
               <legend>Family</legend>
               <label class="field-label" for="family-select">Planar system</label>
               <select id="family-select">
-                <option value="supercritical-hopf" selected>Supercritical Hopf</option>
-                <option value="varying-speed-hopf">Supercritical Hopf (varying speed)</option>
+                <option value="varying-speed-hopf" selected>Supercritical Hopf</option>
                 <option value="subcritical-hopf">Bounded subcritical Hopf</option>
                 <option value="saddle-node">Saddle-node of equilibria</option>
                 <option value="transcritical">Transcritical exchange</option>
@@ -113,8 +112,8 @@
               <div class="equation-card">
                 <span id="family-title">Supercritical Hopf</span>
                 <div id="family-equations" class="equation-pair">
-                  <code>x&#775; = rx − y − x(x² + y²)</code>
-                  <code>y&#775; = x + ry − y(x² + y²)</code>
+                  <code>x&#775; = (r &minus; &rho;&sup2;)x &minus; (1 + y)y</code>
+                  <code>y&#775; = (1 + y)x + (r &minus; &rho;&sup2;)y</code>
                 </div>
                 <small id="family-note">
                   A stable focus loses stability while an attracting periodic orbit is born.
@@ -181,7 +180,7 @@
                 <input
                   id="parameter-r-input"
                   type="number"
-                  value="0.55"
+                  value="0.16"
                   step="any"
                   inputmode="decimal"
                   aria-describedby="parameter-help"
@@ -190,10 +189,10 @@
               <input
                 id="parameter-r"
                 type="range"
-                min="-1"
-                max="1.2"
-                value="0.55"
-                step="0.002"
+                min="-0.24"
+                max="0.4"
+                value="0.16"
+                step="0.001"
                 aria-label="Parameter r slider"
                 aria-describedby="parameter-help"
               />
@@ -267,7 +266,7 @@
                 <span>Trajectories</span>
               </label>
               <label class="check-row" for="show-spectrum-regions">
-                <input id="show-spectrum-regions" type="checkbox" checked />
+                <input id="show-spectrum-regions" type="checkbox" />
                 <span>Trace-determinant regions</span>
               </label>
               <button class="lab-button full-width-button" id="reset-views" type="button">
@@ -291,7 +290,7 @@
                   </li>
                   <li id="cycle-detection-status">
                     <strong>C1 · attracting periodic orbit</strong>
-                    <span>Radius approximately 0.742 · period approximately 6.283</span>
+                    <span>Radius approximately 0.400 &middot; period approximately 6.856</span>
                   </li>
                 </ul>
               </details>
@@ -333,7 +332,7 @@
                   </div>
                   <div class="stage-mini-telemetry" aria-label="Current dynamical measurements">
                     <span><small>Family</small><strong id="telemetry-family">Supercritical Hopf</strong></span>
-                    <span><small>r</small><strong id="telemetry-r">0.550</strong></span>
+                    <span><small>r</small><strong id="telemetry-r">0.160</strong></span>
                     <span><small>Selected</small><strong id="telemetry-object">E1</strong></span>
                     <span><small>Event</small><strong id="telemetry-event">Hopf at r = 0</strong></span>
                   </div>
@@ -344,7 +343,7 @@
                 <section class="visual-panel phase-panel" aria-labelledby="phase-title">
                   <div class="panel-heading panel-heading-dark">
                     <div><span>01</span><h3 id="phase-title">Phase portrait at the selected r</h3></div>
-                    <p id="phase-parameter-label">r = 0.550</p>
+                    <p id="phase-parameter-label">r = 0.160</p>
                   </div>
                   <div class="canvas-frame phase-frame">
                     <canvas
@@ -424,17 +423,28 @@
                       </canvas>
                       <div class="bifurcation-legend" aria-hidden="true">
                         <span><i class="line line-spectrum-equilibrium"></i>Equilibria</span>
-                        <span><i class="line line-spectrum-orbit"></i>Orbits</span>
-                        <span><i class="line line-spectrum-slice"></i>Current slice</span>
+                        <span><i class="line line-spectrum-orbit"></i>Orbit spectra</span>
+                        <span><i class="line line-spectrum-slice"></i>Current r</span>
                       </div>
                       <p class="sr-only" id="bifurcation-description">
                         The axes are the Jacobian trace, determinant, and parameter r.
-                        Equilibria trace curves as r varies. Periodic orbits contribute the
-                        trace and determinant of the Jacobian at each point along the orbit.
+                        Equilibria trace curves as r varies. Coincident pitchfork branches are
+                        separated slightly on screen, with leaders pointing to their common
+                        spectral coordinates. Periodic orbits contribute the trace and determinant
+                        of the frozen Jacobian at each point along the orbit.
                         The shared parameter control moves the highlighted slice. Drag or use
                         the arrow keys to rotate, use plus and minus to zoom, and press 0 or F
                         to reset the view.
                       </p>
+                    </div>
+                    <div class="spectrum-phase" id="spectrum-phase-controls" hidden>
+                      <label class="field-label" for="spectrum-phase">
+                        Cycle phase <span id="spectrum-phase-angle"></span>
+                      </label>
+                      <input id="spectrum-phase" type="range" min="0" max="360" step="1" value="30"
+                        aria-describedby="spectrum-phase-jacobian spectrum-phase-stability" />
+                      <p id="spectrum-phase-jacobian"></p>
+                      <p id="spectrum-phase-stability"></p>
                     </div>
                   </section>
 
@@ -464,12 +474,12 @@
                       <div class="stability-readout" id="stability-readout">
                         <div class="jacobian-block">
                           <span id="linearization-title">Jacobian at E1</span>
-                          <code id="jacobian-matrix">J = [ 0.550  −1.000 ; 1.000  0.550 ]</code>
+                          <code id="jacobian-matrix">J = [ 0.160  −1.000 ; 1.000  0.160 ]</code>
                         </div>
                         <dl class="stability-values">
-                          <div><dt id="spectral-quantity-label">Eigenvalues</dt><dd id="eigenvalue-formula">0.550 ± 1.000i</dd></div>
-                          <div><dt id="trace-label">Trace</dt><dd id="trace-value">1.100</dd></div>
-                          <div><dt id="determinant-label">Determinant</dt><dd id="determinant-value">1.303</dd></div>
+                          <div><dt id="spectral-quantity-label">Eigenvalues</dt><dd id="eigenvalue-formula">0.160 ± 1.000i</dd></div>
+                          <div><dt id="trace-label">Trace</dt><dd id="trace-value">0.320</dd></div>
+                          <div><dt id="determinant-label">Determinant</dt><dd id="determinant-value">1.026</dd></div>
                           <div><dt>Classification</dt><dd id="classification-value">Repelling focus</dd></div>
                         </dl>
                       </div>
@@ -528,13 +538,13 @@
               </p>
               <p class="app-note">
                 <strong>Reading the trace-determinant diagram.</strong> Each equilibrium
-                contributes one point on the current parameter slice. Equilibria with the same
-                trace and determinant overlap. For a periodic orbit, the plot uses the Jacobian
-                at each point around the orbit. These pointwise classifications can vary around
-                an attracting cycle, whose stability is determined by the return map. In the
-                rotationally symmetric Hopf examples, the spectra agree around each cycle and
-                appear as one point per slice. Choose Supercritical Hopf (varying speed) to see
-                a loop on each slice with <span class="nowrap">r &gt; 0</span>.
+                contributes one point on the current parameter slice. The two side equilibria
+                of the pitchfork have the same trace and determinant. Their paths are drawn a
+                few pixels apart so both are visible, and their markers point to the same
+                spectral coordinate. For a periodic orbit, the loop shows the Jacobian evaluated
+                at successive phases. Its colors classify those individual matrices. The
+                transverse Floquet multiplier measures whether perturbations shrink over a
+                full lap, even when the loop passes through an unstable region.
               </p>
               <p class="app-note">
                 <strong>Periodic orbits.</strong> The supercritical Hopf family has an attracting
