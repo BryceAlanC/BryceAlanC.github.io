@@ -809,6 +809,51 @@ function supercriticalHopfDefinition() {
   };
 }
 
+function varyingSpeedHopfDefinition() {
+  const circle = (mu) => ({
+    radius: Math.sqrt(mu),
+    radialDerivative: -2 * mu,
+    angularVelocity: Math.sqrt(1 - mu), // Mean speed: period = 2 pi / sqrt(1 - mu).
+    label: "Stable limit cycle"
+  });
+  return {
+    ...supercriticalHopfDefinition(),
+    id: "varying-speed-hopf",
+    name: "Supercritical Hopf (varying speed)",
+    shortName: "Hopf (varying speed)",
+    formula: "ẋ = (μ − ρ²)x − (1 + y)y,   ẏ = (1 + y)x + (μ − ρ²)y",
+    polarFormula: "ρ̇ = μρ − ρ³,   θ̇ = 1 + ρ sin θ",
+    description: "The same circular orbit grows from a Hopf point, but the angular speed varies around it.",
+    lesson: "Frozen Jacobian eigenvalues vary around the attracting cycle. Its transverse Floquet multiplier, computed over a full lap, measures its stability.",
+    parameterRange: [-0.24, 0.4],
+    defaultParameter: 0.16,
+    phaseWindow: { x: [-0.95, 0.95], y: [-0.95, 0.95] },
+    observableRange: [0, 0.8],
+    field(x, y, mu) {
+      const radialRate = mu - x * x - y * y;
+      const speed = 1 + y;
+      return [radialRate * x - speed * y, radialRate * y + speed * x];
+    },
+    jacobian(x, y, mu) {
+      const radialRate = mu - x * x - y * y;
+      return [
+        [radialRate - 2 * x * x, -2 * x * y - 1 - 2 * y],
+        [1 + y - 2 * x * y, radialRate - 2 * y * y + x]
+      ];
+    },
+    cycles(mu) {
+      return mu > DEFAULT_TOLERANCE && mu < 1 ? [circle(mu)] : [];
+    },
+    branches(mu) {
+      const result = [{ branchId: "origin", kind: "equilibrium", x: 0, y: 0, observable: 0 }];
+      if (mu >= 0 && mu < 1) {
+        result.push({ branchId: "cycle", kind: "cycle", ...circle(mu) });
+      }
+      return result;
+    }
+  };
+}
+
 function radialJacobian(x, y, radialRate, radialRateX, radialRateY) {
   return [
     [radialRate + x * radialRateX, -1 + x * radialRateY],
@@ -1343,7 +1388,8 @@ const definitions = Object.freeze({
   "subcritical-hopf": subcriticalHopfDefinition,
   "fold-cycles": foldCyclesDefinition,
   homoclinic: homoclinicDefinition,
-  snic: snicDefinition
+  snic: snicDefinition,
+  "varying-speed-hopf": varyingSpeedHopfDefinition
 });
 
 export const PRESET_IDS = Object.freeze(Object.keys(definitions));
@@ -1906,6 +1952,131 @@ export function sampleBranches(presetOrId, options = {}) {
 
 export const sampleBranchDiagram = sampleBranches;
 
+function spectrumPoint(classification, parameter, position, label) {
+  const { trace, determinant, discriminant, eigenvalues, stability, type } = classification;
+  const repeated = Math.abs(discriminant) <= 32 * Number.EPSILON * Math.max(1, trace * trace, 4 * Math.abs(determinant));
+  const boundary = type === "nonhyperbolic"
+    ? classification.kind === "center-or-hopf" ? "imaginary-pair" : "zero-eigenvalue"
+    : repeated ? "repeated-eigenvalue" : null;
+  return { trace, determinant, discriminant, eigenvalues, parameter, stability, type, boundary,
+    x: position.x, y: position.y, label };
+}
+
+function spectrumAtPosition(preset, parameter, position, label) {
+  return spectrumPoint(classifyEquilibrium(preset, position, parameter), parameter, position, label);
+}
+
+function orbitSpectrum(preset, parameter, orbit, phaseCount) {
+  let positions;
+  if (orbit.path) {
+    positions = resampleOrbitPath(orbit.path, phaseCount + 1);
+    if (positions.length > 1) positions.pop();
+  } else {
+    positions = Array.from({ length: phaseCount }, (_, index) => {
+      const angle = TWO_PI * index / phaseCount;
+      return { x: orbit.radius * Math.cos(angle), y: orbit.radius * Math.sin(angle) };
+    });
+  }
+  const points = positions.map((position) => spectrumAtPosition(preset, parameter, position, orbit.label));
+  const first = points[0];
+  // Rotationally symmetric cycles can have a constant Cartesian Jacobian spectrum
+  // even though the Jacobian itself varies around the cycle.
+  const constant = points.every((point) =>
+    Math.abs(point.trace - first.trace) <= 1e-10 * Math.max(1, Math.abs(first.trace)) &&
+    Math.abs(point.determinant - first.determinant) <= 1e-10 * Math.max(1, Math.abs(first.determinant))
+  );
+  return {
+    points: constant ? [first] : points,
+    stability: orbit.stability,
+    label: orbit.label,
+    closed: !constant,
+    kind: orbit.kind || "cycle",
+    period: orbit.period,
+    floquetMultiplier: orbit.floquetMultiplier,
+    parameter
+  };
+}
+
+function snicConnection() {
+  return { radius: 1, stability: "critical", kind: "connection", period: Infinity, label: "Critical invariant circle" };
+}
+
+/** Frozen Cartesian Jacobians of each equilibrium and orbit on one parameter slice. */
+export function spectrumSlice(presetOrId, parameter, equilibria, cycles, connections) {
+  const preset = resolvePreset(presetOrId);
+  const mu = finiteNumber(parameter, "parameter");
+  const phaseCount = 120;
+  const orbits = (cycles ?? cyclesAt(preset, mu)).map((cycle) => orbitSpectrum(preset, mu, cycle, phaseCount));
+  for (const connection of connections ?? connectionsAt(preset, mu)) {
+    orbits.push(orbitSpectrum(preset, mu, { ...connection, stability: "critical", kind: "connection" }, phaseCount));
+  }
+  if (preset.id === "snic" && mu === 0) {
+    orbits.push(orbitSpectrum(preset, mu, snicConnection(), phaseCount));
+  }
+  return {
+    equilibria: (equilibria ?? equilibriaAt(preset, mu)).map((point) =>
+      point.classification
+        ? spectrumPoint(point.classification, mu, point, point.label)
+        : spectrumAtPosition(preset, mu, point, point.label)
+    ),
+    orbits
+  };
+}
+
+function selectSpectrumSections(points, count, events) {
+  if (points.length <= count) return points;
+  const indices = new Set(Array.from({ length: count }, (_, index) =>
+    Math.round(index * (points.length - 1) / (count - 1))
+  ));
+  return points.filter((point, index) => indices.has(index) || events.some((event) => event.parameter === point.parameter));
+}
+
+/** Sample equilibrium tracks and successive spectral sections of each orbit branch. */
+export function buildSpectrum(presetOrId, branchSamples) {
+  const preset = resolvePreset(presetOrId);
+  const samples = branchSamples ?? sampleBranches(preset);
+  const equilibriumTracks = samples.branches.filter((branch) => branch.kind === "equilibrium").map((branch) =>
+    branch.points.map((point) => spectrumAtPosition(preset, point.parameter, point, branch.id))
+  );
+
+  // The observable diagram omits the SNIC interior source, which still has a spectral track.
+  if (preset.id === "snic") {
+    equilibriumTracks.push(sampleParameters(samples.parameterRange, 121, preset.criticalValues).map((parameter) =>
+      spectrumAtPosition(preset, parameter, { x: 0, y: 0 }, "Interior repeller")
+    ));
+  }
+
+  const phaseCount = 32;
+  const cycleBranches = samples.branches.filter((branch) => branch.kind === "cycle");
+  if (preset.id === "homoclinic") {
+    // The observable diagram tracks the minimum and maximum of ONE orbit.
+    // Sample the numerical orbit sparsely; the selected slice uses its full path.
+    const sections = selectSpectrumSections(cycleBranches[0]?.points ?? [], 10, preset.criticalValues);
+    const track = [];
+    for (const { parameter } of sections) {
+      for (const cycle of cyclesAt(preset, parameter)) {
+        track.push(orbitSpectrum(preset, parameter, cycle, phaseCount));
+      }
+      for (const connection of connectionsAt(preset, parameter)) {
+        track.push(orbitSpectrum(preset, parameter, { ...connection, stability: "critical", kind: "connection" }, phaseCount));
+      }
+    }
+    return { equilibriumTracks, orbitTracks: track.length ? [track] : [] };
+  }
+
+  const orbitTracks = cycleBranches.map((branch) =>
+    selectSpectrumSections(branch.points, 31, preset.criticalValues).map((point) => {
+      const { parameter, period, radialDerivative } = point;
+      const orbit = preset.id === "snic" && parameter === 0
+        ? snicConnection()
+        : { ...point, label: branch.id,
+          floquetMultiplier: point.radius > 0 && Number.isFinite(period) ? Math.exp(radialDerivative * period) : undefined };
+      return orbitSpectrum(preset, parameter, orbit, phaseCount);
+    })
+  );
+  return { equilibriumTracks, orbitTracks };
+}
+
 export function sampleVectorField(presetOrId, parameter, options = {}) {
   const preset = resolvePreset(presetOrId);
   const mu = finiteNumber(parameter, "parameter");
@@ -2030,6 +2201,8 @@ export default Object.freeze({
   integrateTrajectory,
   sampleBranches,
   sampleBranchDiagram,
+  buildSpectrum,
+  spectrumSlice,
   sampleNullclineSegments,
   sampleVectorField
 });

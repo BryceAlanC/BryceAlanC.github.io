@@ -6,7 +6,7 @@
     <title>Bifurcations in the Plane | Bryce Christopherson</title>
     <meta
       name="description"
-      content="Explore bifurcations of two-dimensional differential equations through linked phase portraits, continuation diagrams, trajectories, nullclines, and Jacobian eigenvalues."
+      content="Explore bifurcations of two-dimensional differential equations through linked phase portraits, 3D trace-determinant diagrams, trajectories, nullclines, and Jacobian eigenvalues."
     />
     <meta name="author" content="Bryce A. Christopherson" />
     <meta name="theme-color" content="#0b5748" />
@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261028-1" />
-    <script type="module" src="./demo.js?v=20261102-3"></script>
+    <link rel="stylesheet" href="./style.css?v=20261105-1" />
+    <script type="module" src="./demo.js?v=20261105-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -76,9 +76,8 @@
             <p class="app-hero-copy">
               Move the parameter <span class="math-symbol">r</span> through the planar system
               <span class="system-inline">x&#775; = f(x, y; r), y&#775; = g(x, y; r)</span>.
-              The phase portrait, equilibria, periodic orbits, continuation diagram, and
-              Jacobian eigenvalues update together so that local stability and global motion
-              remain visible in one place.
+              The phase portrait, three-dimensional trace-determinant diagram, and Jacobian
+              eigenvalues update together as the equilibria and periodic orbits change.
             </p>
           </div>
         </div>
@@ -99,6 +98,7 @@
               <label class="field-label" for="family-select">Planar system</label>
               <select id="family-select">
                 <option value="supercritical-hopf" selected>Supercritical Hopf</option>
+                <option value="varying-speed-hopf">Supercritical Hopf (varying speed)</option>
                 <option value="subcritical-hopf">Bounded subcritical Hopf</option>
                 <option value="saddle-node">Saddle-node of equilibria</option>
                 <option value="transcritical">Transcritical exchange</option>
@@ -158,7 +158,7 @@
                 also accepted. Equilibria and branches are found numerically.
               </p>
               <details class="control-details">
-                <summary>Plot window and vertical axis</summary>
+                <summary>Plot window and parameter range</summary>
                 <div class="compact-field-grid custom-window-grid">
                   <label for="custom-x1-min"><span>x1 minimum</span><input id="custom-x1-min" type="number" value="-3" step="any" aria-describedby="custom-system-error" /></label>
                   <label for="custom-x1-max"><span>x1 maximum</span><input id="custom-x1-max" type="number" value="3" step="any" aria-describedby="custom-system-error" /></label>
@@ -167,11 +167,6 @@
                   <label for="custom-r-min"><span>r minimum</span><input id="custom-r-min" type="number" value="-2" step="any" aria-describedby="custom-system-error" /></label>
                   <label for="custom-r-max"><span>r maximum</span><input id="custom-r-max" type="number" value="2" step="any" aria-describedby="custom-system-error" /></label>
                 </div>
-                <label class="field-label custom-observable-label" for="custom-observable">Bifurcation vertical axis</label>
-                <select id="custom-observable" aria-describedby="custom-system-error">
-                  <option value="x1" selected>Equilibrium x1</option>
-                  <option value="x2">Equilibrium x2</option>
-                </select>
               </details>
               <p class="control-error" id="custom-system-error" role="alert" hidden></p>
               <button class="lab-button lab-button-primary full-width-button" id="apply-custom-system" type="button">
@@ -271,6 +266,10 @@
                 <input id="show-trajectories" type="checkbox" checked />
                 <span>Trajectories</span>
               </label>
+              <label class="check-row" for="show-spectrum-regions">
+                <input id="show-spectrum-regions" type="checkbox" checked />
+                <span>Trace-determinant regions</span>
+              </label>
               <button class="lab-button full-width-button" id="reset-views" type="button">
                 Reset plot views
               </button>
@@ -304,9 +303,9 @@
 
             <p class="keyboard-help">
               Phase portrait: click to add a trajectory · scroll to zoom · middle-drag to pan ·
-              arrow keys move the initial-condition cursor · Enter launches it. Bifurcation
-              diagram: click or drag to set <span class="math-symbol">r</span> · scroll to zoom ·
-              middle-drag to pan. Press 0 over either plot to reset its view.
+              arrow keys move the initial-condition cursor · Enter launches it.
+              Trace-determinant diagram: drag or use arrow keys to rotate · scroll to zoom.
+              The parameter slider moves the slice. Press 0 over either plot to reset its view.
             </p>
           </aside>
 
@@ -400,41 +399,41 @@
                 <div class="analysis-column">
                   <section class="visual-panel bifurcation-panel" aria-labelledby="bifurcation-title">
                     <div class="panel-heading">
-                      <div><span>02</span><h3 id="bifurcation-title">Bifurcation diagram</h3></div>
-                      <p id="bifurcation-observable-label">Vertical axis: radial amplitude ρ</p>
+                      <div><span>02</span><h3 id="bifurcation-title">Trace-determinant diagram</h3></div>
+                      <p>Drag to rotate</p>
+                    </div>
+                    <div class="plot-controls bifurcation-plot-controls" role="group" aria-label="Bifurcation diagram view controls">
+                      <button type="button" id="bifurcation-zoom-in" aria-label="Zoom in on the bifurcation diagram">+</button>
+                      <button type="button" id="bifurcation-zoom-out" aria-label="Zoom out of the bifurcation diagram">−</button>
+                      <button type="button" id="bifurcation-rotate-left" aria-label="Rotate the diagram left">←</button>
+                      <button type="button" id="bifurcation-rotate-right" aria-label="Rotate the diagram right">→</button>
+                      <button type="button" id="bifurcation-rotate-up" aria-label="Rotate the diagram up">↑</button>
+                      <button type="button" id="bifurcation-rotate-down" aria-label="Rotate the diagram down">↓</button>
+                      <button type="button" id="bifurcation-fit" aria-label="Reset the trace-determinant view">0</button>
                     </div>
                     <div class="canvas-frame bifurcation-frame">
                       <canvas
                         id="bifurcation-canvas"
                         tabindex="0"
                         role="application"
-                        aria-label="Interactive equilibrium and periodic-orbit continuation diagram"
+                        aria-label="Interactive 3D trace-determinant bifurcation diagram"
                         aria-describedby="bifurcation-description event-list"
-                        aria-keyshortcuts="ArrowLeft ArrowRight + - Control+ArrowLeft Control+ArrowRight Control+ArrowUp Control+ArrowDown Enter 0 F"
+                        aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - 0 F"
                       >
-                        Bifurcation diagram for the selected planar system.
+                        Trace-determinant diagram for the selected planar system.
                       </canvas>
                       <div class="bifurcation-legend" aria-hidden="true">
-                        <span><i class="line line-attracting"></i>Attracting</span>
-                        <span><i class="line line-repelling"></i>Repelling</span>
-                        <span><i class="line line-saddle-branch"></i>Saddle</span>
-                      </div>
-                      <div class="plot-controls bifurcation-plot-controls" aria-label="Bifurcation diagram view controls">
-                        <button type="button" id="bifurcation-zoom-in" aria-label="Zoom in on the bifurcation diagram">+</button>
-                        <button type="button" id="bifurcation-zoom-out" aria-label="Zoom out of the bifurcation diagram">−</button>
-                        <button type="button" id="bifurcation-pan-left" aria-label="Pan the bifurcation diagram left">←</button>
-                        <button type="button" id="bifurcation-pan-right" aria-label="Pan the bifurcation diagram right">→</button>
-                        <button type="button" id="bifurcation-pan-up" aria-label="Pan the bifurcation diagram up">↑</button>
-                        <button type="button" id="bifurcation-pan-down" aria-label="Pan the bifurcation diagram down">↓</button>
-                        <button type="button" id="bifurcation-fit" aria-label="Restore the full bifurcation diagram">0</button>
+                        <span><i class="line line-spectrum-equilibrium"></i>Equilibria</span>
+                        <span><i class="line line-spectrum-orbit"></i>Orbits</span>
+                        <span><i class="line line-spectrum-slice"></i>Current slice</span>
                       </div>
                       <p class="sr-only" id="bifurcation-description">
-                        The horizontal axis is the parameter r. The vertical quantity is named
-                        in the panel heading and changes with the selected family. Solid branches
-                        are attracting, dashed branches are repelling, and dash-dot branches are
-                        saddles. A vertical line marks the current parameter. Click or drag to
-                        change r, scroll or use plus and minus to zoom, middle-drag or use Control
-                        with arrow keys to pan, and press 0 or F to fit the complete diagram.
+                        The axes are the Jacobian trace, determinant, and parameter r.
+                        Equilibria trace curves as r varies. Periodic orbits contribute the
+                        trace and determinant of the Jacobian at each point along the orbit.
+                        The shared parameter control moves the highlighted slice. Drag or use
+                        the arrow keys to rotate, use plus and minus to zoom, and press 0 or F
+                        to reset the view.
                       </p>
                     </div>
                   </section>
@@ -528,12 +527,22 @@
                 with one locally attracting and one locally repelling direction.
               </p>
               <p class="app-note">
+                <strong>Reading the trace-determinant diagram.</strong> Each equilibrium
+                contributes one point on the current parameter slice. Equilibria with the same
+                trace and determinant overlap. For a periodic orbit, the plot uses the Jacobian
+                at each point around the orbit. These pointwise classifications can vary around
+                an attracting cycle, whose stability is determined by the return map. In the
+                rotationally symmetric Hopf examples, the spectra agree around each cycle and
+                appear as one point per slice. Choose Supercritical Hopf (varying speed) to see
+                a loop on each slice with <span class="nowrap">r &gt; 0</span>.
+              </p>
+              <p class="app-note">
                 <strong>Periodic orbits.</strong> The supercritical Hopf family has an attracting
                 periodic orbit of radius <span class="nowrap">ρ = √r</span> for
                 <span class="nowrap">r &gt; 0</span>. The bounded subcritical family adds a quintic
                 term that confines the global flow without changing the local Hopf type. For
-                general families, statements about periodic orbits are numerical detections in the
-                displayed window, not proofs that every orbit has been found.
+                the homoclinic preset, periodic-orbit paths are approximated numerically.
+                Custom systems show numerically tracked equilibria in the displayed window.
               </p>
               <p class="app-note">
                 <strong>Parameter sweeps.</strong> Each fixed value of

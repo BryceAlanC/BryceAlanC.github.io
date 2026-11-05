@@ -36,7 +36,8 @@ assert.deepEqual(model.PRESET_IDS, [
   "subcritical-hopf",
   "fold-cycles",
   "homoclinic",
-  "snic"
+  "snic",
+  "varying-speed-hopf"
 ]);
 assert.equal(model.createPreset().id, "supercritical-hopf");
 assert.equal(model.PRESETS["supercritical-hopf"], model.createPreset("supercritical-hopf"));
@@ -535,6 +536,64 @@ for (const id of ["subcritical-hopf", "fold-cycles"]) {
     assert.ok(segments.length > 20, "keep genuine straight and curved nullclines");
     for (const segment of segments) for (const point of segment) near(evaluate(point.x, point.y), 0, 1e-8);
   }
+}
+
+{
+  const saddleNode = model.buildSpectrum("saddle-node");
+  assert.equal(saddleNode.equilibriumTracks.length, 2);
+  for (const track of saddleNode.equilibriumTracks) {
+    near(track[0].parameter, 0);
+    near(track[0].trace, -1);
+    near(track[0].determinant, 0);
+  }
+  const repeated = model.spectrumSlice("saddle-node", 0.25).equilibria.find((point) => point.type === "stable-node");
+  assert.equal(repeated.boundary, "repeated-eigenvalue");
+  assert.equal(model.spectrumSlice("saddle-node", 0.251).equilibria[1].boundary, null);
+
+  const pitchfork = model.buildSpectrum("pitchfork").equilibriumTracks;
+  const distinct = pitchfork.filter((track) => track.at(-1).x !== 0);
+  assert.equal(distinct.length, 2);
+  assert.deepEqual(distinct[0].map((point) => [point.trace, point.determinant]),
+    distinct[1].map((point) => [point.trace, point.determinant]));
+}
+
+{
+  const symmetric = model.spectrumSlice("supercritical-hopf", 0.16).orbits[0];
+  assert.equal(symmetric.points.length, 1);
+  near(symmetric.points[0].trace, -0.32);
+  near(symmetric.points[0].determinant, 1);
+
+  const preset = model.createPreset("varying-speed-hopf");
+  const orbit = model.spectrumSlice(preset, 0.16).orbits[0];
+  assert.equal(orbit.closed, true);
+  assert.equal(orbit.stability, "stable");
+  near(orbit.period, 2 * Math.PI / Math.sqrt(0.84));
+  near(orbit.floquetMultiplier, Math.exp(-0.32 * orbit.period));
+  assert.ok(orbit.points.some((point) => point.type === "stable-focus"));
+  assert.ok(orbit.points.some((point) => point.type === "unstable-focus"));
+  for (const point of orbit.points) {
+    near(point.trace, point.x - 0.32);
+    near(point.determinant, (1 + point.y) * (1 + 2 * point.y) - 0.32 * point.x);
+  }
+  const saddlePhase = model.spectrumSlice(preset, 0.36).orbits[0].points.find((point) => point.type === "saddle");
+  assert.ok(saddlePhase, "a frozen saddle can lie on an attracting cycle");
+  const track = model.buildSpectrum(preset).orbitTracks[0];
+  assert.equal(track[0].points.length, 1);
+  assert.equal(track[0].parameter, 0);
+  assert.equal(track[0].points[0].boundary, "imaginary-pair");
+  assert.ok(track.at(-1).points.length > 1);
+}
+
+{
+  assert.equal(model.buildSpectrum("snic").equilibriumTracks.length, 3);
+  const snic = model.spectrumSlice("snic", 0).orbits[0];
+  assert.equal(snic.kind, "connection");
+  assert.equal(snic.period, Infinity);
+  assert.equal(snic.points[0].boundary, "zero-eigenvalue");
+  const [track] = model.buildSpectrum("homoclinic").orbitTracks;
+  assert.equal(track.at(-1).kind, "connection");
+  assert.equal(track.at(-1).parameter, model.HOMOCLINIC_PARAMETER);
+  near(track.at(-1).points[0].determinant, -1);
 }
 
 console.log("planar bifurcation model tests passed");

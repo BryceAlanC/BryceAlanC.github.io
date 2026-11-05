@@ -8,8 +8,11 @@ import {
   connectionsAt,
   integrateTrajectory,
   sampleBranches,
-  sampleNullclineSegments
-} from "./model.js?v=20261102-2";
+  sampleNullclineSegments,
+  buildSpectrum,
+  spectrumSlice
+} from "./model.js?v=20261105-1";
+import { drawSpectrumView } from "./spectrum-view.js?v=20261105-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -50,7 +53,6 @@ const elements = {
   customX2Max: document.getElementById("custom-x2-max"),
   customRMin: document.getElementById("custom-r-min"),
   customRMax: document.getElementById("custom-r-max"),
-  customObservable: document.getElementById("custom-observable"),
   customSystemError: document.getElementById("custom-system-error"),
   applyCustomSystem: document.getElementById("apply-custom-system"),
   parameter: document.getElementById("parameter-r"),
@@ -82,7 +84,7 @@ const elements = {
   telemetryEvent: document.getElementById("telemetry-event"),
   phaseParameterLabel: document.getElementById("phase-parameter-label"),
   homoclinicLegendItem: document.getElementById("homoclinic-legend-item"),
-  bifurcationObservableLabel: document.getElementById("bifurcation-observable-label"),
+  showSpectrumRegions: document.getElementById("show-spectrum-regions"),
   stabilityObjectLabel: document.getElementById("stability-object-label"),
   linearizationTitle: document.getElementById("linearization-title"),
   jacobianMatrix: document.getElementById("jacobian-matrix"),
@@ -104,10 +106,10 @@ const elements = {
   phaseFit: document.getElementById("phase-fit"),
   bifurcationZoomIn: document.getElementById("bifurcation-zoom-in"),
   bifurcationZoomOut: document.getElementById("bifurcation-zoom-out"),
-  bifurcationPanLeft: document.getElementById("bifurcation-pan-left"),
-  bifurcationPanRight: document.getElementById("bifurcation-pan-right"),
-  bifurcationPanUp: document.getElementById("bifurcation-pan-up"),
-  bifurcationPanDown: document.getElementById("bifurcation-pan-down"),
+  bifurcationRotateLeft: document.getElementById("bifurcation-rotate-left"),
+  bifurcationRotateRight: document.getElementById("bifurcation-rotate-right"),
+  bifurcationRotateUp: document.getElementById("bifurcation-rotate-up"),
+  bifurcationRotateDown: document.getElementById("bifurcation-rotate-down"),
   bifurcationFit: document.getElementById("bifurcation-fit"),
   announcer: document.getElementById("planar-announcer"),
   phaseCanvas: document.getElementById("phase-canvas"),
@@ -121,6 +123,14 @@ const FAMILY_ALIASES = Object.freeze({
   "cycle-fold": "fold-cycles",
   "pitchfork-subcritical": "pitchfork"
 });
+const DEFAULT_SPECTRUM_VIEW = Object.freeze({ azimuth: -0.65, elevation: 0.51, zoom: 1 });
+const SPECTRUM_ROTATION_STEP = Math.PI / 12;
+const SPECTRUM_DIRECTIONS = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1]
+};
 const state = {
   family: null,
   parameter: 0,
@@ -140,10 +150,11 @@ const state = {
   sweepSpeed: Number(elements.sweepSpeed?.value || 0.35),
   phaseFullView: null,
   phaseView: null,
-  bifurcationFullView: null,
-  bifurcationView: null,
+  spectrumData: null,
+  spectrumSlice: null,
+  spectrumView: { ...DEFAULT_SPECTRUM_VIEW },
+  spectrumRenderKey: null,
   phaseBox: null,
-  bifurcationBox: null,
   eigenvalueBox: null,
   timeBox: null,
   phaseCursor: { x: 0.8, y: 0.2 },
@@ -322,13 +333,6 @@ function currentPhaseRanges() {
   return {
     x: [state.phaseView.xMin, state.phaseView.xMax],
     y: [state.phaseView.yMin, state.phaseView.yMax]
-  };
-}
-
-function currentBifurcationRanges() {
-  return {
-    parameter: [state.bifurcationView.rMin, state.bifurcationView.rMax],
-    observable: [state.bifurcationView.oMin, state.bifurcationView.oMax]
   };
 }
 
@@ -754,7 +758,6 @@ function updateFamilyCopy() {
     elements.familyNote.textContent = `${state.family.description} ${state.family.lesson}`.trim();
   }
   if (elements.telemetryFamily) elements.telemetryFamily.textContent = state.family.shortName;
-  if (elements.bifurcationObservableLabel) elements.bifurcationObservableLabel.textContent = `Vertical axis: ${state.family.observableLabel}`;
   if (elements.eventList) {
     elements.eventList.replaceChildren();
     if (state.family.sourceType === "custom" && !state.family.criticalValues.length) {
@@ -813,6 +816,8 @@ function refreshSlice(options = {}) {
   state.equilibria = equilibriaAt(state.family, state.parameter);
   state.cycles = cyclesAt(state.family, state.parameter);
   state.connections = connectionsAt(state.family, state.parameter);
+  state.spectrumSlice = spectrumSlice(state.family, state.parameter, state.equilibria, state.cycles, state.connections);
+  state.spectrumRenderKey = null;
   state.phaseCache = null;
   refreshObjects({ preferredId: preferredObjectId });
   updateTelemetry();
@@ -897,8 +902,7 @@ function customSystemOptions() {
   return {
     x1Range: [Number(elements.customX1Min?.value), Number(elements.customX1Max?.value)],
     x2Range: [Number(elements.customX2Min?.value), Number(elements.customX2Max?.value)],
-    parameterRange: [Number(elements.customRMin?.value), Number(elements.customRMax?.value)],
-    observable: elements.customObservable?.value === "x2" ? "x2" : "x1"
+    parameterRange: [Number(elements.customRMin?.value), Number(elements.customRMax?.value)]
   };
 }
 
@@ -915,8 +919,7 @@ function customSystemInputs() {
     elements.customX2Min,
     elements.customX2Max,
     elements.customRMin,
-    elements.customRMax,
-    elements.customObservable
+    elements.customRMax
   ].filter(Boolean);
 }
 
@@ -977,10 +980,7 @@ function resetPhaseView() {
 }
 
 function resetBifurcationView() {
-  const [rMin, rMax] = state.family.parameterRange;
-  const [oMin, oMax] = state.family.observableRange;
-  state.bifurcationFullView = { rMin, rMax, oMin, oMax };
-  state.bifurcationView = { ...state.bifurcationFullView };
+  state.spectrumView = { ...DEFAULT_SPECTRUM_VIEW };
 }
 
 function loadFamily(id, options = {}) {
@@ -990,6 +990,7 @@ function loadFamily(id, options = {}) {
   const safeId = isCustom || PRESET_IDS.includes(normalizedId) ? normalizedId : "supercritical-hopf";
   let nextFamily;
   let nextBranchDiagram;
+  let nextSpectrum;
   try {
     nextFamily = isCustom
       ? (options.preparedFamily || prepareCustomSystem())
@@ -997,6 +998,7 @@ function loadFamily(id, options = {}) {
         variant: requestedId === "pitchfork-subcritical" ? "subcritical" : "supercritical"
       });
     nextBranchDiagram = sampleBranches(nextFamily, { samples: isCustom ? 141 : 241 });
+    nextSpectrum = buildSpectrum(nextFamily, nextBranchDiagram);
   } catch (error) {
     if (isCustom) showCustomSystemError(error);
     else {
@@ -1012,6 +1014,7 @@ function loadFamily(id, options = {}) {
   if (isCustom) clearCustomSystemError();
   state.parameter = state.family.defaultParameter;
   state.branchDiagram = nextBranchDiagram;
+  state.spectrumData = nextSpectrum;
   state.userSeeds = [];
   state.trajectories = [];
   state.selectedTrajectoryId = null;
@@ -1413,117 +1416,24 @@ function drawPhasePortrait() {
   context.restore();
 }
 
-function branchStyle(point) {
-  if (point.stability === "stable") return { color: COLORS.stable, dash: [], width: 2.5 };
-  if (point.stability === "unstable") return { color: COLORS.unstable, dash: [7, 5], width: 2.3 };
-  if (point.stability === "saddle") return { color: COLORS.saddle, dash: [8, 4, 2, 4], width: 2.3 };
-  if (point.stability === "semistable") return { color: COLORS.current, dash: [9, 4, 2, 4], width: 2.5 };
-  return { color: COLORS.current, dash: [3, 3], width: 2.2 };
-}
-
 function drawBifurcationDiagram() {
-  if (!state.branchDiagram || !elements.bifurcationCanvas) return;
+  if (!state.spectrumData || !state.spectrumSlice || !elements.bifurcationCanvas) return;
   const { context, width, height } = canvasSurface(elements.bifurcationCanvas);
-  const box = plotRectangle(width, height, true);
-  state.bifurcationBox = box;
-  const ranges = currentBifurcationRanges();
-  context.fillStyle = COLORS.paper;
-  context.fillRect(0, 0, width, height);
-  drawAxes(context, box, ranges.parameter, ranges.observable, { xLabel: "r", xTicks: 5, yTicks: 4 });
-  context.save();
-  context.beginPath();
-  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-  context.clip();
-
-  for (const branch of state.branchDiagram.branches) {
-    let dashDistance = 0;
-    let previousStyleKey = "";
-    for (let index = 1; index < branch.points.length; index += 1) {
-      const first = branch.points[index - 1];
-      const second = branch.points[index];
-      const maximumGap = (state.family.parameterRange[1] - state.family.parameterRange[0]) / 18;
-      if (second.parameter - first.parameter > maximumGap) {
-        dashDistance = 0;
-        previousStyleKey = "";
-        continue;
-      }
-      const style = branchStyle(second);
-      const styleKey = `${style.color}|${style.dash.join(",")}|${style.width}`;
-      if (styleKey !== previousStyleKey) dashDistance = 0;
-      const firstX = mapHorizontal(first.parameter, ranges.parameter, box);
-      const firstY = mapVertical(first.observable, ranges.observable, box);
-      const secondX = mapHorizontal(second.parameter, ranges.parameter, box);
-      const secondY = mapVertical(second.observable, ranges.observable, box);
-      context.save();
-      context.strokeStyle = style.color;
-      context.lineWidth = style.width;
-      context.setLineDash(style.dash);
-      context.lineDashOffset = -dashDistance;
-      context.beginPath();
-      context.moveTo(firstX, firstY);
-      context.lineTo(secondX, secondY);
-      context.stroke();
-      context.restore();
-      dashDistance += Math.hypot(secondX - firstX, secondY - firstY);
-      previousStyleKey = styleKey;
-    }
-  }
-
-  for (const event of state.family.criticalValues) {
-    if (event.parameter < ranges.parameter[0] || event.parameter > ranges.parameter[1]) continue;
-    const x = mapHorizontal(event.parameter, ranges.parameter, box);
-    context.save();
-    context.strokeStyle = "rgba(138,98,0,.55)";
-    context.setLineDash([2, 4]);
-    context.beginPath();
-    context.moveTo(x, box.top);
-    context.lineTo(x, box.bottom);
-    context.stroke();
-    context.setLineDash([]);
-    context.fillStyle = COLORS.current;
-    context.font = "10px 'IBM Plex Mono', monospace";
-    context.textAlign = x > (box.left + box.right) / 2 ? "right" : "left";
-    context.textBaseline = "top";
-    context.fillText(event.label, x + (x > (box.left + box.right) / 2 ? -5 : 5), box.top + 5);
-    context.restore();
-  }
-
-  if (state.parameter >= ranges.parameter[0] && state.parameter <= ranges.parameter[1]) {
-    const x = mapHorizontal(state.parameter, ranges.parameter, box);
-    context.save();
-    context.strokeStyle = COLORS.current;
-    context.lineWidth = 1.5;
-    context.beginPath();
-    context.moveTo(x, box.top);
-    context.lineTo(x, box.bottom);
-    context.stroke();
-    context.fillStyle = COLORS.current;
-    context.beginPath();
-    context.moveTo(x, box.top);
-    context.lineTo(x - 4, box.top + 7);
-    context.lineTo(x + 4, box.top + 7);
-    context.closePath();
-    context.fill();
-    context.restore();
-  }
-
-  for (const branch of state.branchDiagram.branches) {
-    const nearest = branch.points.reduce((best, point) =>
-      !best || Math.abs(point.parameter - state.parameter) < Math.abs(best.parameter - state.parameter) ? point : best
-    , null);
-    if (!nearest || Math.abs(nearest.parameter - state.parameter) > (state.family.parameterRange[1] - state.family.parameterRange[0]) / 80) continue;
-    if (nearest.observable < ranges.observable[0] || nearest.observable > ranges.observable[1]) continue;
-    const x = mapHorizontal(nearest.parameter, ranges.parameter, box);
-    const y = mapVertical(nearest.observable, ranges.observable, box);
-    context.fillStyle = branchStyle(nearest).color;
-    context.strokeStyle = COLORS.paper;
-    context.lineWidth = 1.5;
-    context.beginPath();
-    context.arc(x, y, 4, 0, 2 * Math.PI);
-    context.fill();
-    context.stroke();
-  }
-  context.restore();
+  const { azimuth, elevation, zoom } = state.spectrumView;
+  const showRegions = Boolean(elements.showSpectrumRegions?.checked);
+  const key = [width, height, context.canvas.width, context.canvas.height, azimuth, elevation, zoom, showRegions].join("|");
+  if (state.spectrumRenderKey === key) return;
+  drawSpectrumView(context, width, height, {
+    data: state.spectrumData,
+    slice: state.spectrumSlice,
+    parameter: state.parameter,
+    parameterRange: state.family.parameterRange,
+    azimuth,
+    elevation,
+    zoom,
+    showRegions
+  });
+  state.spectrumRenderKey = key;
 }
 
 function nearbyEigenvalueTrail(equilibrium) {
@@ -1724,28 +1634,27 @@ function panPhase(deltaX, deltaY) {
   drawPhasePortrait();
 }
 
-function zoomBifurcation(factor, centerR, centerObservable) {
-  const view = state.bifurcationView;
-  const full = state.bifurcationFullView;
-  const rSpan = clamp((view.rMax - view.rMin) * factor, (full.rMax - full.rMin) * 0.08, (full.rMax - full.rMin) * 4);
-  const oSpan = clamp((view.oMax - view.oMin) * factor, (full.oMax - full.oMin) * 0.08, (full.oMax - full.oMin) * 4);
-  const rRatio = inverseLerp(view.rMin, view.rMax, centerR);
-  const oRatio = inverseLerp(view.oMin, view.oMax, centerObservable);
-  state.bifurcationView = {
-    rMin: centerR - rSpan * rRatio,
-    rMax: centerR + rSpan * (1 - rRatio),
-    oMin: centerObservable - oSpan * oRatio,
-    oMax: centerObservable + oSpan * (1 - oRatio)
-  };
+function zoomBifurcation(factor) {
+  state.spectrumView.zoom = clamp(state.spectrumView.zoom * factor, 0.6, 2.5);
   drawBifurcationDiagram();
 }
 
-function panBifurcation(deltaR, deltaObservable) {
-  state.bifurcationView.rMin += deltaR;
-  state.bifurcationView.rMax += deltaR;
-  state.bifurcationView.oMin += deltaObservable;
-  state.bifurcationView.oMax += deltaObservable;
+function orientBifurcation(azimuth, elevation) {
+  state.spectrumView.azimuth = azimuth % (2 * Math.PI);
+  state.spectrumView.elevation = clamp(elevation, -1.35, 1.35);
   drawBifurcationDiagram();
+}
+
+function rotateBifurcation(horizontal, vertical) {
+  const { azimuth, elevation } = state.spectrumView;
+  orientBifurcation(azimuth + horizontal * SPECTRUM_ROTATION_STEP, elevation + vertical * SPECTRUM_ROTATION_STEP);
+  announce("Trace-determinant view rotated.");
+}
+
+function fitBifurcation() {
+  resetBifurcationView();
+  drawBifurcationDiagram();
+  announce("Trace-determinant view reset.");
 }
 
 function addInitialCondition(x, y, options = {}) {
@@ -1846,19 +1755,8 @@ function phaseObjectAt(position) {
   return null;
 }
 
-function updateParameterFromBifurcation(event, announceChange = false) {
-  const position = pointerPosition(elements.bifurcationCanvas, event);
-  const ranges = currentBifurcationRanges();
-  const value = valueFromHorizontal(clamp(position.x, state.bifurcationBox.left, state.bifurcationBox.right), ranges.parameter, state.bifurcationBox);
-  setParameter(value, { stopSweep: true, announce: announceChange });
-}
-
 function phaseViewAnnouncement(action) {
   return `${action} Visible x range ${formatNumber(state.phaseView.xMin, 2)} to ${formatNumber(state.phaseView.xMax, 2)}; visible y range ${formatNumber(state.phaseView.yMin, 2)} to ${formatNumber(state.phaseView.yMax, 2)}.`;
-}
-
-function bifurcationViewAnnouncement(action) {
-  return `${action} Visible r range ${formatNumber(state.bifurcationView.rMin, 2)} to ${formatNumber(state.bifurcationView.rMax, 2)}; visible vertical range ${formatNumber(state.bifurcationView.oMin, 2)} to ${formatNumber(state.bifurcationView.oMax, 2)}.`;
 }
 
 function handlePhaseKey(event) {
@@ -1911,45 +1809,18 @@ function handlePhaseKey(event) {
 }
 
 function handleBifurcationKey(event) {
-  if (!state.bifurcationView) return;
-  const rSpan = state.bifurcationView.rMax - state.bifurcationView.rMin;
-  const oSpan = state.bifurcationView.oMax - state.bifurcationView.oMin;
-  if (event.ctrlKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+  const direction = SPECTRUM_DIRECTIONS[event.key];
+  if (direction) {
     event.preventDefault();
-    panBifurcation(
-      event.key === "ArrowLeft" ? -rSpan * 0.08 : event.key === "ArrowRight" ? rSpan * 0.08 : 0,
-      event.key === "ArrowDown" ? -oSpan * 0.08 : event.key === "ArrowUp" ? oSpan * 0.08 : 0
-    );
-    announce(bifurcationViewAnnouncement("Bifurcation diagram panned."));
-    return;
-  }
-  if (["+", "=", "-", "_"].includes(event.key)) {
+    rotateBifurcation(...direction);
+  } else if (["+", "=", "-", "_"].includes(event.key)) {
     event.preventDefault();
-    zoomBifurcation(
-      event.key === "+" || event.key === "=" ? 0.8 : 1.25,
-      state.parameter,
-      (state.bifurcationView.oMin + state.bifurcationView.oMax) / 2
-    );
-    announce(bifurcationViewAnnouncement(event.key === "+" || event.key === "=" ? "Bifurcation diagram zoomed in." : "Bifurcation diagram zoomed out."));
-    return;
-  }
-  if (event.key === "0" || event.key.toLowerCase() === "f") {
+    const zoomIn = event.key === "+" || event.key === "=";
+    zoomBifurcation(zoomIn ? 1.2 : 1 / 1.2);
+    announce(zoomIn ? "Trace-determinant view zoomed in." : "Trace-determinant view zoomed out.");
+  } else if (event.key === "0" || event.key.toLowerCase() === "f") {
     event.preventDefault();
-    resetBifurcationView();
-    drawBifurcationDiagram();
-    announce(bifurcationViewAnnouncement("Bifurcation diagram restored to its full view."));
-    return;
-  }
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    event.preventDefault();
-    const step = (state.family.parameterRange[1] - state.family.parameterRange[0]) * (event.shiftKey ? 0.025 : 0.005);
-    setParameter(state.parameter + (event.key === "ArrowRight" ? step : -step), { stopSweep: true, announce: true });
-    return;
-  }
-  if (event.key === "Enter") {
-    event.preventDefault();
-    const eventRecord = nearestEvent();
-    if (eventRecord) announce(`${eventRecord.label} occurs at r ${formatParameter(eventRecord.parameter)}. Current r is ${formatParameter(state.parameter)}.`);
+    fitBifurcation();
   }
 }
 
@@ -2107,7 +1978,7 @@ elements.resetViews?.addEventListener("click", () => {
   resetPhaseView();
   resetBifurcationView();
   drawAll();
-  announce(`${phaseViewAnnouncement("All plot views restored.")} ${bifurcationViewAnnouncement("")}`);
+  announce(phaseViewAnnouncement("All plot views restored."));
 });
 elements.phaseZoomIn?.addEventListener("click", () => {
   zoomPhase(0.8, (state.phaseView.xMin + state.phaseView.xMax) / 2, (state.phaseView.yMin + state.phaseView.yMax) / 2);
@@ -2137,32 +2008,23 @@ elements.phaseFit?.addEventListener("click", () => {
   announce(phaseViewAnnouncement("Phase portrait restored to its full view."));
 });
 elements.bifurcationZoomIn?.addEventListener("click", () => {
-  zoomBifurcation(0.8, state.parameter, (state.bifurcationView.oMin + state.bifurcationView.oMax) / 2);
-  announce(bifurcationViewAnnouncement("Bifurcation diagram zoomed in."));
+  zoomBifurcation(1.2);
+  announce("Trace-determinant view zoomed in.");
 });
 elements.bifurcationZoomOut?.addEventListener("click", () => {
-  zoomBifurcation(1.25, state.parameter, (state.bifurcationView.oMin + state.bifurcationView.oMax) / 2);
-  announce(bifurcationViewAnnouncement("Bifurcation diagram zoomed out."));
+  zoomBifurcation(1 / 1.2);
+  announce("Trace-determinant view zoomed out.");
 });
-for (const [control, horizontal, vertical] of [
-  [elements.bifurcationPanLeft, -1, 0],
-  [elements.bifurcationPanRight, 1, 0],
-  [elements.bifurcationPanUp, 0, 1],
-  [elements.bifurcationPanDown, 0, -1]
+for (const [control, direction] of [
+  [elements.bifurcationRotateLeft, SPECTRUM_DIRECTIONS.ArrowLeft],
+  [elements.bifurcationRotateRight, SPECTRUM_DIRECTIONS.ArrowRight],
+  [elements.bifurcationRotateUp, SPECTRUM_DIRECTIONS.ArrowUp],
+  [elements.bifurcationRotateDown, SPECTRUM_DIRECTIONS.ArrowDown]
 ]) {
-  control?.addEventListener("click", () => {
-    panBifurcation(
-      horizontal * (state.bifurcationView.rMax - state.bifurcationView.rMin) * 0.1,
-      vertical * (state.bifurcationView.oMax - state.bifurcationView.oMin) * 0.1
-    );
-    announce(bifurcationViewAnnouncement("Bifurcation diagram panned."));
-  });
+  control?.addEventListener("click", () => rotateBifurcation(...direction));
 }
-elements.bifurcationFit?.addEventListener("click", () => {
-  resetBifurcationView();
-  drawBifurcationDiagram();
-  announce(bifurcationViewAnnouncement("Bifurcation diagram restored to its full view."));
-});
+elements.bifurcationFit?.addEventListener("click", fitBifurcation);
+elements.showSpectrumRegions?.addEventListener("change", drawBifurcationDiagram);
 elements.objectSelect?.addEventListener("change", () => selectObject(elements.objectSelect.value));
 elements.fullscreenToggle?.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", syncFullscreenState);
@@ -2249,86 +2111,40 @@ elements.phaseCanvas?.addEventListener("dblclick", () => {
 elements.phaseCanvas?.addEventListener("keydown", handlePhaseKey);
 
 elements.bifurcationCanvas?.addEventListener("pointerdown", (event) => {
-  if ((event.button !== 0 && event.button !== 1) || !state.bifurcationBox) return;
-  const position = pointerPosition(elements.bifurcationCanvas, event);
-  if (!pointInBox(position, state.bifurcationBox)) return;
-  if (event.button === 1) event.preventDefault();
-  elements.bifurcationCanvas.focus({ preventScroll: true });
-  const touchPending = event.pointerType === "touch" && event.button === 0;
+  if (event.button !== 0 || state.bifurcationPointer) return;
+  const canvas = elements.bifurcationCanvas;
+  canvas.focus({ preventScroll: true });
   state.bifurcationPointer = {
-    pointerId: event.pointerId,
-    mode: event.button === 1 ? "pan" : touchPending ? "touch-pending" : "parameter",
-    startX: position.x,
-    startY: position.y,
-    moved: false,
-    view: { ...state.bifurcationView }
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    ...state.spectrumView
   };
-  elements.bifurcationCanvas.dataset.dragging = event.button === 1 ? "pan" : touchPending ? "touch-pending" : "parameter";
-  if (!touchPending) elements.bifurcationCanvas.setPointerCapture(event.pointerId);
-  if (event.button === 0 && !touchPending) updateParameterFromBifurcation(event);
+  canvas.dataset.dragging = "rotate";
+  canvas.setPointerCapture(event.pointerId);
 });
 elements.bifurcationCanvas?.addEventListener("pointermove", (event) => {
-  if (!state.bifurcationPointer || event.pointerId !== state.bifurcationPointer.pointerId) return;
-  const position = pointerPosition(elements.bifurcationCanvas, event);
-  const deltaX = position.x - state.bifurcationPointer.startX;
-  const deltaY = position.y - state.bifurcationPointer.startY;
-  if (Math.hypot(deltaX, deltaY) > 3) state.bifurcationPointer.moved = true;
-  if (state.bifurcationPointer.mode === "touch-pending") {
-    if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
-      state.bifurcationPointer.mode = "parameter";
-      elements.bifurcationCanvas.dataset.dragging = "parameter";
-      elements.bifurcationCanvas.setPointerCapture(event.pointerId);
-      event.preventDefault();
-      updateParameterFromBifurcation(event);
-    }
-    return;
-  }
-  if (state.bifurcationPointer.mode === "parameter") {
-    updateParameterFromBifurcation(event);
-  } else if (state.bifurcationPointer.mode === "pan" && state.bifurcationPointer.moved) {
-    event.preventDefault();
-    const start = state.bifurcationPointer.view;
-    state.bifurcationView = { ...start };
-    panBifurcation(
-      -deltaX / Math.max(1, state.bifurcationBox.right - state.bifurcationBox.left) * (start.rMax - start.rMin),
-      deltaY / Math.max(1, state.bifurcationBox.bottom - state.bifurcationBox.top) * (start.oMax - start.oMin)
-    );
-  }
+  const start = state.bifurcationPointer;
+  if (!start || start.id !== event.pointerId) return;
+  orientBifurcation(
+    start.azimuth + (event.clientX - start.x) * 0.014,
+    start.elevation - (event.clientY - start.y) * 0.012
+  );
 });
 function clearBifurcationPointer(event) {
-  if (!state.bifurcationPointer || (event.pointerId != null && event.pointerId !== state.bifurcationPointer.pointerId)) return;
-  const pointer = state.bifurcationPointer;
+  if (state.bifurcationPointer?.id !== event.pointerId) return;
   state.bifurcationPointer = null;
   delete elements.bifurcationCanvas.dataset.dragging;
-  if (event.pointerId != null && elements.bifurcationCanvas.hasPointerCapture?.(event.pointerId)) elements.bifurcationCanvas.releasePointerCapture(event.pointerId);
-  if (pointer.mode === "touch-pending" && event.type === "pointerup" && !pointer.moved) {
-    updateParameterFromBifurcation(event, true);
-  } else if (pointer.mode === "parameter" && event.type === "pointerup") {
-    updateParameterFromBifurcation(event, true);
-  } else if (pointer.mode === "pan" && pointer.moved) announce(bifurcationViewAnnouncement("Bifurcation diagram panned."));
 }
 elements.bifurcationCanvas?.addEventListener("pointerup", clearBifurcationPointer);
 elements.bifurcationCanvas?.addEventListener("pointercancel", clearBifurcationPointer);
 elements.bifurcationCanvas?.addEventListener("lostpointercapture", clearBifurcationPointer);
-elements.bifurcationCanvas?.addEventListener("mousedown", (event) => { if (event.button === 1) event.preventDefault(); });
-elements.bifurcationCanvas?.addEventListener("auxclick", (event) => { if (event.button === 1) event.preventDefault(); });
 elements.bifurcationCanvas?.addEventListener("wheel", (event) => {
-  if (!state.bifurcationBox) return;
-  const position = pointerPosition(elements.bifurcationCanvas, event);
-  if (!pointInBox(position, state.bifurcationBox)) return;
+  if (event.ctrlKey || event.metaKey) return;
   event.preventDefault();
-  const ranges = currentBifurcationRanges();
-  zoomBifurcation(
-    Math.exp(clamp(event.deltaY, -120, 120) * 0.0018),
-    valueFromHorizontal(position.x, ranges.parameter, state.bifurcationBox),
-    valueFromVertical(position.y, ranges.observable, state.bifurcationBox)
-  );
+  zoomBifurcation(Math.exp(-clamp(event.deltaY, -120, 120) * 0.0018));
 }, { passive: false });
-elements.bifurcationCanvas?.addEventListener("dblclick", () => {
-  resetBifurcationView();
-  drawBifurcationDiagram();
-  announce(bifurcationViewAnnouncement("Bifurcation diagram restored to its full view."));
-});
+elements.bifurcationCanvas?.addEventListener("dblclick", fitBifurcation);
 elements.bifurcationCanvas?.addEventListener("keydown", handleBifurcationKey);
 
 motionQuery.addEventListener?.("change", (event) => {
