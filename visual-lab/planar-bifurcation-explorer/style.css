@@ -390,11 +390,7 @@
 
 .bifurcation-panel {
   min-height: 335px;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
-.bifurcation-panel:has(.spectrum-phase:not([hidden])) {
-  grid-template-rows: auto auto minmax(260px, 1fr) auto;
+  grid-template-rows: auto auto minmax(clamp(330px, 28vw, 430px), 1fr) auto;
 }
 
 .spectrum-phase {
@@ -417,7 +413,7 @@
 .spectrum-phase p {
   margin: 0;
   color: var(--ink);
-  font: 0.68rem/1.5 var(--mono);
+  font: 0.75rem/1.45 var(--mono);
 }
 
 .spectrum-phase p + p:not(:empty) {
@@ -1145,7 +1141,7 @@
 }
 
 #planar-workspace.is-fullscreen .analysis-column {
-  grid-template-rows: minmax(230px, 1.1fr) minmax(205px, 0.95fr) minmax(125px, 0.5fr);
+  grid-template-rows: minmax(265px, 1.6fr) minmax(205px, 0.95fr) minmax(125px, 0.5fr);
 }
 
 @media (min-width: 1180px) {

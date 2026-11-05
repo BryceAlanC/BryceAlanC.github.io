@@ -504,10 +504,10 @@ export function drawSpectrumView(context, width, height, {
   }
 
   const axisOffsets = [[0, -11], [10, -8], [-10, -8], [11, 8], [-11, 8], [0, 12]];
-  for (const [, end, label] of axisEnds) caption(end, label, INK, 13, axisOffsets);
+  for (const [, end, label] of axisEnds) caption(end, label, INK, 15, axisOffsets);
   if (hopfPoint) {
     if (parameter !== 0) marker(hopfPoint, INK, 3.8, false, undefined, true);
-    caption(hopfPoint, "Hopf", INK, 11, [[-15, 13], [0, 19], [15, 13], [0, -18]]);
+    caption(hopfPoint, "Hopf", INK, 13, [[-15, 13], [0, 19], [15, 13], [0, -18]]);
   }
   const tickOffsets = [[-12, 8], [12, 8], [-12, -8], [12, -8], [0, 12]];
   if (!hopfView && width >= 250 && height >= 155) {
@@ -534,7 +534,7 @@ export function drawSpectrumView(context, width, height, {
   if (showRegions && width >= 220 && height >= 130) {
     for (const { anchor, label, color } of regions) {
       const positions = [[0, 0], [0, -10], [0, 10], [-10, -8], [10, -8], [-12, 8], [12, 8]];
-      caption(world(...anchor, parameter), label, color, width >= 340 ? 10 : 9, positions);
+      caption(world(...anchor, parameter), label, color, width >= 340 ? 12 : 10, positions);
     }
   }
 

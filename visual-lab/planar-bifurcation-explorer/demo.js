@@ -13,7 +13,7 @@ import {
   spectrumAtPosition,
   spectrumSlice
 } from "./model.js?v=20261105-2";
-import { drawSpectrumView } from "./spectrum-view.js?v=20261105-2";
+import { drawSpectrumView } from "./spectrum-view.js?v=20261105-3";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
