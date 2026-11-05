@@ -121,6 +121,7 @@ const elements = {
   phaseCanvas: document.getElementById("phase-canvas"),
   bifurcationCanvas: document.getElementById("bifurcation-canvas"),
   eigenvalueCanvas: document.getElementById("eigenvalue-canvas"),
+  eigenvalueSummary: document.getElementById("eigenvalue-summary"),
   timeCanvas: document.getElementById("time-canvas")
 };
 
@@ -165,7 +166,6 @@ const state = {
   spectrumView: { ...DEFAULT_SPECTRUM_VIEW },
   spectrumRenderKey: null,
   phaseBox: null,
-  eigenvalueBox: null,
   timeBox: null,
   phaseCursor: { x: 0.8, y: 0.2 },
   phasePointer: null,
@@ -1528,55 +1528,125 @@ function nearbyEigenvalueTrail(equilibrium) {
   return trails;
 }
 
+function drawComplexAxes(context, box, range) {
+  drawAxes(context, box, range, range, { dark: true, xTicks: 3, yTicks: 3 });
+  const realZero = mapHorizontal(0, range, box);
+  const imaginaryZero = mapVertical(0, range, box);
+  context.save();
+  context.strokeStyle = "rgba(231,246,241,.72)";
+  context.lineWidth = 1.35;
+  context.beginPath();
+  context.moveTo(box.left, imaginaryZero);
+  context.lineTo(box.right, imaginaryZero);
+  context.moveTo(realZero, box.bottom);
+  context.lineTo(realZero, box.top);
+  context.stroke();
+  context.fillStyle = COLORS.textDark;
+  context.font = "12px 'IBM Plex Mono', monospace";
+  context.textAlign = "right";
+  context.textBaseline = "bottom";
+  context.fillText("Re \u03bb", box.right - 4, imaginaryZero - 4);
+  context.textAlign = "left";
+  context.textBaseline = "top";
+  context.fillText("Im \u03bb", realZero + 4, box.top + 4);
+  context.restore();
+}
+
 function drawEigenvaluePlane() {
   if (!elements.eigenvalueCanvas) return;
   const { context, width, height } = canvasSurface(elements.eigenvalueCanvas);
-  const box = plotRectangle(width, height, true);
-  state.eigenvalueBox = box;
   context.fillStyle = COLORS.plot;
   context.fillRect(0, 0, width, height);
-  const object = selectedObject();
-  if (!object || object.kind !== "equilibrium") {
-    drawAxes(context, box, [-1, 1], [-1, 1], { dark: true, xTicks: 3, yTicks: 3 });
-    context.fillStyle = "rgba(231,246,241,.72)";
+
+  const equilibria = state.objects.filter((object) => object.kind === "equilibrium");
+  const selected = equilibria.find((object) => object.id === state.selectedObjectId);
+  const emptyMessage = state.equilibria.nonisolated
+    ? "Equilibria are not isolated"
+    : "No isolated equilibria";
+  if (elements.eigenvalueSummary) {
+    const summary = equilibria.map(({ id, shortLabel, data }) =>
+      `${shortLabel}${id === selected?.id ? " (selected)" : ""}: ${formatEigenvalues(data.eigenvalues)}`
+    ).join("; ");
+    elements.eigenvalueSummary.textContent = summary || emptyMessage;
+  }
+
+  const box = plotRectangle(width, height, true);
+  if (box.right <= box.left || box.bottom <= box.top) return;
+  const values = equilibria.flatMap((object) => object.data.eigenvalues);
+  const extent = Math.max(1.05, ...values.map(({ re, im }) => Math.max(Math.abs(re), Math.abs(im)))) * 1.18;
+  const range = [-extent, extent];
+  drawComplexAxes(context, box, range);
+  if (!values.length) {
+    context.fillStyle = COLORS.textDark;
     context.font = "11px 'IBM Plex Mono', monospace";
     context.textAlign = "center";
-    context.textBaseline = "middle";
-    const emptyMessage = object?.kind === "connection"
-      ? "Jacobian varies along the connection"
-      : object ? "Jacobian varies along the orbit" : "Select an equilibrium";
-    context.fillText(emptyMessage, (box.left + box.right) / 2, (box.top + box.bottom) / 2);
+    context.textBaseline = "bottom";
+    context.fillText(emptyMessage, (box.left + box.right) / 2, box.bottom - 6, box.right - box.left - 4);
     return;
   }
-  const trails = nearbyEigenvalueTrail(object.data);
-  const allValues = [...trails.flat(), ...object.data.eigenvalues];
-  const extent = Math.max(1.05, ...allValues.map((value) => Math.max(Math.abs(value.re), Math.abs(value.im)))) * 1.18;
-  const range = [-extent, extent];
-  drawAxes(context, box, range, range, { dark: true, xTicks: 3, yTicks: 3 });
+
   context.save();
-  context.strokeStyle = "rgba(240,177,139,.85)";
-  context.lineWidth = 1.4;
-  for (const trail of trails) {
-    context.beginPath();
-    trail.forEach((value, index) => {
-      const x = mapHorizontal(value.re, range, box);
-      const y = mapVertical(value.im, range, box);
-      if (index === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    });
-    context.stroke();
+  context.beginPath();
+  context.rect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  context.clip();
+  if (selected) {
+    context.strokeStyle = "rgba(242,201,105,.45)";
+    context.lineWidth = 1.3;
+    for (const trail of nearbyEigenvalueTrail(selected.data)) {
+      context.beginPath();
+      trail.forEach((value, index) => {
+        const x = mapHorizontal(value.re, range, box);
+        const y = mapVertical(value.im, range, box);
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      context.stroke();
+    }
   }
-  object.data.eigenvalues.forEach((value, index) => {
-    const x = mapHorizontal(value.re, range, box);
-    const y = mapVertical(value.im, range, box);
-    context.fillStyle = index === 0 ? COLORS.currentBright : COLORS.stableBright;
-    context.strokeStyle = COLORS.plot;
+
+  // Combine coincident roots, including shared spectra, without displacing the markers.
+  const points = [];
+  for (const equilibrium of equilibria) {
+    for (const value of equilibrium.data.eigenvalues) {
+      const highlighted = equilibrium === selected;
+      const existing = points.find((point) =>
+        Math.abs(point.re - value.re) <= 1e-10 * Math.max(1, Math.abs(value.re)) &&
+        Math.abs(point.im - value.im) <= 1e-10 * Math.max(1, Math.abs(value.im))
+      );
+      if (existing) {
+        existing.count += 1;
+        existing.highlighted ||= highlighted;
+      } else {
+        points.push({ ...value, count: 1, highlighted });
+      }
+    }
+  }
+  points.sort((a, b) => Number(a.highlighted) - Number(b.highlighted));
+  for (const point of points) {
+    const x = mapHorizontal(point.re, range, box);
+    const y = mapVertical(point.im, range, box);
+    const color = point.highlighted ? COLORS.currentBright : COLORS.stableBright;
+    context.fillStyle = point.highlighted ? color : COLORS.plot;
+    context.strokeStyle = point.highlighted ? COLORS.plot : color;
     context.lineWidth = 1.5;
     context.beginPath();
-    context.arc(x, y, 5, 0, 2 * Math.PI);
+    context.arc(x, y, point.highlighted ? 5 : 3.6, 0, 2 * Math.PI);
     context.fill();
     context.stroke();
-  });
+    if (point.count > 1) {
+      context.font = "10px 'IBM Plex Mono', monospace";
+      context.fillStyle = color;
+      context.strokeStyle = COLORS.plot;
+      context.lineWidth = 2.5;
+      context.textBaseline = "middle";
+      const label = `\u00d7${point.count}`;
+      const fitsOnRight = x + 7 + context.measureText(label).width < box.right;
+      const labelX = x + (fitsOnRight ? 7 : -7);
+      context.textAlign = fitsOnRight ? "left" : "right";
+      context.strokeText(label, labelX, y - 7);
+      context.fillText(label, labelX, y - 7);
+    }
+  }
   context.restore();
 }
 

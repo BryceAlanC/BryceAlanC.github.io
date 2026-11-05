@@ -367,16 +367,18 @@
 .planar-workbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(520px, 1.48fr) minmax(370px, 0.92fr);
+  grid-template-columns: minmax(360px, 0.75fr) minmax(0, 1.25fr);
+  grid-template-rows: auto minmax(260px, auto) minmax(190px, auto);
+  grid-template-areas:
+    "phase spectrum"
+    "stability spectrum"
+    "time time";
   align-items: stretch;
   background: #0c2621;
 }
 
 .analysis-column {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: minmax(min-content, 1.12fr) minmax(235px, 0.96fr) minmax(145px, 0.52fr);
+  display: contents;
 }
 
 .visual-panel {
@@ -389,8 +391,8 @@
 }
 
 .bifurcation-panel {
-  min-height: 335px;
-  grid-template-rows: auto auto minmax(clamp(330px, 28vw, 430px), 1fr) auto;
+  grid-area: spectrum;
+  grid-template-rows: auto auto minmax(clamp(330px, 42vw, 500px), 1fr) auto;
 }
 
 .spectrum-phase {
@@ -421,6 +423,7 @@
 }
 
 .phase-panel {
+  grid-area: phase;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border-right: 1px solid rgba(235, 247, 243, 0.18);
   background: #071c18;
@@ -428,11 +431,14 @@
 }
 
 .stability-panel {
+  grid-area: stability;
+  border-right: 1px solid rgba(235, 247, 243, 0.18);
   background: #09211d;
   color: #fffdf7;
 }
 
 .time-panel {
+  grid-area: time;
   border-bottom: 0;
 }
 
@@ -520,7 +526,7 @@
 }
 
 .phase-frame {
-  min-height: clamp(550px, 49vw, 740px);
+  min-height: clamp(330px, 28vw, 430px);
   background:
     radial-gradient(circle at 50% 46%, rgba(22, 88, 75, 0.26), transparent 58%),
     #071c18;
@@ -578,8 +584,7 @@
   outline-offset: -5px;
 }
 
-.phase-axis-label,
-.eigenvalue-axis-label {
+.phase-axis-label {
   position: absolute;
   z-index: 2;
   color: rgba(235, 247, 243, 0.72);
@@ -595,16 +600,6 @@
 
 .phase-axis-y {
   top: 0.6rem;
-  left: 50%;
-}
-
-.eigenvalue-real {
-  right: 0.52rem;
-  top: 50%;
-}
-
-.eigenvalue-imaginary {
-  top: 0.42rem;
   left: 50%;
 }
 
@@ -849,7 +844,7 @@
 
 .stability-values > div {
   display: grid;
-  grid-template-columns: minmax(72px, 0.72fr) minmax(0, 1.28fr);
+  grid-template-columns: minmax(max-content, 0.9fr) minmax(0, 1.1fr);
   align-items: baseline;
   gap: 0.5rem;
   padding: 0.4rem 0;
@@ -909,15 +904,16 @@
   .keyboard-help {
     grid-column: 1 / -1;
   }
-
-  .phase-frame {
-    min-height: clamp(560px, 57vw, 740px);
-  }
 }
 
 @media (max-width: 1060px) {
   .planar-workbench {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto minmax(260px, auto);
+    grid-template-areas:
+      "phase phase"
+      "spectrum spectrum"
+      "stability time";
   }
 
   .phase-panel {
@@ -925,26 +921,7 @@
   }
 
   .phase-frame {
-    min-height: min(74vw, 720px);
-  }
-
-  .analysis-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: minmax(330px, auto) minmax(170px, auto);
-  }
-
-  .bifurcation-panel,
-  .stability-panel {
-    min-height: 330px;
-  }
-
-  .bifurcation-panel {
-    border-right: 1px solid var(--hairline);
-  }
-
-  .time-panel {
-    min-height: 170px;
-    grid-column: 1 / -1;
+    min-height: clamp(290px, 43vw, 410px);
   }
 }
 
@@ -957,23 +934,18 @@
     grid-column: 1 / -1;
   }
 
-  .analysis-column {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-  }
-
-  .bifurcation-panel {
-    min-height: 380px;
-    border-right: 0;
+  .planar-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(340px, auto) minmax(190px, auto);
+    grid-template-areas:
+      "phase"
+      "spectrum"
+      "stability"
+      "time";
   }
 
   .stability-panel {
-    min-height: 340px;
-  }
-
-  .time-panel {
-    min-height: 190px;
-    grid-column: auto;
+    border-right: 0;
   }
 }
 
@@ -1024,10 +996,6 @@
     text-align: left;
   }
 
-  .phase-frame {
-    min-height: min(92vw, 620px);
-  }
-
   .phase-legend {
     right: 0.42rem;
     bottom: 0.42rem;
@@ -1048,14 +1016,6 @@
   .numeric-pair,
   .stability-grid {
     grid-template-columns: 1fr;
-  }
-
-  .phase-frame {
-    min-height: 390px;
-  }
-
-  .bifurcation-panel {
-    min-height: 350px;
   }
 
   .stability-panel {
@@ -1111,7 +1071,10 @@
 #planar-workspace.is-fullscreen .stage-stack {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 #planar-workspace.is-fullscreen .planar-stage {
@@ -1129,44 +1092,23 @@
   display: none;
 }
 
-#planar-workspace.is-fullscreen .planar-workbench {
-  min-height: 0;
-  grid-template-columns: minmax(480px, 1.48fr) minmax(350px, 0.92fr);
-}
-
-#planar-workspace.is-fullscreen .phase-panel,
-#planar-workspace.is-fullscreen .analysis-column,
-#planar-workspace.is-fullscreen .visual-panel {
-  min-height: 0;
-}
-
-#planar-workspace.is-fullscreen .analysis-column {
-  grid-template-rows: minmax(265px, 1.6fr) minmax(205px, 0.95fr) minmax(125px, 0.5fr);
-}
-
 @media (min-width: 1180px) {
+  #planar-workspace.is-fullscreen .planar-workbench {
+    grid-template-rows: minmax(310px, 1fr) minmax(235px, 0.75fr) minmax(130px, 0.38fr);
+  }
+
+  #planar-workspace.is-fullscreen .phase-frame {
+    min-height: 0;
+  }
+
   #planar-workspace.is-fullscreen .bifurcation-panel {
     grid-template-rows: auto auto minmax(0, 1fr) auto;
   }
 }
 
-#planar-workspace.is-fullscreen .phase-frame,
-#planar-workspace.is-fullscreen .bifurcation-frame,
-#planar-workspace.is-fullscreen .eigenvalue-frame,
-#planar-workspace.is-fullscreen .time-frame {
-  min-height: 0;
-}
-
 @media (max-width: 1179px) {
   #planar-workspace.is-fullscreen {
     grid-template-columns: minmax(250px, 285px) minmax(0, 1fr);
-  }
-
-  #planar-workspace.is-fullscreen .stage-stack {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
   }
 
   #planar-workspace.is-fullscreen .planar-stage {
@@ -1175,20 +1117,24 @@
   }
 
   #planar-workspace.is-fullscreen .planar-workbench {
-    grid-template-columns: 1fr;
-  }
-
-  #planar-workspace.is-fullscreen .phase-frame {
-    min-height: 560px;
-  }
-
-  #planar-workspace.is-fullscreen .analysis-column {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: minmax(330px, auto) minmax(170px, auto);
+    grid-template-rows: auto auto minmax(260px, auto);
+    grid-template-areas:
+      "phase phase"
+      "spectrum spectrum"
+      "stability time";
   }
+}
 
-  #planar-workspace.is-fullscreen .time-panel {
-    grid-column: 1 / -1;
+@media (max-width: 1040px) {
+  #planar-workspace.is-fullscreen .planar-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(340px, auto) minmax(190px, auto);
+    grid-template-areas:
+      "phase"
+      "spectrum"
+      "stability"
+      "time";
   }
 }
 
@@ -1206,19 +1152,6 @@
 
   #planar-workspace.is-fullscreen .stage-stack {
     margin-top: 0.72rem;
-  }
-
-  #planar-workspace.is-fullscreen .phase-frame {
-    min-height: min(90vw, 560px);
-  }
-
-  #planar-workspace.is-fullscreen .analysis-column {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-  }
-
-  #planar-workspace.is-fullscreen .time-panel {
-    grid-column: auto;
   }
 }
 

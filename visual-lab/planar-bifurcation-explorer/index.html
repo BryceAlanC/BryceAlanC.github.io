@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261105-3" />
-    <script type="module" src="./demo.js?v=20261105-3"></script>
+    <link rel="stylesheet" href="./style.css?v=20261105-4" />
+    <script type="module" src="./demo.js?v=20261105-4"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -459,17 +459,16 @@
                           id="eigenvalue-canvas"
                           role="img"
                           aria-label="Jacobian eigenvalues in the complex plane"
-                          aria-describedby="eigenvalue-description stability-readout"
+                          aria-describedby="eigenvalue-description eigenvalue-summary stability-readout"
                         >
-                          Eigenvalues of the selected equilibrium.
+                          Eigenvalues of all equilibria at the selected parameter.
                         </canvas>
-                        <span class="eigenvalue-axis-label eigenvalue-real" aria-hidden="true">Re λ</span>
-                        <span class="eigenvalue-axis-label eigenvalue-imaginary" aria-hidden="true">Im λ</span>
                         <p class="sr-only" id="eigenvalue-description">
-                          The imaginary axis separates local contraction from local expansion.
-                          Faint trails show how the selected object's eigenvalues move for nearby
-                          parameter values.
+                          The horizontal axis is real and the vertical axis is imaginary.
+                          Gold markers and faint trails identify the selected equilibrium.
+                          Outlined markers show other equilibria. A count marks coincident eigenvalues.
                         </p>
+                        <p class="sr-only" id="eigenvalue-summary"></p>
                       </div>
                       <div class="stability-readout" id="stability-readout">
                         <div class="jacobian-block">
