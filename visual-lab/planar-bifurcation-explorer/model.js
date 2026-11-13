@@ -82,6 +82,7 @@ function makePreset(definition) {
     variants: Object.freeze((definition.variants || []).map(String)),
     variant: definition.variant == null ? null : String(definition.variant),
     sourceType: String(definition.sourceType || "preset"),
+    hasAnalyticCycles: definition.sourceType !== "custom" || Boolean(definition.hasAnalyticCycles),
     expression1: definition.expression1 == null ? null : String(definition.expression1),
     expression2: definition.expression2 == null ? null : String(definition.expression2),
     expressionUsesParameter: Boolean(definition.expressionUsesParameter),
@@ -152,7 +153,8 @@ function normalizeCustomExpressionSource(source) {
     .replace(/[×·]/g, "*")
     .replace(/÷/g, "/")
     .replace(/π/g, "pi")
-    .replace(/[μµ]/g, "mu")
+    .replace(/[μµ]/g, " mu ")
+    .replace(/ρ/g, " rho ")
     .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (digits) => `^${[...digits].map((digit) => CUSTOM_SUPERSCRIPT_DIGITS[digit]).join("")}`);
 }
 
@@ -228,11 +230,16 @@ function parseCustomExpressionTokens(tokens) {
         variables.add(name);
         return makeNode({ type: "variable", name });
       }
+      if (name === "rho") {
+        variables.add("x1");
+        variables.add("x2");
+        return makeNode({ type: "radius" });
+      }
       if (name === "pi" || name === "e") {
         return makeNode({ type: "number", value: name === "pi" ? Math.PI : Math.E });
       }
       if (!Object.prototype.hasOwnProperty.call(CUSTOM_EXPRESSION_FUNCTIONS, name)) {
-        throw customExpressionSyntaxError(`Unknown name "${token.value}"; use x1, x2, r, pi, e, or a supported function`, token.position);
+        throw customExpressionSyntaxError(`Unknown name "${token.value}"; use x1, x2, r, rho, pi, e, or a supported function`, token.position);
       }
       if (peek().type !== "left") {
         throw customExpressionSyntaxError(`Function "${token.value}" needs parentheses`, peek().position);
@@ -307,6 +314,7 @@ function parseCustomExpressionTokens(tokens) {
 function evaluateCustomExpressionNode(node, x1, x2, r) {
   if (node.type === "number") return node.value;
   if (node.type === "variable") return node.name === "x1" ? x1 : node.name === "x2" ? x2 : r;
+  if (node.type === "radius") return Math.hypot(x1, x2);
   if (node.type === "unary") {
     const value = evaluateCustomExpressionNode(node.argument, x1, x2, r);
     return node.operator === "-" ? -value : value;
@@ -331,6 +339,7 @@ export function compilePlanarExpression(source) {
   return Object.freeze({
     source: String(source).trim(),
     canonical: normalized,
+    ast: parsed.ast,
     variables: parsed.variables,
     usesX1: variableSet.has("x1"),
     usesX2: variableSet.has("x2"),
@@ -344,6 +353,84 @@ export function compilePlanarExpression(source) {
       }
     }
   });
+}
+
+// Expand only polynomials of degree at most three in x, y, and r. A key
+// such as "xyy" represents x*y^2; the empty key is the constant term.
+function cubicPolynomial(node) {
+  if (node.type === "number") return new Map([["", node.value]]);
+  if (node.type === "variable") {
+    const variable = { x1: "x", x2: "y", r: "r" }[node.name];
+    return new Map([[variable, 1]]);
+  }
+  if (node.type === "unary") {
+    const terms = cubicPolynomial(node.argument);
+    return terms && scalePolynomial(terms, node.operator === "-" ? -1 : 1);
+  }
+  if (node.type !== "binary") return null;
+  if (node.operator === "^" && node.left.type === "radius"
+      && node.right.type === "number" && node.right.value === 2) {
+    return new Map([["xx", 1], ["yy", 1]]);
+  }
+
+  const left = cubicPolynomial(node.left);
+  const right = cubicPolynomial(node.right);
+  if (!left || !right) return null;
+  if (node.operator === "+" || node.operator === "-") {
+    const sign = node.operator === "-" ? -1 : 1;
+    for (const [key, value] of right) {
+      left.set(key, (left.get(key) ?? 0) + sign * value);
+    }
+    return left;
+  }
+  if (node.operator === "*") return multiplyCubicPolynomials(left, right);
+  if (right.size !== 1 || !right.has("")) return null;
+  const constant = right.get("");
+  if (node.operator === "/") {
+    return Number.isFinite(constant) && constant !== 0 ? scalePolynomial(left, 1 / constant) : null;
+  }
+  if (!Number.isInteger(constant) || constant < 0 || constant > 3) return null;
+  let power = new Map([["", 1]]);
+  for (let index = 0; index < constant && power; index += 1) {
+    power = multiplyCubicPolynomials(power, left);
+  }
+  return power;
+}
+
+function scalePolynomial(terms, scalar) {
+  return new Map([...terms].map(([key, value]) => [key, value * scalar]));
+}
+
+function multiplyCubicPolynomials(left, right) {
+  const product = new Map();
+  for (const [leftKey, leftValue] of left) {
+    for (const [rightKey, rightValue] of right) {
+      const key = [...leftKey, ...rightKey].sort().join("");
+      if (key.length > 3) return null;
+      product.set(key, (product.get(key) ?? 0) + leftValue * rightValue);
+    }
+  }
+  return product;
+}
+
+function matchHopfNormalForm(first, second) {
+  const xTerms = cubicPolynomial(first.ast);
+  const yTerms = cubicPolynomial(second.ast);
+  if (!xTerms || !yTerms) return null;
+  const cubic = xTerms.get("xxx");
+  const speed = yTerms.get("x");
+  if (!Number.isFinite(cubic) || Math.abs(cubic) <= DEFAULT_TOLERANCE
+      || !Number.isFinite(speed) || Math.abs(speed) <= DEFAULT_TOLERANCE) return null;
+
+  function matches(terms, expected) {
+    return Object.entries(expected).every(([key, coefficient]) => terms.get(key) === coefficient)
+      && [...terms].every(([key, coefficient]) => coefficient === 0 || Object.hasOwn(expected, key));
+  }
+
+  return matches(xTerms, { rx: 1, xxx: cubic, xyy: cubic, y: -speed })
+    && matches(yTerms, { ry: 1, xxy: cubic, yyy: cubic, x: speed })
+    ? hopfNormalFormDefinition(cubic, speed)
+    : null;
 }
 
 function finiteVector(value) {
@@ -525,6 +612,33 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     throw new RangeError("At one parameter value, every visible state is an equilibrium. This viewer currently requires isolated equilibria.");
   }
 
+  const hopf = matchHopfNormalForm(first, second);
+  const idSeed = [first.canonical, second.canonical, xRange, yRange, parameterRange, observable].join("|");
+  const custom = {
+    id: `custom-${hashCustomSystem(idSeed)}`,
+    sourceType: "custom",
+    expression1: first.source,
+    expression2: second.source,
+    expressionUsesParameter: first.usesR || second.usesR,
+    parameterRange,
+    phaseWindow: { x: xRange, y: yRange },
+    formula: `ẋ₁ = ${first.source},   ẋ₂ = ${second.source}`
+  };
+  if (hopf) {
+    const originVisible = xRange[0] <= 0 && xRange[1] >= 0 && yRange[0] <= 0 && yRange[1] >= 0;
+    return makePreset({
+      ...hopf,
+      ...custom,
+      hasAnalyticCycles: true,
+      defaultParameter: clamp(hopf.defaultParameter, ...parameterRange),
+      criticalValues: hopf.criticalValues.filter(({ parameter }) =>
+        parameter >= parameterRange[0] && parameter <= parameterRange[1]),
+      equilibria: () => originVisible ? hopf.equilibria() : [],
+      branches: (parameter) => hopf.branches(parameter)
+        .filter((branch) => originVisible || branch.kind !== "equilibrium")
+    });
+  }
+
   const equilibriumCache = new Map();
   const findEquilibria = (parameter) => {
     const key = Number(parameter).toPrecision(13);
@@ -560,25 +674,17 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     ? 0
     : (parameterRange[0] + parameterRange[1]) / 2;
   const observableName = observable === "y" ? "x2" : "x1";
-  const idSeed = [first.canonical, second.canonical, xRange, yRange, parameterRange, observable].join("|");
   return makePreset({
-    id: `custom-${hashCustomSystem(idSeed)}`,
+    ...custom,
     name: "Custom planar system",
     shortName: "Custom system",
-    formula: `ẋ₁ = ${first.source},   ẋ₂ = ${second.source}`,
     description: first.usesR || second.usesR
       ? "A user-authored one-parameter planar system."
       : "A user-authored planar flow with no parameter r in either equation.",
     lesson: "Equilibria, Jacobians, and branches are detected numerically; periodic orbits are not inferred automatically.",
     scope: "local",
     genericity: "numerical",
-    sourceType: "custom",
-    expression1: first.source,
-    expression2: second.source,
-    expressionUsesParameter: first.usesR || second.usesR,
-    parameterRange,
     defaultParameter,
-    phaseWindow: { x: xRange, y: yRange },
     observable,
     observableLabel: `equilibrium ${observableName}`,
     observableRange: observable === "y" ? yRange : xRange,
@@ -753,22 +859,24 @@ function pitchforkDefinition(variant = "supercritical") {
   };
 }
 
-function hopfNormalFormDefinition(cubicSign) {
-  const subcritical = cubicSign > 0;
+function hopfNormalFormDefinition(cubic, angularVelocity = 1) {
+  const subcritical = cubic > 0;
   const type = subcritical ? "Subcritical Hopf" : "Supercritical Hopf";
   const operator = subcritical ? "+" : "−";
+  const cubicMagnitude = Math.abs(cubic) === 1 ? "" : String(Math.abs(cubic));
+  const rotationMagnitude = angularVelocity === 1 ? "" : `(${angularVelocity})`;
   const circle = (mu) => ({
-    radius: Math.sqrt(Math.max(0, -mu / cubicSign)),
+    radius: Math.sqrt(Math.max(0, -mu / cubic)),
     radialDerivative: -2 * mu,
-    angularVelocity: 1,
+    angularVelocity,
     label: subcritical ? "Unstable limit cycle" : "Stable limit cycle"
   });
   return {
     id: subcritical ? "subcritical-hopf-normal-form" : "supercritical-hopf",
-    name: type + " (normal form)",
-    shortName: type + " (normal form)",
-    formula: "ẋ = (μ " + operator + " ρ²)x − y,   ẏ = x + (μ " + operator + " ρ²)y",
-    polarFormula: "ρ̇ = ρ(μ " + operator + " ρ²),   θ̇ = 1",
+    name: `${type} (normal form)`,
+    shortName: `${type} (normal form)`,
+    formula: `ẋ = (μ ${operator} ${cubicMagnitude}ρ²)x − ${rotationMagnitude}y,   ẏ = ${rotationMagnitude}x + (μ ${operator} ${cubicMagnitude}ρ²)y`,
+    polarFormula: `ρ̇ = ρ(μ ${operator} ${cubicMagnitude}ρ²),   θ̇ = ${angularVelocity}`,
     description: subcritical
       ? "A repelling periodic orbit shrinks into the origin as r increases to zero."
       : "An attracting periodic orbit grows from the origin as r increases above zero.",
@@ -786,22 +894,22 @@ function hopfNormalFormDefinition(cubicSign) {
     criticalValues: [{ parameter: 0, type: subcritical ? "subcritical-hopf" : "supercritical-hopf", label: "Hopf point", scope: "local" }],
     field(x, y, mu) {
       const squareRadius = x * x + y * y;
-      const radialRate = mu + cubicSign * squareRadius;
-      return [radialRate * x - y, x + radialRate * y];
+      const radialRate = mu + cubic * squareRadius;
+      return [radialRate * x - angularVelocity * y, angularVelocity * x + radialRate * y];
     },
     jacobian(x, y, mu) {
-      const radialRate = mu + cubicSign * (x * x + y * y);
-      return radialJacobian(x, y, radialRate, 2 * cubicSign * x, 2 * cubicSign * y);
+      const radialRate = mu + cubic * (x * x + y * y);
+      return radialJacobian(x, y, radialRate, 2 * cubic * x, 2 * cubic * y, angularVelocity);
     },
     equilibria() {
       return [{ x: 0, y: 0, label: "Central focus" }];
     },
     cycles(mu) {
-      return -mu / cubicSign > DEFAULT_TOLERANCE ? [circle(mu)] : [];
+      return -mu / cubic > 0 ? [circle(mu)] : [];
     },
     branches(mu) {
       const result = [{ branchId: "origin", kind: "equilibrium", x: 0, y: 0, observable: 0 }];
-      if (-mu / cubicSign >= 0) {
+      if (-mu / cubic >= 0) {
         result.push({ branchId: "cycle", kind: "cycle", ...circle(mu) });
       }
       return result;
@@ -854,10 +962,10 @@ function varyingSpeedHopfDefinition() {
   };
 }
 
-function radialJacobian(x, y, radialRate, radialRateX, radialRateY) {
+function radialJacobian(x, y, radialRate, radialRateX, radialRateY, angularVelocity = 1) {
   return [
-    [radialRate + x * radialRateX, -1 + x * radialRateY],
-    [1 + y * radialRateX, radialRate + y * radialRateY]
+    [radialRate + x * radialRateX, -angularVelocity + x * radialRateY],
+    [angularVelocity + y * radialRateX, radialRate + y * radialRateY]
   ];
 }
 
@@ -1883,7 +1991,7 @@ export function sampleBranches(presetOrId, options = {}) {
     ? preset.parameterRange
     : freezeRange(options.parameterRange, "branch parameter range");
   const count = clamp(Math.round(options.samples == null ? 181 : positiveNumber(options.samples, "branch samples")), 2, 5001);
-  if (preset.sourceType === "custom") return sampleCustomBranches(preset, range, count);
+  if (!preset.hasAnalyticCycles) return sampleCustomBranches(preset, range, count);
   const parameters = sampleParameters(range, count, preset.criticalValues);
   const branchMap = new Map();
 

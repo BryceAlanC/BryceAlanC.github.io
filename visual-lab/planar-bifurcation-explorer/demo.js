@@ -12,7 +12,7 @@ import {
   buildSpectrum,
   spectrumAtPosition,
   spectrumSlice
-} from "./model.js?v=20261112-1";
+} from "./model.js?v=20261112-2";
 import { drawSpectrumView } from "./spectrum-view.js?v=20261105-3";
 
 const COLORS = Object.freeze({
@@ -592,9 +592,9 @@ function refreshObjects(options = {}) {
     }
     if (!state.cycles.length) {
       const item = document.createElement("li");
-      item.textContent = state.family.sourceType === "custom"
-        ? "Periodic orbits are not detected automatically for custom systems."
-        : "No periodic orbit detected in the current window.";
+      item.textContent = state.family.hasAnalyticCycles
+        ? "No periodic orbit at this parameter value."
+        : "Periodic orbits are available for presets and recognized cubic Hopf normal forms.";
       elements.objectList.append(item);
     }
     if (!state.objects.length) {
@@ -770,7 +770,7 @@ function updateFamilyCopy() {
   if (elements.telemetryFamily) elements.telemetryFamily.textContent = state.family.shortName;
   if (elements.eventList) {
     elements.eventList.replaceChildren();
-    if (state.family.sourceType === "custom" && !state.family.criticalValues.length) {
+    if (!state.family.hasAnalyticCycles) {
       const item = document.createElement("li");
       const strong = document.createElement("strong");
       const span = document.createElement("span");
@@ -815,9 +815,9 @@ function updateTelemetry() {
       : "";
     elements.stageStatus.textContent = state.equilibria.nonisolated
       ? "Nonisolated equilibrium set · isolated-point analysis unavailable"
-      : state.family.sourceType === "custom"
-      ? `${state.equilibria.length} numerical ${equilibriumWord} · periodic-orbit detection unavailable`
-      : `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`;
+      : state.family.hasAnalyticCycles
+      ? `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`
+      : `${state.equilibria.length} numerical ${equilibriumWord} · periodic-orbit detection unavailable`;
   }
 }
 
@@ -1054,7 +1054,7 @@ function loadFamily(id, options = {}) {
   state.spectrumPhasePoint = null;
   const isHopf = state.family.id === HOPF_PRESET_ID;
   elements.spectrumPhaseControls.hidden = !isHopf;
-  elements.showSpectrumRegions.checked = state.spectrumRegionsPreference ?? !isHopf;
+  elements.showSpectrumRegions.checked = state.spectrumRegionsPreference ?? true;
   state.userSeeds = [];
   state.trajectories = [];
   state.selectedTrajectoryId = null;
@@ -1489,6 +1489,7 @@ function nearbyEigenvalueTrail(equilibrium) {
     let nearestBranch = null;
     let nearestDistance = Infinity;
     for (const branch of state.branchDiagram.branches) {
+      if (branch.kind !== "equilibrium") continue;
       for (const point of branch.points) {
         const distance = Math.hypot(
           (point.parameter - state.parameter) / span,

@@ -420,6 +420,8 @@ for (const id of model.PRESET_IDS) {
     near(rhs.evaluate(0.5, 0, -0.25), 0);
     near(rhs.evaluate(0.5, 0, 0), 0.125);
   }
+  near(model.compilePlanarExpression("μx - y").evaluate(2, 3, 4), 5);
+  near(model.compilePlanarExpression("2ρ^2 + rho").evaluate(3, 4, 0), 55);
   assert.ok(Number.isNaN(model.compilePlanarExpression("sqrt(x1)").evaluate(-1, 0, 0)));
   assert.throws(() => model.compilePlanarExpression("window.alert(1)"), /Unsupported character|Unknown name/);
   assert.throws(() => model.compilePlanarExpression(""), /Enter a right-hand side/);
@@ -455,6 +457,59 @@ for (const id of model.PRESET_IDS) {
   const branches = model.sampleBranches(custom, { samples: 31 });
   assert.equal(branches.observable, "y");
   assert.ok(branches.branches.some((branch) => branch.points.length >= 25));
+}
+
+{
+  const cases = [
+    {
+      equations: ["(μ - ρ²)x - y", "x + (μ - ρ²)y"],
+      parameter: 0.25, period: 2 * Math.PI, determinant: 1, stability: "stable",
+      radialCubic: -1, angularVelocity: 1
+    },
+    {
+      equations: ["μx + x^3 + x*y^2 - y", "x + μy + x^2*y + y^3"],
+      parameter: -0.25, period: 2 * Math.PI, determinant: 1, stability: "unstable",
+      radialCubic: 1, angularVelocity: 1
+    },
+    {
+      equations: ["(mu - 2*rho^2)*x - 2*y", "2*x + (mu - 2*rho^2)*y"],
+      parameter: 0.5, period: Math.PI, determinant: 4, stability: "stable",
+      radialCubic: -2, angularVelocity: 2
+    }
+  ];
+  for (const { equations, parameter, period, determinant, stability, radialCubic, angularVelocity } of cases) {
+    const custom = model.createCustomPreset(...equations, { x1Range: [-2, 2], parameterRange: [-1, 1] });
+    assert.equal(custom.sourceType, "custom");
+    assert.equal(custom.hasAnalyticCycles, true);
+    assert.equal(custom.expression1, equations[0]);
+    assert.deepEqual(custom.phaseWindow.x, [-2, 2]);
+    assert.equal(custom.criticalValues[0].parameter, 0);
+    const [orbit] = model.cyclesAt(custom, parameter);
+    near(orbit.radius, 0.5);
+    near(orbit.period, period);
+    near(orbit.floquetMultiplier, Math.exp(-2 * parameter * period));
+    assert.equal(orbit.stability, stability);
+    assert.deepEqual(model.cyclesAt(custom, 0), []);
+    assert.deepEqual(model.cyclesAt(custom, -parameter), []);
+    near(model.fieldAt(custom, 0.5, 0, parameter)[0], 0);
+    near(model.fieldAt(custom, 0.5, 0, parameter)[1], angularVelocity * 0.5);
+    const [spectralOrbit] = model.spectrumSlice(custom, parameter).orbits;
+    assert.equal(spectralOrbit.points.length, 1);
+    near(spectralOrbit.points[0].trace, -2 * parameter);
+    near(spectralOrbit.points[0].determinant, determinant);
+    const cycle = model.sampleBranches(custom).branches.find((branch) => branch.id === "cycle");
+    near(cycle.points.find((point) => point.parameter === 0).radius, 0);
+    assert.ok(cycle.points.some((point) => point.stability === stability));
+    near(model.jacobianAt(custom, 0.5, 0, parameter)[0][0], parameter + 0.75 * radialCubic);
+  }
+
+  for (const extra of ["1e-14*x^2", "0/x", "x^4"]) {
+    const custom = model.createCustomPreset(
+      `(r+x^2+y^2)*x-y + ${extra}`, "x+(r+x^2+y^2)*y"
+    );
+    assert.equal(custom.hasAnalyticCycles, false);
+    assert.deepEqual(model.cyclesAt(custom, -0.25), []);
+  }
 }
 
 {
