@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261112-3" />
-    <script type="module" src="./demo.js?v=20261112-2"></script>
+    <link rel="stylesheet" href="./style.css?v=20261113-1" />
+    <script type="module" src="./demo.js?v=20261113-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -442,20 +442,40 @@
                         to reset the view.
                       </p>
                     </div>
-                    <div class="spectrum-phase" id="spectrum-phase-controls" hidden>
-                      <label class="field-label" for="spectrum-phase">
-                        Cycle phase <span id="spectrum-phase-angle"></span>
-                      </label>
-                      <input id="spectrum-phase" type="range" min="0" max="360" step="1" value="30"
-                        aria-describedby="spectrum-phase-jacobian spectrum-phase-stability" />
-                      <p id="spectrum-phase-jacobian"></p>
-                      <p id="spectrum-phase-stability"></p>
+                  </section>
+
+                  <section class="visual-panel time-panel" aria-labelledby="time-title">
+                    <div class="panel-heading panel-heading-compact">
+                      <div><span>03</span><h3 id="time-title">Selected trajectory through time</h3></div>
+                      <p id="time-trace-label">x(t) and y(t)</p>
+                    </div>
+                    <div class="canvas-frame time-frame">
+                      <canvas
+                        id="time-canvas"
+                        role="img"
+                        aria-label="Time traces of x and y along the selected trajectory"
+                        aria-describedby="time-description time-trace-label trajectory-summary"
+                      >
+                        Time traces for the selected trajectory.
+                      </canvas>
+                      <div class="time-legend" aria-hidden="true">
+                        <span><i class="line line-x"></i>x(t)</span>
+                        <span><i class="line line-y"></i>y(t)</span>
+                      </div>
+                      <p class="sr-only" id="time-description">
+                        The two curves show x and y as functions of time for the most recently
+                        selected or added trajectory. Their long-term behavior corresponds to the
+                        invariant objects shown in the phase portrait.
+                      </p>
+                      <p class="sr-only" id="trajectory-summary">
+                        The selected trajectory begins at x = 1.20, y = 0.20.
+                      </p>
                     </div>
                   </section>
 
                   <section class="visual-panel stability-panel" aria-labelledby="stability-title">
                     <div class="panel-heading panel-heading-dark">
-                      <div><span>03</span><h3 id="stability-title">Local stability</h3></div>
+                      <div><span>04</span><h3 id="stability-title">Local stability</h3></div>
                       <p id="stability-object-label">E1 · equilibrium</p>
                     </div>
                     <div class="stability-grid">
@@ -487,35 +507,6 @@
                           <div><dt>Classification</dt><dd id="classification-value">Repelling focus</dd></div>
                         </dl>
                       </div>
-                    </div>
-                  </section>
-
-                  <section class="visual-panel time-panel" aria-labelledby="time-title">
-                    <div class="panel-heading panel-heading-compact">
-                      <div><span>04</span><h3 id="time-title">Selected trajectory through time</h3></div>
-                      <p id="time-trace-label">x(t) and y(t)</p>
-                    </div>
-                    <div class="canvas-frame time-frame">
-                      <canvas
-                        id="time-canvas"
-                        role="img"
-                        aria-label="Time traces of x and y along the selected trajectory"
-                        aria-describedby="time-description time-trace-label trajectory-summary"
-                      >
-                        Time traces for the selected trajectory.
-                      </canvas>
-                      <div class="time-legend" aria-hidden="true">
-                        <span><i class="line line-x"></i>x(t)</span>
-                        <span><i class="line line-y"></i>y(t)</span>
-                      </div>
-                      <p class="sr-only" id="time-description">
-                        The two curves show x and y as functions of time for the most recently
-                        selected or added trajectory. Their long-term behavior corresponds to the
-                        invariant objects shown in the phase portrait.
-                      </p>
-                      <p class="sr-only" id="trajectory-summary">
-                        The selected trajectory begins at x = 1.20, y = 0.20.
-                      </p>
                     </div>
                   </section>
                 </div>

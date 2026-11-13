@@ -367,12 +367,11 @@
 .planar-workbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
-  grid-template-rows: auto minmax(260px, auto) minmax(190px, auto);
+  grid-template-columns: minmax(360px, 1.02fr) minmax(0, 0.98fr);
+  grid-template-rows: auto minmax(260px, auto);
   grid-template-areas:
     "phase spectrum"
-    "stability spectrum"
-    "time time";
+    "stability time";
   align-items: stretch;
   background: #0c2621;
 }
@@ -392,34 +391,7 @@
 
 .bifurcation-panel {
   grid-area: spectrum;
-  grid-template-rows: auto auto minmax(clamp(310px, 39vw, 465px), 1fr) auto;
-}
-
-.spectrum-phase {
-  padding: 0.5rem 0.75rem 0.65rem;
-  border-top: 1px solid var(--hairline);
-}
-
-.spectrum-phase label {
-  display: flex;
-  justify-content: space-between;
-  margin: 0;
-}
-
-.spectrum-phase input {
-  width: 100%;
-  margin: 0.25rem 0;
-  accent-color: #16847e;
-}
-
-.spectrum-phase p {
-  margin: 0;
-  color: var(--ink);
-  font: 0.75rem/1.45 var(--mono);
-}
-
-.spectrum-phase p + p:not(:empty) {
-  margin-top: 0.15rem;
+  grid-template-rows: auto auto minmax(clamp(310px, 39vw, 465px), 1fr);
 }
 
 .phase-panel {
@@ -526,7 +498,7 @@
 }
 
 .phase-frame {
-  min-height: clamp(350px, 31vw, 465px);
+  min-height: clamp(370px, 35vw, 500px);
   background:
     radial-gradient(circle at 50% 46%, rgba(22, 88, 75, 0.26), transparent 58%),
     #071c18;
@@ -706,7 +678,7 @@
   color: #4f55a1;
 }
 
-.bifurcation-panel:has(.spectrum-phase:not([hidden])) .line-spectrum-orbit {
+.bifurcation-panel[data-varying-speed-hopf] .line-spectrum-orbit {
   color: #16847e;
 }
 
@@ -908,20 +880,22 @@
 
 @media (max-width: 1060px) {
   .planar-workbench {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto auto minmax(260px, auto);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(210px, auto) minmax(340px, auto);
     grid-template-areas:
-      "phase phase"
-      "spectrum spectrum"
-      "stability time";
+      "phase"
+      "spectrum"
+      "time"
+      "stability";
   }
 
-  .phase-panel {
+  .phase-panel,
+  .stability-panel {
     border-right: 0;
   }
 
   .phase-frame {
-    min-height: clamp(310px, 46vw, 430px);
+    min-height: clamp(335px, 50vw, 460px);
   }
 }
 
@@ -932,20 +906,6 @@
 
   .object-controls {
     grid-column: 1 / -1;
-  }
-
-  .planar-workbench {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(340px, auto) minmax(190px, auto);
-    grid-template-areas:
-      "phase"
-      "spectrum"
-      "stability"
-      "time";
-  }
-
-  .stability-panel {
-    border-right: 0;
   }
 }
 
@@ -1094,7 +1054,7 @@
 
 @media (min-width: 1180px) {
   #planar-workspace.is-fullscreen .planar-workbench {
-    grid-template-rows: minmax(330px, 1.1fr) minmax(220px, 0.65fr) minmax(130px, 0.38fr);
+    grid-template-rows: minmax(370px, 1.35fr) minmax(225px, 0.65fr);
   }
 
   #planar-workspace.is-fullscreen .phase-frame {
@@ -1102,7 +1062,7 @@
   }
 
   #planar-workspace.is-fullscreen .bifurcation-panel {
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 }
 
@@ -1117,24 +1077,13 @@
   }
 
   #planar-workspace.is-fullscreen .planar-workbench {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto auto minmax(260px, auto);
-    grid-template-areas:
-      "phase phase"
-      "spectrum spectrum"
-      "stability time";
-  }
-}
-
-@media (max-width: 1040px) {
-  #planar-workspace.is-fullscreen .planar-workbench {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(340px, auto) minmax(190px, auto);
+    grid-template-rows: auto auto minmax(210px, auto) minmax(340px, auto);
     grid-template-areas:
       "phase"
       "spectrum"
-      "stability"
-      "time";
+      "time"
+      "stability";
   }
 }
 

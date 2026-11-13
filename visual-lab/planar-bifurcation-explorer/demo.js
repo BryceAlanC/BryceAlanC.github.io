@@ -10,10 +10,9 @@ import {
   sampleBranches,
   sampleNullclineSegments,
   buildSpectrum,
-  spectrumAtPosition,
   spectrumSlice
 } from "./model.js?v=20261112-2";
-import { drawSpectrumView } from "./spectrum-view.js?v=20261105-3";
+import { drawSpectrumView } from "./spectrum-view.js?v=20261113-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -86,11 +85,7 @@ const elements = {
   phaseParameterLabel: document.getElementById("phase-parameter-label"),
   homoclinicLegendItem: document.getElementById("homoclinic-legend-item"),
   showSpectrumRegions: document.getElementById("show-spectrum-regions"),
-  spectrumPhaseControls: document.getElementById("spectrum-phase-controls"),
-  spectrumPhase: document.getElementById("spectrum-phase"),
-  spectrumPhaseAngle: document.getElementById("spectrum-phase-angle"),
-  spectrumPhaseJacobian: document.getElementById("spectrum-phase-jacobian"),
-  spectrumPhaseStability: document.getElementById("spectrum-phase-stability"),
+  bifurcationPanel: document.querySelector(".bifurcation-panel"),
   stabilityObjectLabel: document.getElementById("stability-object-label"),
   linearizationTitle: document.getElementById("linearization-title"),
   jacobianMatrix: document.getElementById("jacobian-matrix"),
@@ -161,7 +156,6 @@ const state = {
   phaseView: null,
   spectrumData: null,
   spectrumSlice: null,
-  spectrumPhasePoint: null,
   spectrumRegionsPreference: null,
   spectrumView: { ...DEFAULT_SPECTRUM_VIEW },
   spectrumRenderKey: null,
@@ -821,38 +815,12 @@ function updateTelemetry() {
   }
 }
 
-function updateSpectrumPhase() {
-  const orbit = state.family.id === HOPF_PRESET_ID ? state.cycles[0] : null;
-  const phase = Number(elements.spectrumPhase.value);
-  elements.spectrumPhase.disabled = !orbit;
-  elements.spectrumPhaseAngle.textContent = orbit ? `${phase}\u00b0` : "";
-  elements.spectrumPhase.setAttribute("aria-valuetext", `${phase} degrees`);
-  state.spectrumPhasePoint = null;
-  if (!orbit) {
-    elements.spectrumPhaseJacobian.textContent = state.parameter === 0
-      ? "Hopf point. The equilibrium eigenvalues are \u00b1i."
-      : "The periodic orbit appears for r > 0.";
-    elements.spectrumPhaseStability.textContent = "";
-    return;
-  }
-  const radians = phase * Math.PI / 180;
-  const position = { x: orbit.radius * Math.cos(radians), y: orbit.radius * Math.sin(radians) };
-  const point = spectrumAtPosition(state.family, state.parameter, position, orbit.label);
-  state.spectrumPhasePoint = point;
-  const frozenType = point.boundary
-    ? point.boundary.replaceAll("-", " ")
-    : point.type.replace("focus", "spiral").replaceAll("-", " ");
-  elements.spectrumPhaseJacobian.textContent = `Frozen Jacobian at this phase: ${formatEigenvalues(point.eigenvalues)} (${frozenType})`;
-  elements.spectrumPhaseStability.textContent = `Whole orbit: attracting (transverse multiplier ${formatNumber(orbit.floquetMultiplier)})`;
-}
-
 function refreshSlice(options = {}) {
   const preferredObjectId = state.selectedObjectId;
   state.equilibria = equilibriaAt(state.family, state.parameter);
   state.cycles = cyclesAt(state.family, state.parameter);
   state.connections = connectionsAt(state.family, state.parameter);
   state.spectrumSlice = spectrumSlice(state.family, state.parameter, state.equilibria, state.cycles, state.connections);
-  if (state.family.id === HOPF_PRESET_ID) updateSpectrumPhase();
   state.spectrumRenderKey = null;
   state.phaseCache = null;
   refreshObjects({ preferredId: preferredObjectId });
@@ -1051,9 +1019,7 @@ function loadFamily(id, options = {}) {
   state.parameter = state.family.defaultParameter;
   state.branchDiagram = nextBranchDiagram;
   state.spectrumData = nextSpectrum;
-  state.spectrumPhasePoint = null;
-  const isHopf = state.family.id === HOPF_PRESET_ID;
-  elements.spectrumPhaseControls.hidden = !isHopf;
+  elements.bifurcationPanel?.toggleAttribute("data-varying-speed-hopf", state.family.id === HOPF_PRESET_ID);
   elements.showSpectrumRegions.checked = state.spectrumRegionsPreference ?? true;
   state.userSeeds = [];
   state.trajectories = [];
@@ -1472,8 +1438,7 @@ function drawBifurcationDiagram() {
     elevation,
     zoom,
     showRegions,
-    hopfView: state.family.id === HOPF_PRESET_ID,
-    phasePoint: state.spectrumPhasePoint
+    hopfView: state.family.id === HOPF_PRESET_ID
   });
   state.spectrumRenderKey = key;
 }
@@ -2139,11 +2104,6 @@ for (const [control, direction] of [
 elements.bifurcationFit?.addEventListener("click", fitBifurcation);
 elements.showSpectrumRegions?.addEventListener("change", () => {
   state.spectrumRegionsPreference = elements.showSpectrumRegions.checked;
-  drawBifurcationDiagram();
-});
-elements.spectrumPhase?.addEventListener("input", () => {
-  updateSpectrumPhase();
-  state.spectrumRenderKey = null;
   drawBifurcationDiagram();
 });
 elements.objectSelect?.addEventListener("change", () => selectObject(elements.objectSelect.value));

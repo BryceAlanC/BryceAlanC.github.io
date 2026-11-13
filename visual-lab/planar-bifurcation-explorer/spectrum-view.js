@@ -219,7 +219,7 @@ function numberLabel(value) {
 
 export function drawSpectrumView(context, width, height, {
   data, slice, parameter, parameterRange, azimuth, elevation, zoom = 1, showRegions = true,
-  hopfView = false, phasePoint = null
+  hopfView = false
 }) {
   context.save();
   context.fillStyle = PAPER;
@@ -398,8 +398,6 @@ export function drawSpectrumView(context, width, height, {
   }
   const hopfPoint = hopfView ? world(0, 1, 0) : null;
   if (hopfPoint) reserveMarker(hopfPoint, 6);
-  const selectedPhase = phasePoint && at(phasePoint, parameter);
-  if (selectedPhase) reserveMarker(selectedPhase, 7);
   function caption(point, label, color, size, positions) {
     const [x, y] = project(point);
     context.font = `${size >= 11 ? "600 " : ""}${size}px system-ui, sans-serif`;
@@ -560,7 +558,6 @@ export function drawSpectrumView(context, width, height, {
       line([projectedOrbit[index], projectedOrbit[next]], spectralColor(midpoint), hopfView ? 3.5 : 2.7);
     }
   }
-  if (selectedPhase) marker(selectedPhase, showRegions ? spectralColor(phasePoint) : INK, 6.2, true);
 
   for (const { position, points, offsets } of selected) {
     if (points.length > 1) {
