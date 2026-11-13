@@ -367,7 +367,7 @@
 .planar-workbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(360px, 0.75fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
   grid-template-rows: auto minmax(260px, auto) minmax(190px, auto);
   grid-template-areas:
     "phase spectrum"
@@ -392,7 +392,7 @@
 
 .bifurcation-panel {
   grid-area: spectrum;
-  grid-template-rows: auto auto minmax(clamp(330px, 42vw, 500px), 1fr) auto;
+  grid-template-rows: auto auto minmax(clamp(310px, 39vw, 465px), 1fr) auto;
 }
 
 .spectrum-phase {
@@ -526,7 +526,7 @@
 }
 
 .phase-frame {
-  min-height: clamp(330px, 28vw, 430px);
+  min-height: clamp(350px, 31vw, 465px);
   background:
     radial-gradient(circle at 50% 46%, rgba(22, 88, 75, 0.26), transparent 58%),
     #071c18;
@@ -921,7 +921,7 @@
   }
 
   .phase-frame {
-    min-height: clamp(290px, 43vw, 410px);
+    min-height: clamp(310px, 46vw, 430px);
   }
 }
 
@@ -1094,7 +1094,7 @@
 
 @media (min-width: 1180px) {
   #planar-workspace.is-fullscreen .planar-workbench {
-    grid-template-rows: minmax(310px, 1fr) minmax(235px, 0.75fr) minmax(130px, 0.38fr);
+    grid-template-rows: minmax(330px, 1.1fr) minmax(220px, 0.65fr) minmax(130px, 0.38fr);
   }
 
   #planar-workspace.is-fullscreen .phase-frame {
