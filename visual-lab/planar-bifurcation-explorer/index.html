@@ -26,7 +26,7 @@
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
     <link rel="stylesheet" href="./style.css?v=20261113-1" />
-    <script type="module" src="./demo.js?v=20261113-3"></script>
+    <script type="module" src="./demo.js?v=20261113-4"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -157,9 +157,10 @@
                 Enter only the Cartesian right-hand sides. Use x1 and x2 (or x and y)
                 for the states and r, mu, or &mu; for the parameter. The name rho
                 (or &rho;) means sqrt(x^2 + y^2). Use + - * / ^, parentheses, pi, e,
-                and functions such as sin, cos, exp, log, sqrt, or abs. Cubic Hopf
-                normal forms also show their periodic orbits. Replace s with +1
-                or -1 if you are using the lecture notation.
+                and functions such as sin, cos, exp, log, sqrt, or abs. The plot
+                searches the chosen window for attracting and repelling cycles.
+                Choose a window that contains the entire orbit. The numerical search can miss cycles.
+                Replace s with +1 or -1 if you are using the lecture notation.
               </p>
               <details class="control-details">
                 <summary>Plot window and parameter range</summary>
@@ -551,6 +552,9 @@
                 <span class="nowrap">r &lt; 0</span>. The bounded subcritical family adds a
                 quintic term and has an attracting outer orbit near the Hopf point. For the
                 homoclinic preset, periodic-orbit paths are approximated numerically.
+                For a custom system, the phase portrait and trace-determinant diagram
+                show the limit cycles the search finds. Narrow the plot window around
+                a cycle if it is small compared with the full phase portrait.
               </p>
               <p class="app-note">
                 <strong>Parameter sweeps.</strong> Each fixed value of

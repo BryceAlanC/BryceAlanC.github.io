@@ -13,6 +13,8 @@
  * changing the mathematics.
  */
 
+import { findPlanarCycles } from "./cycle-search.js";
+
 const DEFAULT_TOLERANCE = 1e-9;
 const TWO_PI = 2 * Math.PI;
 
@@ -83,6 +85,7 @@ function makePreset(definition) {
     variant: definition.variant == null ? null : String(definition.variant),
     sourceType: String(definition.sourceType || "preset"),
     hasAnalyticCycles: definition.sourceType !== "custom" || Boolean(definition.hasAnalyticCycles),
+    hasNumericalCycles: Boolean(definition.hasNumericalCycles),
     expression1: definition.expression1 == null ? null : String(definition.expression1),
     expression2: definition.expression2 == null ? null : String(definition.expression2),
     expressionUsesParameter: Boolean(definition.expressionUsesParameter),
@@ -355,26 +358,24 @@ export function compilePlanarExpression(source) {
   });
 }
 
-// Expand only polynomials of degree at most three in x, y, and r. A key
+// Expand only polynomials of degree at most five in x, y, and r. A key
 // such as "xyy" represents x*y^2; the empty key is the constant term.
-function cubicPolynomial(node) {
+const MAX_ANALYTIC_POLYNOMIAL_DEGREE = 5;
+
+function boundedPolynomial(node) {
   if (node.type === "number") return new Map([["", node.value]]);
   if (node.type === "variable") {
     const variable = { x1: "x", x2: "y", r: "r" }[node.name];
     return new Map([[variable, 1]]);
   }
   if (node.type === "unary") {
-    const terms = cubicPolynomial(node.argument);
+    const terms = boundedPolynomial(node.argument);
     return terms && scalePolynomial(terms, node.operator === "-" ? -1 : 1);
   }
   if (node.type !== "binary") return null;
-  if (node.operator === "^" && node.left.type === "radius"
-      && node.right.type === "number" && node.right.value === 2) {
-    return new Map([["xx", 1], ["yy", 1]]);
-  }
-
-  const left = cubicPolynomial(node.left);
-  const right = cubicPolynomial(node.right);
+  const radialPower = node.operator === "^" && node.left.type === "radius";
+  const left = radialPower ? new Map([["xx", 1], ["yy", 1]]) : boundedPolynomial(node.left);
+  const right = boundedPolynomial(node.right);
   if (!left || !right) return null;
   if (node.operator === "+" || node.operator === "-") {
     const sign = node.operator === "-" ? -1 : 1;
@@ -383,16 +384,17 @@ function cubicPolynomial(node) {
     }
     return left;
   }
-  if (node.operator === "*") return multiplyCubicPolynomials(left, right);
+  if (node.operator === "*") return multiplyBoundedPolynomials(left, right);
   if (right.size !== 1 || !right.has("")) return null;
   const constant = right.get("");
   if (node.operator === "/") {
     return Number.isFinite(constant) && constant !== 0 ? scalePolynomial(left, 1 / constant) : null;
   }
-  if (!Number.isInteger(constant) || constant < 0 || constant > 3) return null;
+  const exponent = radialPower ? constant / 2 : constant;
+  if (!Number.isInteger(exponent) || exponent < 0 || exponent > MAX_ANALYTIC_POLYNOMIAL_DEGREE) return null;
   let power = new Map([["", 1]]);
-  for (let index = 0; index < constant && power; index += 1) {
-    power = multiplyCubicPolynomials(power, left);
+  for (let index = 0; index < exponent && power; index += 1) {
+    power = multiplyBoundedPolynomials(power, left);
   }
   return power;
 }
@@ -401,36 +403,45 @@ function scalePolynomial(terms, scalar) {
   return new Map([...terms].map(([key, value]) => [key, value * scalar]));
 }
 
-function multiplyCubicPolynomials(left, right) {
+function multiplyBoundedPolynomials(left, right) {
   const product = new Map();
   for (const [leftKey, leftValue] of left) {
     for (const [rightKey, rightValue] of right) {
       const key = [...leftKey, ...rightKey].sort().join("");
-      if (key.length > 3) return null;
+      if (key.length > MAX_ANALYTIC_POLYNOMIAL_DEGREE) return null;
       product.set(key, (product.get(key) ?? 0) + leftValue * rightValue);
     }
   }
   return product;
 }
 
-function matchHopfNormalForm(first, second) {
-  const xTerms = cubicPolynomial(first.ast);
-  const yTerms = cubicPolynomial(second.ast);
+function matchAnalyticCycleFamily(first, second) {
+  const xTerms = boundedPolynomial(first.ast);
+  const yTerms = boundedPolynomial(second.ast);
   if (!xTerms || !yTerms) return null;
-  const cubic = xTerms.get("xxx");
   const speed = yTerms.get("x");
-  if (!Number.isFinite(cubic) || Math.abs(cubic) <= DEFAULT_TOLERANCE
-      || !Number.isFinite(speed) || Math.abs(speed) <= DEFAULT_TOLERANCE) return null;
+  if (!Number.isFinite(speed) || Math.abs(speed) <= DEFAULT_TOLERANCE) return null;
 
   function matches(terms, expected) {
     return Object.entries(expected).every(([key, coefficient]) => terms.get(key) === coefficient)
       && [...terms].every(([key, coefficient]) => coefficient === 0 || Object.hasOwn(expected, key));
   }
 
-  return matches(xTerms, { rx: 1, xxx: cubic, xyy: cubic, y: -speed })
-    && matches(yTerms, { ry: 1, xxy: cubic, yyy: cubic, x: speed })
-    ? hopfNormalFormDefinition(cubic, speed)
-    : null;
+  const cubic = xTerms.get("xxx");
+  if (Number.isFinite(cubic) && Math.abs(cubic) > DEFAULT_TOLERANCE
+      && matches(xTerms, { rx: 1, xxx: cubic, xyy: cubic, y: -speed })
+      && matches(yTerms, { ry: 1, xxy: cubic, yyy: cubic, x: speed })) {
+    return hopfNormalFormDefinition(cubic, speed);
+  }
+
+  // The radial rate (r + rho^2)(1 - rho^2) gives two exact circular branches.
+  if (matches(xTerms, { rx: 1, xxx: 1, xyy: 1, rxxx: -1, rxyy: -1,
+    xxxxx: -1, xxxyy: -2, xyyyy: -1, y: -speed })
+      && matches(yTerms, { ry: 1, xxy: 1, yyy: 1, rxxy: -1, ryyy: -1,
+        xxxxy: -1, xxyyy: -2, yyyyy: -1, x: speed })) {
+    return fixedRadiusHopfDefinition(speed);
+  }
+  return null;
 }
 
 function finiteVector(value) {
@@ -612,7 +623,7 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     throw new RangeError("At one parameter value, every visible state is an equilibrium. This viewer currently requires isolated equilibria.");
   }
 
-  const hopf = matchHopfNormalForm(first, second);
+  const analyticFamily = matchAnalyticCycleFamily(first, second);
   const idSeed = [first.canonical, second.canonical, xRange, yRange, parameterRange, observable].join("|");
   const custom = {
     id: `custom-${hashCustomSystem(idSeed)}`,
@@ -624,17 +635,17 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     phaseWindow: { x: xRange, y: yRange },
     formula: `ẋ₁ = ${first.source},   ẋ₂ = ${second.source}`
   };
-  if (hopf) {
+  if (analyticFamily) {
     const originVisible = xRange[0] <= 0 && xRange[1] >= 0 && yRange[0] <= 0 && yRange[1] >= 0;
     return makePreset({
-      ...hopf,
+      ...analyticFamily,
       ...custom,
       hasAnalyticCycles: true,
-      defaultParameter: clamp(hopf.defaultParameter, ...parameterRange),
-      criticalValues: hopf.criticalValues.filter(({ parameter }) =>
+      defaultParameter: clamp(analyticFamily.defaultParameter, ...parameterRange),
+      criticalValues: analyticFamily.criticalValues.filter(({ parameter }) =>
         parameter >= parameterRange[0] && parameter <= parameterRange[1]),
-      equilibria: () => originVisible ? hopf.equilibria() : [],
-      branches: (parameter) => hopf.branches(parameter)
+      equilibria: () => originVisible ? analyticFamily.equilibria() : [],
+      branches: (parameter) => analyticFamily.branches(parameter)
         .filter((branch) => originVisible || branch.kind !== "equilibrium")
     });
   }
@@ -674,14 +685,28 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     ? 0
     : (parameterRange[0] + parameterRange[1]) / 2;
   const observableName = observable === "y" ? "x2" : "x1";
+  const cycleCache = new Map();
+  const findCycles = (parameter, searchOptions) => {
+    const key = first.usesR || second.usesR ? parameter : 0;
+    if (cycleCache.has(key)) return cycleCache.get(key);
+    const equilibria = findEquilibria(parameter);
+    const cycles = equilibria.nonisolated ? []
+      : findPlanarCycles(field, parameter, custom.phaseWindow, equilibria, searchOptions);
+    if (!searchOptions?.fast) {
+      if (cycleCache.size >= 80) cycleCache.delete(cycleCache.keys().next().value);
+      cycleCache.set(key, cycles);
+    }
+    return cycles;
+  };
   return makePreset({
     ...custom,
+    hasNumericalCycles: true,
     name: "Custom planar system",
     shortName: "Custom system",
     description: first.usesR || second.usesR
       ? "A user-authored one-parameter planar system."
       : "A user-authored planar flow with no parameter r in either equation.",
-    lesson: "Equilibria, Jacobians, and branches are detected numerically; periodic orbits are not inferred automatically.",
+    lesson: "Equilibria and isolated periodic orbits are estimated numerically in the selected window.",
     scope: "local",
     genericity: "numerical",
     defaultParameter,
@@ -692,7 +717,7 @@ export function createCustomPreset(expression1, expression2, options = {}) {
     field,
     jacobian,
     equilibria: findEquilibria,
-    cycles: () => [],
+    cycles: findCycles,
     connections: () => [],
     branches(parameter) {
       return findEquilibria(parameter).map((point, index) => ({
@@ -967,6 +992,67 @@ function radialJacobian(x, y, radialRate, radialRateX, radialRateY, angularVeloc
     [radialRate + x * radialRateX, -angularVelocity + x * radialRateY],
     [angularVelocity + y * radialRateX, radialRate + y * radialRateY]
   ];
+}
+
+function fixedRadiusHopfDefinition(angularVelocity) {
+  const radialRate = (squareRadius, mu) => (mu + squareRadius) * (1 - squareRadius);
+  const radialRateDerivative = (squareRadius, mu) => 1 - mu - 2 * squareRadius;
+  const circle = (squareRadius, mu, label) => ({
+    radius: Math.sqrt(squareRadius),
+    radialDerivative: 2 * squareRadius * radialRateDerivative(squareRadius, mu),
+    angularVelocity,
+    label
+  });
+  const unitCircle = (mu) => circle(1, mu, "Unit limit cycle");
+  const movingCircle = (mu) => circle(-mu, mu, "Variable-radius limit cycle");
+  return {
+    id: "fixed-radius-hopf",
+    name: "Subcritical Hopf with a unit limit cycle",
+    shortName: "Subcritical Hopf with a unit cycle",
+    formula: `ẋ = (μ + ρ²)(1 − ρ²)x − (${angularVelocity})y,   ẏ = (${angularVelocity})x + (μ + ρ²)(1 − ρ²)y`,
+    polarFormula: `ρ̇ = ρ(μ + ρ²)(1 − ρ²),   θ̇ = ${angularVelocity}`,
+    description: "The unit circle is a periodic orbit for every parameter value.",
+    lesson: "The variable-radius cycle exchanges stability with the unit circle at r = -1 and shrinks into the origin at r = 0.",
+    scope: "local",
+    genericity: "generic locally; structure-dependent cycle exchange",
+    parameterRange: [-2, 2],
+    defaultParameter: -0.25,
+    phaseWindow: { x: [-1.75, 1.75], y: [-1.75, 1.75] },
+    observable: "radius",
+    observableLabel: "amplitude ρ",
+    observableRange: [0, 1.6],
+    criticalValues: [
+      { parameter: -1, type: "transcritical-cycles", label: "Cycle stability exchange", scope: "global", genericity: "structure-dependent" },
+      { parameter: 0, type: "subcritical-hopf", label: "Subcritical Hopf", scope: "local" }
+    ],
+    field(x, y, mu) {
+      const rate = radialRate(x * x + y * y, mu);
+      return [rate * x - angularVelocity * y, angularVelocity * x + rate * y];
+    },
+    jacobian(x, y, mu) {
+      const squareRadius = x * x + y * y;
+      const common = 2 * radialRateDerivative(squareRadius, mu);
+      return radialJacobian(x, y, radialRate(squareRadius, mu), common * x, common * y, angularVelocity);
+    },
+    equilibria() {
+      return [{ x: 0, y: 0, label: "Central equilibrium" }];
+    },
+    cycles(mu) {
+      if (mu < -1) return [unitCircle(mu), movingCircle(mu)];
+      if (mu > -1 && mu < 0) return [movingCircle(mu), unitCircle(mu)];
+      return [unitCircle(mu)];
+    },
+    branches(mu) {
+      const result = [
+        { branchId: "origin", kind: "equilibrium", x: 0, y: 0, observable: 0 },
+        { branchId: "unit-cycle", kind: "cycle", ...unitCircle(mu) }
+      ];
+      if (mu <= 0) {
+        result.push({ branchId: "variable-radius-cycle", kind: "cycle", ...movingCircle(mu) });
+      }
+      return result;
+    }
+  };
 }
 
 function subcriticalHopfDefinition() {
@@ -1719,6 +1805,7 @@ function enrichCycle(raw, tolerance = DEFAULT_TOLERANCE) {
     period,
     floquetMultiplier,
     stability,
+    approximate: Boolean(raw.approximate),
     label: String(raw.label || "Limit cycle")
   });
 }
@@ -1727,7 +1814,11 @@ export function cyclesAt(presetOrId, parameter, options = {}) {
   const preset = resolvePreset(presetOrId);
   const mu = finiteNumber(parameter, "parameter");
   const tolerance = options.tolerance == null ? DEFAULT_TOLERANCE : positiveNumber(options.tolerance, "tolerance");
-  return Object.freeze(preset.cycles(mu).map((cycle) => enrichCycle(cycle, tolerance)));
+  if (preset.hasNumericalCycles && options.numerical === false) return Object.freeze([]);
+  return Object.freeze(preset.cycles(mu).map((cycle) => enrichCycle({
+    ...cycle,
+    approximate: preset.hasNumericalCycles
+  }, tolerance)));
 }
 
 export function connectionsAt(presetOrId, parameter) {
@@ -1898,7 +1989,51 @@ function customEquilibriumBranchPoint(preset, raw, parameter) {
   });
 }
 
-function sampleCustomBranches(preset, range, count) {
+function sampleCustomCycleBranches(preset, range, count) {
+  const parameters = sampleParameters(range, preset.expressionUsesParameter ? count : 2, []);
+  const parameterIndependentCycles = preset.expressionUsesParameter ? null : preset.cycles(range[0]);
+  const tracks = [];
+  let active = [];
+  for (const parameter of parameters) {
+    const cycles = parameterIndependentCycles
+      ?? preset.cycles(parameter, { fast: true, seeds: active.map(({ seed }) => seed) });
+    const candidates = cycles.map((cycle) => {
+      const x = cycle.path.map((point) => point.x);
+      const y = cycle.path.map((point) => point.y);
+      return { cycle, bounds: [Math.min(...x), Math.max(...x), Math.min(...y), Math.max(...y)] };
+    });
+    const pairs = [];
+    for (const track of active) {
+      for (const candidate of candidates) {
+        if (track.points.at(-1).stability !== candidate.cycle.stability) continue;
+        const gap = Math.hypot(...track.bounds.map((value, index) => value - candidate.bounds[index]));
+        const [xmin, xmax, ymin, ymax] = candidate.bounds;
+        if (gap <= 0.5 * Math.hypot(xmax - xmin, ymax - ymin)) pairs.push({ track, candidate, gap });
+      }
+    }
+    pairs.sort((left, right) => left.gap - right.gap);
+    const matchedTracks = new Set();
+    const matches = new Map();
+    for (const { track, candidate } of pairs) {
+      if (matchedTracks.has(track) || matches.has(candidate)) continue;
+      matchedTracks.add(track);
+      matches.set(candidate, track);
+    }
+    active = candidates.map((candidate) => {
+      const track = matches.get(candidate) ?? { id: `custom-cycle-${tracks.length + 1}`, kind: "cycle", points: [] };
+      if (track.points.length === 0) tracks.push(track);
+      const { cycle, bounds } = candidate;
+      const orbit = enrichCycle({ ...cycle, approximate: true });
+      track.points.push(Object.freeze({ ...orbit, parameter, kind: "cycle", observable: orbit.radius }));
+      track.bounds = bounds;
+      track.seed = cycle.seed;
+      return track;
+    });
+  }
+  return tracks.map(({ id, kind, points }) => Object.freeze({ id, kind, points: Object.freeze(points) }));
+}
+
+function sampleCustomBranches(preset, range, count, cycleSamples) {
   const parameters = sampleParameters(range, count, []);
   const xSpan = preset.phaseWindow.x[1] - preset.phaseWindow.x[0];
   const ySpan = preset.phaseWindow.y[1] - preset.phaseWindow.y[0];
@@ -1975,6 +2110,9 @@ function sampleCustomBranches(preset, range, count) {
       kind: track.kind,
       points: Object.freeze(track.points)
     }));
+  if (preset.hasNumericalCycles && cycleSamples > 0) {
+    branches.push(...sampleCustomCycleBranches(preset, range, cycleSamples));
+  }
   return Object.freeze({
     presetId: preset.id,
     observable: preset.observable,
@@ -1991,7 +2129,11 @@ export function sampleBranches(presetOrId, options = {}) {
     ? preset.parameterRange
     : freezeRange(options.parameterRange, "branch parameter range");
   const count = clamp(Math.round(options.samples == null ? 181 : positiveNumber(options.samples, "branch samples")), 2, 5001);
-  if (!preset.hasAnalyticCycles) return sampleCustomBranches(preset, range, count);
+  if (!preset.hasAnalyticCycles) {
+    const cycleSamples = options.cycleSamples === 0 ? 0 : clamp(Math.round(options.cycleSamples == null
+      ? Math.min(count, 25) : positiveNumber(options.cycleSamples, "cycle samples")), 2, 81);
+    return sampleCustomBranches(preset, range, count, cycleSamples);
+  }
   const parameters = sampleParameters(range, count, preset.criticalValues);
   const branchMap = new Map();
 
@@ -2178,8 +2320,9 @@ export function buildSpectrum(presetOrId, branchSamples) {
       const { parameter, period, radialDerivative } = point;
       const orbit = preset.id === "snic" && parameter === 0
         ? snicConnection()
-        : { ...point, label: branch.id,
-          floquetMultiplier: point.radius > 0 && Number.isFinite(period) ? Math.exp(radialDerivative * period) : undefined };
+        : { ...point, label: point.label ?? branch.id,
+          floquetMultiplier: point.floquetMultiplier ?? (point.radius > 0 && Number.isFinite(period)
+            ? Math.exp(radialDerivative * period) : undefined) };
       return orbitSpectrum(preset, parameter, orbit, phaseCount);
     })
   );

@@ -11,7 +11,7 @@ import {
   sampleNullclineSegments,
   buildSpectrum,
   spectrumSlice
-} from "./model.js?v=20261112-2";
+} from "./model.js?v=20261113-4";
 import { drawSpectrumView } from "./spectrum-view.js?v=20261113-3";
 
 const COLORS = Object.freeze({
@@ -175,6 +175,7 @@ const state = {
   runtimeFault: false,
   lastAnimationError: null
 };
+let cycleSearch = null;
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -518,7 +519,9 @@ function objectDescription(object) {
   if (object.kind === "connection") {
     return "The saddle's unstable separatrix returns to the same saddle; the traversal time is infinite";
   }
-  const period = Number.isFinite(object.data.period) ? `, period ${formatNumber(object.data.period, 2)}` : "";
+  const period = Number.isFinite(object.data.period)
+    ? `, ${state.family.hasNumericalCycles ? "estimated " : ""}period ${formatNumber(object.data.period, 2)}`
+    : "";
   if (object.data.path?.length) {
     const xValues = object.data.path.map((point) => point.x);
     return `Periodic orbit with x from ${formatNumber(Math.min(...xValues))} to ${formatNumber(Math.max(...xValues))}${period}`;
@@ -586,9 +589,10 @@ function refreshObjects(options = {}) {
     }
     if (!state.cycles.length) {
       const item = document.createElement("li");
-      item.textContent = state.family.hasAnalyticCycles
-        ? "No periodic orbit at this parameter value."
-        : "Periodic orbits are available for presets and recognized cubic Hopf normal forms.";
+      const status = currentCycleSearchMessage() || (state.family.hasNumericalCycles
+        ? "No isolated periodic orbit found in the search window."
+        : "No periodic orbit at this parameter value.");
+      item.textContent = status.endsWith(".") ? status : `${status}.`;
       elements.objectList.append(item);
     }
     if (!state.objects.length) {
@@ -687,6 +691,7 @@ function updateSelectedObjectPanels() {
     if (elements.determinantValue) elements.determinantValue.textContent = "Stable manifold";
     if (elements.classificationValue) elements.classificationValue.textContent = "Homoclinic saddle connection";
   } else if (object.kind === "cycle") {
+    const estimated = state.family.hasNumericalCycles;
     if (elements.linearizationTitle) elements.linearizationTitle.textContent = "Orbit data";
     if (elements.jacobianMatrix) elements.jacobianMatrix.textContent = "J varies along the periodic orbit";
     const multiplier = Number.isFinite(object.data.floquetMultiplier)
@@ -694,15 +699,15 @@ function updateSelectedObjectPanels() {
       : Number.isFinite(object.data.period)
         ? Math.exp(object.data.radialDerivative * object.data.period)
         : NaN;
-    if (elements.spectralQuantityLabel) elements.spectralQuantityLabel.textContent = "Period";
+    if (elements.spectralQuantityLabel) elements.spectralQuantityLabel.textContent = estimated ? "Estimated period" : "Period";
     if (elements.eigenvalueFormula) elements.eigenvalueFormula.textContent = Number.isFinite(object.data.period)
       ? formatNumber(object.data.period, 3)
       : "Diverges at onset";
-    if (elements.traceLabel) elements.traceLabel.textContent = "Floquet multiplier";
+    if (elements.traceLabel) elements.traceLabel.textContent = estimated ? "Estimated Floquet multiplier" : "Floquet multiplier";
     if (elements.traceValue) elements.traceValue.textContent = Number.isFinite(multiplier)
       ? formatNumber(multiplier, 3)
       : "—";
-    if (elements.determinantLabel) elements.determinantLabel.textContent = "Transverse rate";
+    if (elements.determinantLabel) elements.determinantLabel.textContent = estimated ? "Estimated transverse rate" : "Transverse rate";
     if (elements.determinantValue) elements.determinantValue.textContent = formatNumber(object.data.radialDerivative, 3);
     if (elements.classificationValue) {
       const stability = object.data.stability === "stable"
@@ -762,14 +767,22 @@ function updateFamilyCopy() {
     elements.familyNote.textContent = `${state.family.description} ${state.family.lesson}`.trim();
   }
   if (elements.telemetryFamily) elements.telemetryFamily.textContent = state.family.shortName;
+  updateBifurcationEvents();
+}
+
+function updateBifurcationEvents() {
   if (elements.eventList) {
     elements.eventList.replaceChildren();
     if (!state.family.hasAnalyticCycles) {
       const item = document.createElement("li");
       const strong = document.createElement("strong");
       const span = document.createElement("span");
-      strong.textContent = "Numerical continuation";
-      span.textContent = "No events are marked automatically; equilibria and their branches are approximations in the selected window.";
+      strong.textContent = "Numerical branch estimates";
+      span.textContent = cycleSearch?.branchError
+        ? "The periodic-orbit branch search could not finish."
+        : cycleSearch?.branchWorker
+          ? "Searching sampled parameter values for periodic orbits."
+          : "The diagram follows equilibria and detected periodic orbits across sampled parameter values.";
       item.append(strong, span);
       elements.eventList.append(item);
     }
@@ -783,6 +796,14 @@ function updateFamilyCopy() {
       elements.eventList.append(item);
     }
   }
+}
+
+function currentCycleSearchMessage() {
+  if (!state.family.hasNumericalCycles) return "";
+  if (cycleSearch?.sliceParameter === state.parameter) return "";
+  if (cycleSearch?.sliceError) return "Periodic-orbit search unavailable";
+  if (state.sweepRunning) return "Pause the sweep to search for periodic orbits";
+  return "Searching for periodic orbits";
 }
 
 function nearestEvent() {
@@ -807,26 +828,34 @@ function updateTelemetry() {
     const connectionText = state.connections.length
       ? ` · ${state.connections.length} homoclinic ${state.connections.length === 1 ? "loop" : "loops"}`
       : "";
+    const numerical = state.family.hasNumericalCycles ? " detected" : "";
+    const orbitStatus = currentCycleSearchMessage() || `${state.cycles.length}${numerical} ${orbitWord}${connectionText}`;
     elements.stageStatus.textContent = state.equilibria.nonisolated
       ? "Nonisolated equilibrium set · isolated-point analysis unavailable"
-      : state.family.hasAnalyticCycles
-      ? `${state.equilibria.length} ${equilibriumWord} · ${state.cycles.length} ${orbitWord}${connectionText}`
-      : `${state.equilibria.length} numerical ${equilibriumWord} · periodic-orbit detection unavailable`;
+      : `${state.equilibria.length} ${equilibriumWord} · ${orbitStatus}`;
   }
 }
 
 function refreshSlice(options = {}) {
-  const preferredObjectId = state.selectedObjectId;
   state.equilibria = equilibriaAt(state.family, state.parameter);
-  state.cycles = cyclesAt(state.family, state.parameter);
   state.connections = connectionsAt(state.family, state.parameter);
-  state.spectrumSlice = spectrumSlice(state.family, state.parameter, state.equilibria, state.cycles, state.connections);
-  state.spectrumRenderKey = null;
+  if (state.family.hasNumericalCycles) requestCycleSlice(Boolean(options.immediate));
+  refreshCycleDisplay();
   state.phaseCache = null;
-  refreshObjects({ preferredId: preferredObjectId });
-  updateTelemetry();
   requestTrajectoryRefresh({ immediate: Boolean(options.immediate), preserveProgress: options.preserveProgress !== false });
   if (!options.deferDraw) drawAll();
+}
+
+function refreshCycleDisplay() {
+  if (state.family.hasNumericalCycles) {
+    state.cycles = cycleSearch?.sliceParameter === state.parameter ? cycleSearch.sliceCycles : [];
+  } else {
+    state.cycles = cyclesAt(state.family, state.parameter);
+  }
+  state.spectrumSlice = spectrumSlice(state.family, state.parameter, state.equilibria, state.cycles, state.connections);
+  state.spectrumRenderKey = null;
+  refreshObjects();
+  updateTelemetry();
 }
 
 function setParameter(value, options = {}) {
@@ -842,12 +871,12 @@ function setParameter(value, options = {}) {
   if (elements.parameter) elements.parameter.value = String(next);
   elements.parameter?.setAttribute("aria-valuetext", `r equals ${formatParameter(next)}`);
   if (elements.parameterInput) elements.parameterInput.value = formatParameterInput(next);
+  if (options.stopSweep) stopSweep({ refreshCycles: false });
   refreshSlice({
     immediate: Boolean(options.immediate),
     preserveProgress: options.preserveProgress,
     deferDraw: Boolean(options.deferDraw)
   });
-  if (options.stopSweep) stopSweep();
   if (options.announce) {
     const event = nearestEvent();
     const eventText = event && Math.abs(event.parameter - next) < (state.family.parameterRange[1] - state.family.parameterRange[0]) * 0.012
@@ -855,9 +884,11 @@ function setParameter(value, options = {}) {
       : "";
     const equilibriumWord = state.equilibria.length === 1 ? "equilibrium" : "equilibria";
     const orbitWord = state.cycles.length === 1 ? "periodic orbit" : "periodic orbits";
+    const numerical = state.family.hasNumericalCycles ? " detected" : "";
+    const orbitStatus = currentCycleSearchMessage() || `${state.cycles.length}${numerical} ${orbitWord}`;
     announce(state.equilibria.nonisolated
       ? `Parameter r is ${formatParameter(next)}. A nonisolated equilibrium set was detected; isolated-point analysis is unavailable.`
-      : `Parameter r is ${formatParameter(next)}. ${state.equilibria.length} ${equilibriumWord} and ${state.cycles.length} ${orbitWord}.${eventText}`);
+      : `Parameter r is ${formatParameter(next)}. ${state.equilibria.length} ${equilibriumWord}. ${orbitStatus}.${eventText}`);
   }
 }
 
@@ -987,6 +1018,109 @@ function resetBifurcationView() {
   state.spectrumView = { ...(state.family.id === HOPF_PRESET_ID ? HOPF_SPECTRUM_VIEW : DEFAULT_SPECTRUM_VIEW) };
 }
 
+function stopCycleSearch() {
+  if (!cycleSearch) return;
+  clearTimeout(cycleSearch.sliceTimer);
+  cycleSearch.branchWorker?.terminate();
+  cycleSearch.sliceWorker?.terminate();
+  cycleSearch = null;
+}
+
+function startCycleSearch(family) {
+  const search = {
+    branchWorker: null,
+    branchError: false,
+    sliceWorker: null,
+    sliceError: false,
+    sliceTimer: null,
+    sliceInFlight: false,
+    sliceParameter: null,
+    sliceCycles: []
+  };
+  cycleSearch = search;
+  const definition = {
+    expression1: family.expression1,
+    expression2: family.expression2,
+    options: {
+      x1Range: family.phaseWindow.x,
+      x2Range: family.phaseWindow.y,
+      parameterRange: family.parameterRange,
+      observable: family.observable === "y" ? "x2" : "x1"
+    }
+  };
+  const workerUrl = new URL("./cycle-worker.js?v=20261113-4", import.meta.url);
+  try {
+    search.branchWorker = new Worker(workerUrl, { type: "module" });
+    search.sliceWorker = new Worker(workerUrl, { type: "module" });
+  } catch {
+    search.branchWorker?.terminate();
+    search.branchWorker = null;
+    search.branchError = true;
+    search.sliceError = true;
+    return;
+  }
+
+  function finishBranches(result) {
+    if (cycleSearch !== search) return;
+    search.branchWorker?.terminate();
+    search.branchWorker = null;
+    if (result?.type === "branches") {
+      state.branchDiagram = result.branchDiagram;
+      state.spectrumData = result.spectrum;
+      state.spectrumRenderKey = null;
+      drawBifurcationDiagram();
+    } else {
+      search.branchError = true;
+    }
+    updateBifurcationEvents();
+  }
+  function finishSlice(result) {
+    if (cycleSearch !== search) return;
+    search.sliceInFlight = false;
+    if (result?.type !== "slice") {
+      search.sliceWorker?.terminate();
+      search.sliceWorker = null;
+      search.sliceError = true;
+    } else {
+      if (result.parameter !== state.parameter) {
+        if (search.sliceTimer === null) requestCycleSlice();
+        return;
+      }
+      search.sliceParameter = result.parameter;
+      search.sliceCycles = result.cycles;
+    }
+    refreshCycleDisplay();
+    drawPhasePortrait();
+    drawBifurcationDiagram();
+    if (!state.sweepRunning) {
+      announce(search.sliceError
+        ? "The periodic-orbit search could not finish."
+        : `Found ${state.cycles.length} periodic ${state.cycles.length === 1 ? "orbit" : "orbits"} at r equals ${formatParameter(state.parameter)}.`);
+    }
+  }
+
+  search.branchWorker.onmessage = (event) => finishBranches(event.data);
+  search.branchWorker.onerror = () => finishBranches();
+  search.branchWorker.onmessageerror = () => finishBranches();
+  search.sliceWorker.onmessage = (event) => finishSlice(event.data);
+  search.sliceWorker.onerror = () => finishSlice();
+  search.sliceWorker.onmessageerror = () => finishSlice();
+  search.branchWorker.postMessage({ type: "branches", definition });
+  search.sliceWorker.postMessage({ type: "initialize", definition });
+}
+
+function requestCycleSlice(immediate = false) {
+  const search = cycleSearch;
+  if (!search?.sliceWorker || state.sweepRunning || search.sliceParameter === state.parameter) return;
+  clearTimeout(search.sliceTimer);
+  search.sliceTimer = setTimeout(() => {
+    search.sliceTimer = null;
+    if (search.sliceInFlight || !search.sliceWorker || state.sweepRunning || search.sliceParameter === state.parameter) return;
+    search.sliceInFlight = true;
+    search.sliceWorker.postMessage({ type: "slice", parameter: state.parameter });
+  }, immediate ? 0 : 100);
+}
+
 function loadFamily(id, options = {}) {
   const requestedId = String(id);
   const normalizedId = normalizeFamilyId(requestedId);
@@ -1001,7 +1135,7 @@ function loadFamily(id, options = {}) {
       : createPreset(safeId, {
         variant: requestedId === "pitchfork-subcritical" ? "subcritical" : "supercritical"
       });
-    nextBranchDiagram = sampleBranches(nextFamily, { samples: isCustom ? 141 : 241 });
+    nextBranchDiagram = sampleBranches(nextFamily, { samples: isCustom ? 141 : 241, cycleSamples: 0 });
     nextSpectrum = buildSpectrum(nextFamily, nextBranchDiagram);
   } catch (error) {
     if (isCustom) showCustomSystemError(error);
@@ -1011,6 +1145,8 @@ function loadFamily(id, options = {}) {
     }
     return false;
   }
+  stopSweep({ force: true, refreshCycles: false });
+  stopCycleSearch();
   state.family = nextFamily;
   state.runtimeFault = false;
   state.lastAnimationError = null;
@@ -1019,6 +1155,7 @@ function loadFamily(id, options = {}) {
   state.parameter = state.family.defaultParameter;
   state.branchDiagram = nextBranchDiagram;
   state.spectrumData = nextSpectrum;
+  if (nextFamily.hasNumericalCycles) startCycleSearch(nextFamily);
   elements.bifurcationPanel?.toggleAttribute("data-varying-speed-hopf", state.family.id === HOPF_PRESET_ID);
   elements.showSpectrumRegions.checked = state.spectrumRegionsPreference ?? true;
   state.userSeeds = [];
@@ -1921,6 +2058,10 @@ function stopSweep(options = {}) {
   if (elements.toggleSweep) {
     elements.toggleSweep.textContent = "Play parameter sweep";
   }
+  if (options.refreshCycles !== false && state.family?.hasNumericalCycles) {
+    requestCycleSlice(true);
+    refreshCycleDisplay();
+  }
   if (options.announce) announce("Parameter sweep paused.");
 }
 
@@ -1990,7 +2131,7 @@ function initializeFullscreen() {
 }
 
 elements.familySelect?.addEventListener("change", () => {
-  stopSweep({ force: true });
+  stopSweep({ force: true, refreshCycles: false });
   if (elements.familySelect.value === "custom") {
     setCustomSystemControlsVisible(true);
     applyCustomSystem({ announce: true });
@@ -2258,7 +2399,7 @@ function animate(now) {
   } catch (error) {
     state.runtimeFault = true;
     state.lastAnimationError = error;
-    stopSweep({ force: true });
+    stopSweep({ force: true, refreshCycles: false });
     state.trajectoriesPaused = true;
     syncTrajectoryButton();
     console.error("The planar explorer recovered from a rendering error.", error);

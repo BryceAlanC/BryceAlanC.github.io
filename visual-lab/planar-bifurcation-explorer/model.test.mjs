@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-
-// The website intentionally has no package.json.  Importing the browser ESM
-// source through a data URL keeps the test self-contained.
-const source = await readFile(new URL("./model.js", import.meta.url), "utf8");
-const model = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
+import * as model from "./model.js";
 
 function near(actual, expected, tolerance = 1e-7, message = "values differ") {
   assert.ok(Number.isFinite(actual), message + ": actual value is not finite");
@@ -457,6 +452,7 @@ for (const id of model.PRESET_IDS) {
   const branches = model.sampleBranches(custom, { samples: 31 });
   assert.equal(branches.observable, "y");
   assert.ok(branches.branches.some((branch) => branch.points.length >= 25));
+  assert.ok(branches.branches.every((branch) => branch.kind === "equilibrium"));
 }
 
 {
@@ -508,8 +504,63 @@ for (const id of model.PRESET_IDS) {
       `(r+x^2+y^2)*x-y + ${extra}`, "x+(r+x^2+y^2)*y"
     );
     assert.equal(custom.hasAnalyticCycles, false);
-    assert.deepEqual(model.cyclesAt(custom, -0.25), []);
+    assert.deepEqual(model.cyclesAt(custom, -0.25, { numerical: false }), []);
   }
+}
+
+{
+  const family = model.createCustomPreset(
+    "(mu + x^2 + y^2)*(1 - x^2 - y^2)*x - y",
+    "x + (mu + x^2 + y^2)*(1 - x^2 - y^2)*y"
+  );
+  assert.equal(family.hasAnalyticCycles, true);
+  assert.equal(family.hasNumericalCycles, false);
+  for (const parameter of [-0.5, -0.125]) {
+    const orbits = model.cyclesAt(family, parameter);
+    assert.deepEqual(orbits.map((orbit) => orbit.stability), ["unstable", "stable"]);
+    near(orbits[0].radius, Math.sqrt(-parameter));
+    near(orbits[1].radius, 1);
+    near(orbits[0].floquetMultiplier, Math.exp(-4 * Math.PI * parameter * (1 + parameter)));
+    near(orbits[1].floquetMultiplier, Math.exp(-4 * Math.PI * (1 + parameter)));
+    for (const orbit of orbits) near(orbit.period, 2 * Math.PI);
+    const spectralOrbits = model.spectrumSlice(family, parameter).orbits;
+    assert.equal(spectralOrbits.length, 2);
+    for (const [index, section] of spectralOrbits.entries()) {
+      assert.equal(section.points.length, 1);
+      near(section.points[0].trace, orbits[index].radialDerivative);
+      near(section.points[0].determinant, 1);
+    }
+  }
+
+  const coincident = model.cyclesAt(family, -1);
+  assert.equal(coincident.length, 1);
+  assert.equal(coincident[0].stability, "semistable");
+  near(coincident[0].radius, 1);
+  near(coincident[0].floquetMultiplier, 1);
+  const [unitAtHopf] = model.cyclesAt(family, 0);
+  assert.equal(model.cyclesAt(family, 0).length, 1);
+  near(unitAtHopf.radius, 1);
+
+  const diagram = model.sampleBranches(family, { samples: 10 });
+  const unit = findPoint(diagram.branches, (branch) => branch.id === "unit-cycle");
+  const variable = findPoint(diagram.branches, (branch) => branch.id === "variable-radius-cycle");
+  for (const branch of [unit, variable]) {
+    near(findPoint(branch.points, (point) => point.parameter === -1).radius, 1);
+  }
+  assert.equal(unit.points[0].stability, "unstable");
+  assert.equal(variable.points[0].stability, "stable");
+  assert.equal(variable.points.at(-1).parameter, 0);
+  near(variable.points.at(-1).radius, 0);
+  assert.equal(model.buildSpectrum(family, diagram).orbitTracks.length, 2);
+
+  const expanded = model.createCustomPreset(
+    "(mu + (1-mu)*rho^2 - rho^4)*x + 2*y",
+    "-2*x + (mu + (1-mu)*rho^2 - rho^4)*y"
+  );
+  assert.equal(expanded.hasAnalyticCycles, true);
+  const [inner] = model.cyclesAt(expanded, -0.5);
+  near(inner.radius, Math.SQRT1_2);
+  near(inner.period, Math.PI);
 }
 
 {
@@ -521,13 +572,64 @@ for (const id of model.PRESET_IDS) {
   const equilibrium = model.equilibriaAt(saddle, 0)[0];
   assert.ok(equilibrium);
   assert.equal(equilibrium.type, "saddle");
+}
 
+{
   const vanDerPol = model.createCustomPreset("x2", "r*(1-x1^2)*x2-x1", {
     x1Range: [-3, 3],
     x2Range: [-3, 3],
     parameterRange: [-1, 1]
   });
-  assert.equal(model.equilibriaAt(vanDerPol, 0.5).length, 1);
+  assert.equal(vanDerPol.hasAnalyticCycles, false);
+  assert.equal(vanDerPol.hasNumericalCycles, true);
+  const equilibriaOnly = model.sampleBranches(vanDerPol, { samples: 5, cycleSamples: 0 });
+  assert.ok(equilibriaOnly.branches.length > 0);
+  assert.ok(equilibriaOnly.branches.every((branch) => branch.kind === "equilibrium"));
+  const samples = model.sampleBranches(vanDerPol, { samples: 5, cycleSamples: 5 });
+  const spectrum = model.buildSpectrum(vanDerPol, samples);
+  for (const parameter of [-0.5, 0.5]) {
+    assert.equal(model.equilibriaAt(vanDerPol, parameter).length, 1);
+    const orbits = model.cyclesAt(vanDerPol, parameter);
+    assert.equal(orbits.length, 1);
+    const [orbit] = orbits;
+    assert.equal(orbit.approximate, true);
+    assert.equal(orbit.stability, parameter > 0 ? "stable" : "unstable");
+    // Reference from high-accuracy integration between successive maxima of x.
+    near(orbit.period, 6.380676, 0.002);
+    near(Math.log(orbit.floquetMultiplier), Math.sign(parameter) * Math.log(0.039177), 0.02);
+    assert.ok(orbit.path.length >= 10);
+    near(orbit.path[0].x, orbit.path.at(-1).x, 1e-4);
+    near(orbit.path[0].y, orbit.path.at(-1).y, 1e-4);
+
+    const section = findPoint(spectrum.orbitTracks.flat(), (orbit) => orbit.parameter === parameter);
+    assert.ok(section.closed);
+    assert.equal(section.stability, orbit.stability);
+    const radii = section.points.map(({ x, y }) => Math.hypot(x, y));
+    assert.ok(Math.max(...radii) - Math.min(...radii) > 0.5, "render the computed noncircular orbit");
+    assert.ok(section.points.some(({ determinant }) => Math.abs(determinant - 1) > 0.1));
+  }
+}
+
+{
+  const twoCycles = model.createCustomPreset(
+    "(mu+x^2+y^2)*(1-x^2-y^2)*x-(1+0.1*x)*y",
+    "(1+0.1*x)*x+(mu+x^2+y^2)*(1-x^2-y^2)*y",
+    { x1Range: [-1.5, 1.5], x2Range: [-1.5, 1.5] }
+  );
+  assert.equal(twoCycles.hasAnalyticCycles, false);
+  const orbits = [...model.cyclesAt(twoCycles, -0.5)].sort((a, b) => a.radius - b.radius);
+  assert.deepEqual(orbits.map((orbit) => orbit.stability), ["unstable", "stable"]);
+  near(orbits[0].radius, Math.SQRT1_2, 1e-4);
+  near(orbits[1].radius, 1, 1e-4);
+  for (const orbit of orbits) {
+    near(orbit.period, 2 * Math.PI / Math.sqrt(1 - 0.01 * orbit.radius ** 2), 0.002);
+  }
+}
+
+{
+  const nonlinearCenter = model.createCustomPreset("y", "-x-x^3");
+  assert.equal(nonlinearCenter.hasNumericalCycles, true);
+  assert.deepEqual(model.cyclesAt(nonlinearCenter, 0), []);
 }
 
 {
