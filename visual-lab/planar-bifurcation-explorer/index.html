@@ -25,7 +25,7 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261113-1" />
+    <link rel="stylesheet" href="./style.css?v=20261113-2" />
     <script type="module" src="./demo.js?v=20261113-4"></script>
   </head>
   <body class="visual-lab-page">
@@ -263,10 +263,6 @@
                 <input id="show-vector-field" type="checkbox" checked />
                 <span>Vector field</span>
               </label>
-              <label class="check-row" for="show-nullclines">
-                <input id="show-nullclines" type="checkbox" checked />
-                <span>Nullclines</span>
-              </label>
               <label class="check-row" for="show-trajectories">
                 <input id="show-trajectories" type="checkbox" checked />
                 <span>Trajectories</span>
@@ -349,7 +345,13 @@
                 <section class="visual-panel phase-panel" aria-labelledby="phase-title">
                   <div class="panel-heading panel-heading-dark">
                     <div><span>01</span><h3 id="phase-title">Phase portrait at the selected r</h3></div>
-                    <p id="phase-parameter-label">r = 0.160</p>
+                    <div class="phase-heading-controls">
+                      <p id="phase-parameter-label">r = 0.160</p>
+                      <label class="check-row phase-nullclines-toggle" for="show-nullclines">
+                        <input id="show-nullclines" type="checkbox" aria-controls="phase-canvas" checked />
+                        <span>Show nullclines</span>
+                      </label>
+                    </div>
                   </div>
                   <div class="canvas-frame phase-frame">
                     <canvas
@@ -383,8 +385,8 @@
                       <button type="button" id="phase-fit" aria-label="Restore the full phase portrait">0</button>
                     </div>
                     <p class="sr-only" id="phase-description">
-                      Arrows show the planar vector field. The two directly labeled nullclines
-                      show where x dot and y dot vanish; their intersections are equilibria.
+                      Arrows show the planar vector field. When visible, the two labeled nullclines
+                      show where x dot and y dot vanish. Their intersections are equilibria.
                       Filled circles mark attracting equilibria, open circles mark repelling
                       equilibria, diamonds mark saddles, and squares mark nonhyperbolic equilibria.
                       Solid closed curves mark attracting periodic orbits; dashed closed curves mark

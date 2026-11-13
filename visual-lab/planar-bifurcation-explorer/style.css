@@ -474,6 +474,26 @@
   color: rgba(235, 247, 243, 0.72);
 }
 
+.panel-heading > .phase-heading-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0 0.9rem;
+  white-space: nowrap;
+}
+
+.phase-nullclines-toggle {
+  margin-top: 0;
+  cursor: pointer;
+}
+
+.phase-nullclines-toggle input {
+  margin: 0;
+  color-scheme: dark;
+  accent-color: #79d8c5;
+}
+
 .panel-heading-compact {
   min-height: 52px;
   padding-top: 0.62rem;
@@ -954,6 +974,11 @@
   .panel-heading p {
     max-width: none;
     text-align: left;
+  }
+
+  .panel-heading > .phase-heading-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .phase-legend {
