@@ -135,7 +135,7 @@ function prepareGeometry(data, [parameterMin, parameterMax], hopfView, showRegio
       anchor: [nodeTrace, Math.min(detMax, nodeTrace * nodeTrace / 4) * 0.45],
       points: [...curve, [edge, curve.at(-1)[1]], [edge, 0]]
     }, {
-      label: `${label} focus`, color: COLORS[`${key}-focus`],
+      label: `${label} spiral`, color: COLORS[`${key}-focus`],
       anchor: [focusTrace, (detMax + focusTrace * focusTrace / 4) * 0.52],
       points: [...curve, [edge, curve.at(-1)[1]], [edge, detMax], [0, detMax]]
     });
