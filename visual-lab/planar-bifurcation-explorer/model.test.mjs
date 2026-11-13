@@ -33,6 +33,7 @@ assert.deepEqual(model.PRESET_IDS, [
   "transcritical",
   "pitchfork",
   "supercritical-hopf",
+  "subcritical-hopf-normal-form",
   "subcritical-hopf",
   "fold-cycles",
   "homoclinic",
@@ -147,6 +148,31 @@ assert.throws(() => model.createPreset("not-a-preset"), /Unknown planar bifurcat
   const vector = model.fieldAt(preset, 1, 0, 0.25);
   near(vector[0], -0.75);
   near(vector[1], 1);
+}
+
+{
+  const preset = model.createPreset("subcritical-hopf-normal-form");
+  assert.equal(model.equilibriaAt(preset, -0.25)[0].type, "stable-focus");
+  assert.equal(model.equilibriaAt(preset, 0)[0].kind, "center-or-hopf");
+  assert.equal(model.equilibriaAt(preset, 0.25)[0].type, "unstable-focus");
+  assert.deepEqual(model.cyclesAt(preset, 0), []);
+  assert.deepEqual(model.cyclesAt(preset, 0.25), []);
+  const [orbit] = model.cyclesAt(preset, -0.25);
+  assert.equal(model.cyclesAt(preset, -0.25).length, 1);
+  near(orbit.radius, 0.5);
+  near(orbit.period, 2 * Math.PI);
+  near(orbit.floquetMultiplier, Math.exp(Math.PI));
+  assert.equal(orbit.stability, "unstable");
+  near(model.fieldAt(preset, 0.5, 0, -0.25)[0], 0);
+  assert.ok(model.fieldAt(preset, 0.25, 0, -0.25)[0] < 0);
+  assert.ok(model.fieldAt(preset, 0.75, 0, -0.25)[0] > 0);
+  const [spectrum] = model.spectrumSlice(preset, -0.25).orbits;
+  assert.equal(spectrum.points.length, 1);
+  near(spectrum.points[0].trace, 0.5);
+  near(spectrum.points[0].determinant, 1);
+  const cycleBranch = model.sampleBranches(preset).branches.find((branch) => branch.id === "cycle");
+  near(cycleBranch.points.at(-1).parameter, 0);
+  near(cycleBranch.points.at(-1).radius, 0);
 }
 
 {
@@ -388,6 +414,12 @@ for (const id of model.PRESET_IDS) {
 
   const aliases = model.compilePlanarExpression("x^2 + y^2");
   near(aliases.evaluate(3, 4, 0), 25);
+  for (const parameter of ["mu", "μ", "µ"]) {
+    const rhs = model.compilePlanarExpression(`(${parameter} + x² + y²)x - y`);
+    assert.equal(rhs.usesR, true);
+    near(rhs.evaluate(0.5, 0, -0.25), 0);
+    near(rhs.evaluate(0.5, 0, 0), 0.125);
+  }
   assert.ok(Number.isNaN(model.compilePlanarExpression("sqrt(x1)").evaluate(-1, 0, 0)));
   assert.throws(() => model.compilePlanarExpression("window.alert(1)"), /Unsupported character|Unknown name/);
   assert.throws(() => model.compilePlanarExpression(""), /Enter a right-hand side/);

@@ -26,7 +26,7 @@
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
     <link rel="stylesheet" href="./style.css?v=20261105-4" />
-    <script type="module" src="./demo.js?v=20261105-4"></script>
+    <script type="module" src="./demo.js?v=20261112-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -97,7 +97,9 @@
               <legend>Family</legend>
               <label class="field-label" for="family-select">Planar system</label>
               <select id="family-select">
-                <option value="varying-speed-hopf" selected>Supercritical Hopf</option>
+                <option value="varying-speed-hopf" selected>Supercritical Hopf (varying speed)</option>
+                <option value="supercritical-hopf">Supercritical Hopf (normal form)</option>
+                <option value="subcritical-hopf-normal-form">Subcritical Hopf (normal form)</option>
                 <option value="subcritical-hopf">Bounded subcritical Hopf</option>
                 <option value="saddle-node">Saddle-node of equilibria</option>
                 <option value="transcritical">Transcritical exchange</option>
@@ -110,7 +112,7 @@
               </select>
 
               <div class="equation-card">
-                <span id="family-title">Supercritical Hopf</span>
+                <span id="family-title">Supercritical Hopf (varying speed)</span>
                 <div id="family-equations" class="equation-pair">
                   <code>x&#775; = (r &minus; &rho;&sup2;)x &minus; (1 + y)y</code>
                   <code>y&#775; = (1 + y)x + (r &minus; &rho;&sup2;)y</code>
@@ -152,9 +154,11 @@
                 />
               </div>
               <p class="control-help" id="custom-system-help">
-                Use x1, x2, r, numbers, + - * / ^, parentheses, pi, e, and functions
-                such as sin, cos, exp, log, sqrt, or abs. The forms x_1 and x_2 are
-                also accepted. Equilibria and branches are found numerically.
+                Enter only the Cartesian right-hand sides. Use x1 and x2 (or x and y)
+                for the states and r, mu, or &mu; for the parameter. Use + - * / ^,
+                parentheses, pi, e, and functions such as sin, cos, exp, log, sqrt,
+                or abs. Custom systems track equilibria numerically. The presets
+                include periodic orbits.
               </p>
               <details class="control-details">
                 <summary>Plot window and parameter range</summary>
@@ -331,7 +335,7 @@
                     </button>
                   </div>
                   <div class="stage-mini-telemetry" aria-label="Current dynamical measurements">
-                    <span><small>Family</small><strong id="telemetry-family">Supercritical Hopf</strong></span>
+                    <span><small>Family</small><strong id="telemetry-family">Supercritical Hopf (varying speed)</strong></span>
                     <span><small>r</small><strong id="telemetry-r">0.160</strong></span>
                     <span><small>Selected</small><strong id="telemetry-object">E1</strong></span>
                     <span><small>Event</small><strong id="telemetry-event">Hopf at r = 0</strong></span>
@@ -540,18 +544,21 @@
                 contributes one point on the current parameter slice. The two side equilibria
                 of the pitchfork have the same trace and determinant. Their paths are drawn a
                 few pixels apart so both are visible, and their markers point to the same
-                spectral coordinate. For a periodic orbit, the loop shows the Jacobian evaluated
-                at successive phases. Its colors classify those individual matrices. The
+                spectral coordinate. The periodic-orbit trace and determinant come from the
+                Jacobian evaluated at successive phases. The colors classify those individual
+                matrices. In the Hopf normal forms, both quantities are constant around the
+                orbit, so it appears as one point on each parameter slice. The
                 transverse Floquet multiplier measures whether perturbations shrink over a
                 full lap, even when the loop passes through an unstable region.
               </p>
               <p class="app-note">
-                <strong>Periodic orbits.</strong> The supercritical Hopf family has an attracting
-                periodic orbit of radius <span class="nowrap">ρ = √r</span> for
-                <span class="nowrap">r &gt; 0</span>. The bounded subcritical family adds a quintic
-                term that confines the global flow without changing the local Hopf type. For
-                the homoclinic preset, periodic-orbit paths are approximated numerically.
-                Custom systems show numerically tracked equilibria in the displayed window.
+                <strong>Periodic orbits.</strong> The supercritical Hopf normal form has an
+                attracting orbit of radius <span class="nowrap">ρ = √r</span> for
+                <span class="nowrap">r &gt; 0</span>. The subcritical normal form has a
+                repelling orbit of radius <span class="nowrap">ρ = √(−r)</span> for
+                <span class="nowrap">r &lt; 0</span>. The bounded subcritical family adds a
+                quintic term and has an attracting outer orbit near the Hopf point. For the
+                homoclinic preset, periodic-orbit paths are approximated numerically.
               </p>
               <p class="app-note">
                 <strong>Parameter sweeps.</strong> Each fixed value of

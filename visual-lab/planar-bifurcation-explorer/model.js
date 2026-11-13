@@ -152,6 +152,7 @@ function normalizeCustomExpressionSource(source) {
     .replace(/[×·]/g, "*")
     .replace(/÷/g, "/")
     .replace(/π/g, "pi")
+    .replace(/[μµ]/g, "mu")
     .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (digits) => `^${[...digits].map((digit) => CUSTOM_SUPERSCRIPT_DIGITS[digit]).join("")}`);
 }
 
@@ -221,7 +222,7 @@ function parseCustomExpressionTokens(tokens) {
     }
     if (token.type === "name") {
       consume();
-      const aliases = { x: "x1", y: "x2", x_1: "x1", x_2: "x2" };
+      const aliases = { x: "x1", y: "x2", x_1: "x1", x_2: "x2", mu: "r" };
       const name = aliases[token.value] || token.value;
       if (name === "x1" || name === "x2" || name === "r") {
         variables.add(name);
@@ -752,57 +753,56 @@ function pitchforkDefinition(variant = "supercritical") {
   };
 }
 
-function supercriticalHopfDefinition() {
+function hopfNormalFormDefinition(cubicSign) {
+  const subcritical = cubicSign > 0;
+  const type = subcritical ? "Subcritical Hopf" : "Supercritical Hopf";
+  const operator = subcritical ? "+" : "−";
+  const circle = (mu) => ({
+    radius: Math.sqrt(Math.max(0, -mu / cubicSign)),
+    radialDerivative: -2 * mu,
+    angularVelocity: 1,
+    label: subcritical ? "Unstable limit cycle" : "Stable limit cycle"
+  });
   return {
-    id: "supercritical-hopf",
-    name: "Supercritical Hopf",
-    shortName: "Supercritical Hopf",
-    formula: "ẋ = (μ − ρ²)x − y,   ẏ = x + (μ − ρ²)y",
-    polarFormula: "ρ̇ = μρ − ρ³,   θ̇ = 1",
-    description: "A stable focus becomes unstable while a stable periodic orbit grows from it.",
-    lesson: "A complex-conjugate eigenvalue pair crosses the imaginary axis, creating oscillation with continuously growing amplitude.",
+    id: subcritical ? "subcritical-hopf-normal-form" : "supercritical-hopf",
+    name: type + " (normal form)",
+    shortName: type + " (normal form)",
+    formula: "ẋ = (μ " + operator + " ρ²)x − y,   ẏ = x + (μ " + operator + " ρ²)y",
+    polarFormula: "ρ̇ = ρ(μ " + operator + " ρ²),   θ̇ = 1",
+    description: subcritical
+      ? "A repelling periodic orbit shrinks into the origin as r increases to zero."
+      : "An attracting periodic orbit grows from the origin as r increases above zero.",
+    lesson: subcritical
+      ? "For r < 0, the cycle separates trajectories attracted to the origin from trajectories that escape. At r = 0, the cubic radial term makes the origin repelling."
+      : "At r = 0, the cubic radial term still attracts trajectories to the origin. For r > 0, it balances the outward linear term at the attracting cycle.",
     scope: "local",
     genericity: "generic",
-    parameterRange: [-1, 1.2],
-    defaultParameter: 0.55,
+    parameterRange: subcritical ? [-1.2, 1] : [-1, 1.2],
+    defaultParameter: subcritical ? -0.55 : 0.55,
     phaseWindow: { x: [-1.6, 1.6], y: [-1.6, 1.6] },
     observable: "radius",
     observableLabel: "amplitude ρ",
     observableRange: [0, 1.3],
-    criticalValues: [{ parameter: 0, type: "supercritical-hopf", label: "Hopf point", scope: "local" }],
+    criticalValues: [{ parameter: 0, type: subcritical ? "subcritical-hopf" : "supercritical-hopf", label: "Hopf point", scope: "local" }],
     field(x, y, mu) {
       const squareRadius = x * x + y * y;
-      const radialRate = mu - squareRadius;
+      const radialRate = mu + cubicSign * squareRadius;
       return [radialRate * x - y, x + radialRate * y];
     },
     jacobian(x, y, mu) {
-      return [
-        [mu - 3 * x * x - y * y, -1 - 2 * x * y],
-        [1 - 2 * x * y, mu - x * x - 3 * y * y]
-      ];
+      const radialRate = mu + cubicSign * (x * x + y * y);
+      return radialJacobian(x, y, radialRate, 2 * cubicSign * x, 2 * cubicSign * y);
     },
     equilibria() {
       return [{ x: 0, y: 0, label: "Central focus" }];
     },
     cycles(mu) {
-      if (mu <= DEFAULT_TOLERANCE) return [];
-      return [{
-        radius: Math.sqrt(mu),
-        radialDerivative: -2 * mu,
-        angularVelocity: 1,
-        label: "Stable limit cycle"
-      }];
+      return -mu / cubicSign > DEFAULT_TOLERANCE ? [circle(mu)] : [];
     },
     branches(mu) {
       const result = [{ branchId: "origin", kind: "equilibrium", x: 0, y: 0, observable: 0 }];
-      if (mu >= -DEFAULT_TOLERANCE) {
-        result.push({
-          branchId: "cycle",
-          kind: "cycle",
-          radius: Math.sqrt(Math.max(0, mu)),
-          radialDerivative: mu > DEFAULT_TOLERANCE ? -2 * mu : 0,
-          angularVelocity: 1
-        });
+      if (-mu / cubicSign >= 0) {
+        result.push({ branchId: "cycle", kind: "cycle", ...circle(mu) });
       }
       return result;
     }
@@ -817,10 +817,10 @@ function varyingSpeedHopfDefinition() {
     label: "Stable limit cycle"
   });
   return {
-    ...supercriticalHopfDefinition(),
+    ...hopfNormalFormDefinition(-1),
     id: "varying-speed-hopf",
-    name: "Supercritical Hopf",
-    shortName: "Supercritical Hopf",
+    name: "Supercritical Hopf (varying speed)",
+    shortName: "Supercritical Hopf (varying speed)",
     formula: "ẋ = (μ − ρ²)x − (1 + y)y,   ẏ = (1 + y)x + (μ − ρ²)y",
     polarFormula: "ρ̇ = μρ − ρ³,   θ̇ = 1 + ρ sin θ",
     description: "An attracting circular orbit grows from the Hopf point, with angular speed that varies around the circle.",
@@ -1384,7 +1384,8 @@ const definitions = Object.freeze({
   "saddle-node": saddleNodeDefinition,
   transcritical: transcriticalDefinition,
   pitchfork: pitchforkDefinition,
-  "supercritical-hopf": supercriticalHopfDefinition,
+  "supercritical-hopf": () => hopfNormalFormDefinition(-1),
+  "subcritical-hopf-normal-form": () => hopfNormalFormDefinition(1),
   "subcritical-hopf": subcriticalHopfDefinition,
   "fold-cycles": foldCyclesDefinition,
   homoclinic: homoclinicDefinition,

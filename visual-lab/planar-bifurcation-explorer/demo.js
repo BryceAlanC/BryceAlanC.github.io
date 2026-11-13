@@ -12,7 +12,7 @@ import {
   buildSpectrum,
   spectrumAtPosition,
   spectrumSlice
-} from "./model.js?v=20261105-2";
+} from "./model.js?v=20261112-1";
 import { drawSpectrumView } from "./spectrum-view.js?v=20261105-3";
 
 const COLORS = Object.freeze({
@@ -1088,8 +1088,6 @@ function initializeFamilyOptions() {
     if (!PRESET_IDS.includes(normalized)) option.remove();
   }
   for (const id of PRESET_IDS) {
-    // The varying-speed system is the Hopf example shown in this explorer.
-    if (id === "supercritical-hopf") continue;
     const existing = [...elements.familySelect.options].some((option) => normalizeFamilyId(option.value) === id);
     if (existing) continue;
     const option = document.createElement("option");
