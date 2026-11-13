@@ -148,7 +148,7 @@ const state = {
   userSeeds: [],
   trajectories: [],
   trajectorySerial: 0,
-  trajectoriesPaused: motionQuery.matches,
+  trajectoriesPaused: false,
   sweepRunning: false,
   sweepDirection: 1,
   sweepSpeed: Number(elements.sweepSpeed?.value || 0.35),
