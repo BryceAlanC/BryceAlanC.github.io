@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bifurcations in 3D | Bryce Christopherson</title>
+    <meta
+      name="description"
+      content="Explore the Lorenz equations and a Hopf bifurcation with a rotatable phase portrait, a movable Poincare section, parameter diagrams, and Jacobian eigenvalues."
+    />
+    <meta name="author" content="Bryce A. Christopherson" />
+    <meta name="theme-color" content="#0b5748" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Bifurcations in 3D | Bryce Christopherson" />
+    <meta
+      property="og:description"
+      content="Follow equilibria, periodic orbits, and the Lorenz attractor as a parameter changes."
+    />
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/lab.css" />
+    <link rel="stylesheet" href="./style.css?v=20261114-3" />
+    <script type="module" src="./demo.js?v=20261114-3"></script>
+  </head>
+  <body class="visual-lab-page">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="wordmark" href="../../" aria-label="Bryce Christopherson, home">
+          <span class="wordmark-mark" aria-hidden="true">BC</span>
+          <span class="wordmark-name">Bryce Christopherson</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="../../research/">Research</a>
+          <a href="../../teaching/">Teaching</a>
+          <a href="../../service/">Service</a>
+          <a href="../../presentations/">Presentations</a>
+          <a href="../" aria-current="page">Visual Lab</a>
+          <a href="../../#about">About</a>
+        </nav>
+        <a
+          class="header-cta"
+          href="../../files/Bryce-Christopherson-CV.pdf"
+          target="_blank"
+          rel="noreferrer"
+          >CV <span aria-hidden="true">↗</span></a
+        >
+        <details class="mobile-menu">
+          <summary>Menu</summary>
+          <nav aria-label="Mobile navigation">
+            <a href="../../research/">Research</a>
+            <a href="../../teaching/">Teaching</a>
+            <a href="../../service/">Service</a>
+            <a href="../../presentations/">Presentations</a>
+            <a href="../" aria-current="page">Visual Lab</a>
+            <a href="../../#about">About</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="app-hero space-hero" id="top">
+        <div class="section-shell">
+          <a class="app-back" href="../"><span aria-hidden="true">&larr;</span> Back to the Visual Lab</a>
+          <div class="app-hero-grid">
+            <p class="section-kicker">Nonlinear dynamics</p>
+            <h1>Bifurcations in 3D</h1>
+            <p class="app-hero-copy">
+              Follow the Lorenz flow as <i>r</i> changes. Move a section through the phase
+              portrait and plot where the trajectory crosses it. Try the Hopf normal form
+              first to see how a single periodic orbit appears on the section.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="space-lab" id="space-lab" aria-label="Three-dimensional bifurcation explorer">
+        <form class="space-controls" id="system-controls">
+          <div class="space-system">
+            <label for="system">System</label>
+            <select id="system">
+              <option value="lorenz">Lorenz equations</option>
+              <option value="hopf">Hopf normal form in 3D</option>
+            </select>
+            <p class="space-equations" id="equations"></p>
+          </div>
+          <div class="space-parameter">
+            <div class="space-parameter-label">
+              <label for="parameter-input">Parameter <i>r</i></label>
+              <input id="parameter-input" type="number" value="28" min="0" max="45" step="any" inputmode="decimal" />
+            </div>
+            <input id="parameter" type="range" value="28" min="0" max="45" step="0.001" aria-label="Parameter r slider" />
+            <div class="space-range"><span id="parameter-min">0</span><span id="parameter-max">45</span></div>
+            <div class="space-actions" id="quick-parameters" aria-label="Example parameter values"></div>
+          </div>
+          <div class="space-run">
+            <div class="space-actions space-playback">
+              <button type="button" id="playback">Pause</button>
+              <button type="button" id="restart">Replay</button>
+              <button type="button" id="fullscreen" aria-pressed="false">Full screen</button>
+            </div>
+            <details class="space-seed">
+              <summary>Initial condition</summary>
+              <div class="space-seed-fields">
+                <label><i>x</i><sub>0</sub><input type="number" id="initial-x" min="-25" max="25" step="any" required /></label>
+                <label><i>y</i><sub>0</sub><input type="number" id="initial-y" min="-25" max="25" step="any" required /></label>
+                <label><i>z</i><sub>0</sub><input type="number" id="initial-z" min="-10" max="65" step="any" required /></label>
+              </div>
+              <div class="space-actions">
+                <button type="submit">Run from this point</button>
+                <button type="button" id="reset-initial">Reset point</button>
+              </div>
+            </details>
+          </div>
+        </form>
+
+        <div class="space-workbench">
+          <section class="space-panel space-portrait" aria-labelledby="portrait-title">
+            <header class="space-panel-heading">
+              <div>
+                <h2 id="portrait-title">3D phase portrait</h2>
+                <p id="trajectory-summary">Computing trajectory&hellip;</p>
+              </div>
+              <div class="space-actions space-camera" role="group" aria-label="Portrait camera">
+                <button aria-label="Rotate left" type="button" data-camera="left">&larr;</button>
+                <button aria-label="Rotate right" type="button" data-camera="right">&rarr;</button>
+                <button aria-label="Rotate up" type="button" data-camera="up">&uarr;</button>
+                <button aria-label="Rotate down" type="button" data-camera="down">&darr;</button>
+                <button aria-label="Zoom in" type="button" data-camera="in">+</button>
+                <button aria-label="Zoom out" type="button" data-camera="out">&minus;</button>
+                <button aria-label="Reset portrait view" type="button" data-camera="reset">Reset</button>
+              </div>
+            </header>
+            <div class="space-canvas space-canvas-portrait">
+              <canvas id="portrait-canvas" tabindex="0" role="img" aria-label="Rotatable portrait with trajectory, equilibria, and section plane" aria-describedby="portrait-help trajectory-summary" aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - 0">
+                Trajectory, equilibria, and section plane in three-dimensional phase space.
+              </canvas>
+              <div class="space-key space-portrait-key" aria-hidden="true">
+                <span><i class="key-trajectory"></i>Trajectory</span>
+                <span><i class="key-equilibrium"></i>Equilibria</span>
+                <span><i class="key-hit"></i>Section crossings</span>
+              </div>
+            </div>
+            <p class="space-footnote" id="portrait-help">Drag or use the arrow keys to rotate. Use + and &minus; to zoom and 0 to reset.</p>
+          </section>
+
+          <section class="space-panel space-bifurcation" aria-labelledby="bifurcation-title">
+            <header class="space-panel-heading">
+              <h2 id="bifurcation-title">Parameter diagram</h2>
+              <label class="space-select"><span class="sr-only">Parameter diagram view</span>
+                <select id="parameter-mode">
+                  <option value="equilibria">Equilibrium branches</option>
+                  <option value="peaks">Orbit peaks</option>
+                </select>
+              </label>
+            </header>
+            <div class="space-canvas space-canvas-parameter">
+              <canvas id="parameter-canvas" role="img" aria-label="Equilibrium branches against r" aria-describedby="parameter-summary">
+                Parameter diagram for the selected system.
+              </canvas>
+            </div>
+            <div class="space-key space-chart-key" id="equilibrium-key" aria-hidden="true">
+              <span><i class="key-sink"></i>Sink</span>
+              <span><i class="key-unstable"></i>Unstable</span>
+              <span><i class="key-parameter"></i>Current <i>r</i></span>
+            </div>
+            <div class="space-key space-chart-key" id="peak-key" aria-hidden="true" hidden>
+              <span><i class="key-peak"></i>Sampled peak</span>
+              <span><i class="key-steady"></i>Near a sink</span>
+              <span><i class="key-parameter"></i>Current <i>r</i></span>
+            </div>
+            <p class="space-footnote" id="parameter-summary"></p>
+          </section>
+
+          <section class="space-panel space-section" aria-labelledby="section-title">
+            <header class="space-panel-heading">
+              <div>
+                <h2 id="section-title">Poincar&eacute; section</h2>
+                <p id="section-definition"></p>
+              </div>
+              <label class="space-select"><span class="sr-only">Section or return plot</span>
+                <select id="section-mode">
+                  <option value="section">Plane crossings</option>
+                  <option value="return">Peak return plot</option>
+                </select>
+              </label>
+            </header>
+            <div class="space-section-controls">
+              <label class="space-check"><input id="show-plane" type="checkbox" checked /> Show plane</label>
+              <label for="section-angle">Angle <output id="angle-readout" for="section-angle">0&deg;</output>
+                <input id="section-angle" type="range" min="-180" max="180" step="1" value="0" />
+              </label>
+              <label for="section-offset">Offset <output id="offset-readout" for="section-offset">5</output>
+                <input id="section-offset" type="range" min="-20" max="20" step="0.1" value="5" />
+              </label>
+              <label for="direction" class="space-direction">Crossing direction
+                <select id="direction">
+                  <option value="1">Along normal</option>
+                  <option value="-1">Against normal</option>
+                </select>
+              </label>
+            </div>
+            <div class="space-canvas space-canvas-chart">
+              <canvas id="section-canvas" role="img" aria-label="Directed crossings of the section plane" aria-describedby="section-summary">
+                Directed crossings of the selected plane or successive peak pairs.
+              </canvas>
+            </div>
+            <p class="space-footnote" id="section-summary"></p>
+          </section>
+
+          <section class="space-panel space-stability" aria-labelledby="stability-title">
+            <header class="space-panel-heading">
+              <h2 id="stability-title">Equilibrium stability</h2>
+              <label class="space-select"><span class="sr-only">Stability diagram view</span>
+                <select id="stability-mode">
+                  <option value="eigenvalues">Jacobian eigenvalues</option>
+                  <option value="coefficients">Cubic coefficients</option>
+                </select>
+              </label>
+            </header>
+            <div class="space-stability-controls">
+              <label for="equilibrium">Equilibrium</label>
+              <select id="equilibrium"></select>
+            </div>
+            <div class="space-canvas space-canvas-chart">
+              <canvas id="stability-canvas" role="img" aria-label="Eigenvalues in the complex plane" aria-describedby="stability-summary">
+                Eigenvalues or cubic coefficients of the selected equilibrium.
+              </canvas>
+            </div>
+            <p class="space-footnote" id="stability-summary"></p>
+          </section>
+        </div>
+
+        <details class="space-notes">
+          <summary>How to read the plots</summary>
+          <dl>
+            <dt>Plane crossings</dt>
+            <dd>The vertical plane has horizontal normal (cos&nbsp;&alpha;, sin&nbsp;&alpha;, 0)
+              and signed offset <i>d</i>. Its horizontal coordinate is
+              <i>u</i> = &minus;<i>x</i> sin&nbsp;&alpha; + <i>y</i> cos&nbsp;&alpha;.
+              The section records the original 3D trajectory crossing in the chosen direction,
+              after discarding an initial transient. The Hopf orbit meets a transverse section
+              through the origin once per direction per revolution.</dd>
+            <dt>Orbit peaks</dt>
+            <dd>The Lorenz sweep samples local maxima of <i>z</i> after a transient,
+              using one fixed starting point for each parameter. It can miss coexisting
+              attractors and unstable cycles. A square marks numerical convergence near a
+              sink. The Hopf sweep shows the exact limiting <i>x</i> peak for the preset
+              starting point. The return plot pairs consecutive numerical peaks of the
+              current trajectory.</dd>
+            <dt>Cubic coefficients</dt>
+            <dd>For Lorenz, the characteristic polynomial is
+              &lambda;<sup>3</sup> + <i>a</i><sub>1</sub>&lambda;<sup>2</sup> +
+              <i>a</i><sub>2</sub>&lambda; + <i>a</i><sub>3</sub>, with
+              <i>a</i><sub>1</sub> = &sigma; + 1 + <i>b</i> fixed.
+              The shaded sink region has <i>a</i><sub>2</sub> &gt; 0,
+              <i>a</i><sub>3</sub> &gt; 0, and
+              <i>a</i><sub>3</sub> &lt; <i>a</i><sub>1</sub><i>a</i><sub>2</sub>.
+              At the boundary <i>a</i><sub>3</sub> = <i>a</i><sub>1</sub><i>a</i><sub>2</sub>
+              with <i>a</i><sub>2</sub> &gt; 0, a conjugate pair is purely imaginary.
+              The two nonzero Lorenz equilibria share the same coefficients by symmetry.</dd>
+          </dl>
+        </details>
+        <div class="sr-only" id="announcer" aria-live="polite"></div>
+      </section>
+
+      <footer class="site-footer">
+        <div>
+          <p>&copy; 2026 Bryce A. Christopherson</p>
+          <p>University of North Dakota</p>
+        </div>
+        <a class="footer-email" href="mailto:bryce.christopherson@UND.edu">bryce.christopherson@UND.edu <span aria-hidden="true">&nearr;</span></a>
+        <a href="#top">Back to top <span aria-hidden="true">&uarr;</span></a>
+      </footer>
+    </main>
+  </body>
+</html>
