@@ -1,4 +1,4 @@
-import { PRESETS, samplePeakColumn } from "./model.js?v=20261114-3";
+import { PRESETS, samplePeakColumn } from "./model.js?v=20261114-4";
 
 self.addEventListener("message", ({ data: { id, count } }) => {
   try {

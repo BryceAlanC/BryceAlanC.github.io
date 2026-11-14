@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   LORENZ_HOPF,
+  compareTrajectories,
   equilibriaAt,
   fieldAt,
   integrateTrajectory,
@@ -84,5 +85,36 @@ assert.equal(chaotic.kind, "peaks");
 assert.equal(chaotic.values.length, 24);
 assert.ok(Math.max(...chaotic.values) - Math.min(...chaotic.values) > 5);
 assert.equal(integrateTrajectory("lorenz", 28, { initial: [1e30, 1e30, 1e30] }).termination, "diverged");
+
+const nearbySink = compareTrajectories("lorenz", 12);
+near(nearbySink.initialDistance, 1e-6);
+assert.ok(nearbySink.maximumDistance < 1e-5);
+assert.ok(nearbySink.finalDistance < 1e-8);
+assert.equal(nearbySink.firstThresholdTime, null);
+
+const nearbyButterfly = compareTrajectories("lorenz", 28);
+assert.equal(nearbyButterfly.separation.length, nearbyButterfly.primary.samples.length);
+assert.ok(nearbyButterfly.firstThresholdTime >= 20 && nearbyButterfly.firstThresholdTime <= 35);
+assert.ok(nearbyButterfly.maximumDistance > 10);
+for (const [index, { t, distance }] of nearbyButterfly.separation.entries()) {
+  const a = nearbyButterfly.primary.samples[index];
+  const b = nearbyButterfly.comparison.samples[index];
+  assert.equal(t, a.t);
+  assert.equal(t, b.t);
+  near(distance, Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z));
+}
+
+const verticallySeparated = compareTrajectories("hopf", 1, {
+  initial: [0.6, 0.2, 0.1], component: "z", perturbation: -1e-3, threshold: 1e-4, duration: 3
+});
+near(verticallySeparated.initialDistance, 1e-3);
+near(verticallySeparated.finalDistance, 1e-3 * Math.exp(-3));
+near(verticallySeparated.timeOfMaximum, 0);
+assert.equal(verticallySeparated.firstThresholdTime, 0);
+assert.equal(verticallySeparated.comparison.samples[0].x, 0.6);
+
+const earlyStop = compareTrajectories("lorenz", 28, { perturbation: 1e7 });
+assert.equal(earlyStop.comparison.termination, "diverged");
+assert.equal(earlyStop.separation.length, 1);
 
 console.log("3D bifurcation model tests passed");

@@ -41,7 +41,7 @@ function ticks([min, max], count) {
   return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => (first + index) * step);
 }
 
-function plot(context, width, height, xRange, yRange, xLabel, yLabel, dark = false) {
+function plot(context, width, height, xRange, yRange, xLabel, yLabel, dark = false, yTickSpec) {
   const paper = dark ? COLORS.dark : COLORS.paper;
   const ink = dark ? COLORS.darkInk : COLORS.ink;
   const muted = dark ? COLORS.darkMuted : COLORS.muted;
@@ -89,10 +89,12 @@ function plot(context, width, height, xRange, yRange, xLabel, yLabel, dark = fal
     stroke([[px, top], [px, bottom]], grid);
     label(numberLabel(value), px, bottom + 6, { color: muted, align: "center", size: 10 });
   }
-  for (const value of ticks(yRange, height < 230 ? 3 : 5)) {
+  for (const value of yTickSpec?.values ?? ticks(yRange, height < 230 ? 3 : 5)) {
     const py = y(value);
     stroke([[left, py], [right, py]], grid);
-    label(numberLabel(value), left - 6, py, { color: muted, align: "right", size: 10, middle: true });
+    label(yTickSpec ? yTickSpec.format(value) : numberLabel(value), left - 6, py, {
+      color: muted, align: "right", size: 10, middle: true
+    });
   }
   label(yLabel, left, 8);
   label(xLabel, (left + right) / 2, bottom + 24, { align: "center" });
@@ -228,24 +230,67 @@ export function drawParameterChart(context, width, height, {
     align: labelLeft ? "right" : "left", color: COLORS.current, outline: true
   });
   view.finish();
+  return {
+    parameterAt(x, y, { clamp = false } = {}) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (!clamp && (x < view.left || x > view.right || y < view.top || y > view.bottom)) return null;
+      const fraction = Math.min(1, Math.max(0, (x - view.left) / (view.right - view.left)));
+      return xRange[0] + fraction * (xRange[1] - xRange[0]);
+    }
+  };
 }
 
-export function drawSectionChart(context, width, height, { preset, mode = "section", section, crossings = [], peaks = [] }) {
-  if (mode === "return") {
-    const series = peaks.map(peak => peak[preset.peakCoordinate]);
-    const r = rangeOf(series, preset.bounds[preset.peakCoordinate === "z" ? 2 : 0]);
-    const coordinate = preset.peakCoordinate;
-    const view = plot(context, width, height, r, r, `${coordinate}_n`, `${coordinate}_(n+1)`);
-    if (!view) return;
-    view.line([[r[0], r[0]], [r[1], r[1]]], COLORS.axis, 1, [3, 4]);
-    for (let index = 1; index < series.length; index += 1) {
-      const last = index === series.length - 1;
-      view.point(series[index - 1], series[index], last ? COLORS.current : COLORS.orbit, last ? 4.2 : 2.1);
-    }
-    if (series.length < 2) view.empty("Fewer than two peaks after the transient");
-    view.finish();
-    return;
+function drawSectionPoints(view, points, hoverIndex, selectedIndex) {
+  for (const { u, v } of points) view.point(u, v, COLORS.orbit, 2.3);
+  const selected = points[selectedIndex ?? points.length - 1];
+  if (selected) view.point(selected.u, selected.v, COLORS.current, 4.5);
+  const hovered = points[hoverIndex];
+  if (hovered) {
+    view.point(hovered.u, hovered.v, COLORS.orbit, 6.4, { hollow: true });
+    if (hovered === selected) view.point(hovered.u, hovered.v, COLORS.current, 3.3);
   }
+  return {
+    count: points.length,
+    pointAt: index => points[index] ?? null,
+    hitAt(x, y) {
+      let nearest = null;
+      let distanceSquared = 11 ** 2;
+      if (x < view.left - 4 || x > view.right + 4 || y < view.top - 4 || y > view.bottom + 4) return null;
+      for (const item of points) {
+        const candidate = (view.x(item.u) - x) ** 2 + (view.y(item.v) - y) ** 2;
+        if (candidate <= distanceSquared) {
+          nearest = item;
+          distanceSquared = candidate;
+        }
+      }
+      return nearest;
+    }
+  };
+}
+
+function drawReturnChart(context, width, height, preset, peaks, hoverIndex, selectedIndex) {
+  const coordinate = preset.peakCoordinate;
+  const range = rangeOf(peaks.map(peak => peak[coordinate]), preset.bounds[coordinate === "z" ? 2 : 0]);
+  const view = plot(context, width, height, range, range, `${coordinate}_n`, `${coordinate}_(n+1)`);
+  if (!view) return;
+  view.line([[range[0], range[0]], [range[1], range[1]]], COLORS.axis, 1, [3, 4]);
+  const points = peaks.slice(0, -1).map((peak, index) => {
+    const next = peaks[index + 1];
+    return {
+      index, point: [peak.x, peak.y, peak.z], time: peak.t, u: peak[coordinate], v: next[coordinate],
+      nextPoint: [next.x, next.y, next.z], nextTime: next.t
+    };
+  });
+  if (!points.length) view.empty("Fewer than two peaks after the transient");
+  const geometry = drawSectionPoints(view, points, hoverIndex, selectedIndex);
+  view.finish();
+  return geometry;
+}
+
+export function drawSectionChart(context, width, height, {
+  preset, mode = "section", section, crossings = [], peaks = [], hoverIndex = null, selectedIndex = null
+}) {
+  if (mode === "return") return drawReturnChart(context, width, height, preset, peaks, hoverIndex, selectedIndex);
 
   const { angle } = section;
   const [first, second, third] = preset.bounds;
@@ -259,10 +304,77 @@ export function drawSectionChart(context, width, height, { preset, mode = "secti
   const view = plot(context, width, height, xRange, yRange, "u (along plane)", "z");
   if (!view) return;
   view.zeroAxes();
-  for (const { u, v } of crossings.slice(0, -1)) view.point(u, v, COLORS.orbit, 2.3);
-  const latest = crossings.at(-1);
-  if (latest) view.point(latest.u, latest.v, COLORS.current, 4.5);
-  else view.empty("No crossings in the chosen direction");
+  const points = crossings.map(({ x, y, z, t, u, v }, index) => ({ index, point: [x, y, z], time: t, u, v }));
+  if (!points.length) view.empty("No crossings in the chosen direction");
+  const geometry = drawSectionPoints(view, points, hoverIndex, selectedIndex);
+  view.finish();
+  return geometry;
+}
+
+const separationCache = new WeakMap();
+
+function separationTracks(series) {
+  if (separationCache.has(series)) return separationCache.get(series);
+  const segments = [];
+  let segment = [];
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (const { t, distance } of series) {
+    if (distance > 0 && Number.isFinite(distance)) {
+      const exponent = Math.log10(distance);
+      minimum = Math.min(minimum, exponent);
+      maximum = Math.max(maximum, exponent);
+      segment.push([t, exponent]);
+    } else if (segment.length) {
+      segments.push(segment);
+      segment = [];
+    }
+  }
+  if (segment.length) segments.push(segment);
+  const tracks = { segments, minimum, maximum };
+  separationCache.set(series, tracks);
+  return tracks;
+}
+
+function nearestSample(series, time) {
+  let first = 0;
+  let last = series.length - 1;
+  while (last - first > 1) {
+    const middle = Math.floor((first + last) / 2);
+    if (series[middle].t <= time) first = middle;
+    else last = middle;
+  }
+  return time - series[first].t <= series[last].t - time ? series[first] : series[last];
+}
+
+export function drawSeparationChart(context, width, height, { series = [], headTime, threshold = 1 }) {
+  const { segments, minimum, maximum } = separationTracks(series);
+  const thresholdLevel = threshold > 0 && Number.isFinite(threshold) ? Math.log10(threshold) : null;
+  const xRange = series.length > 1 ? [series[0].t, series.at(-1).t] : [0, 1];
+  const yRange = segments.length ? [Math.floor(minimum), Math.ceil(maximum)] : [-6, 0];
+  if (thresholdLevel !== null && yRange[1] < thresholdLevel) yRange[1] = Math.ceil(thresholdLevel);
+  if (yRange[0] === yRange[1]) yRange[0] -= 1;
+  const stride = Math.max(1, Math.ceil((yRange[1] - yRange[0]) / 5));
+  const tickStart = Math.ceil(yRange[0] / stride) * stride;
+  const yTicks = [];
+  for (let exponent = tickStart; exponent <= yRange[1]; exponent += stride) yTicks.push(exponent);
+  const view = plot(context, width, height, xRange, yRange, "Time t", "Euclidean distance (log scale)", false, {
+    values: yTicks, format: exponent => exponent === 0 ? "1" : `1e${exponent}`
+  });
+  if (!view) return;
+  if (thresholdLevel !== null && thresholdLevel >= yRange[0] && thresholdLevel <= yRange[1]) {
+    view.line([[xRange[0], thresholdLevel], [xRange[1], thresholdLevel]], COLORS.axis, 1, [4, 4]);
+  }
+  for (const segment of segments) {
+    if (segment.length === 1) view.point(...segment[0], COLORS.orbit, 2.3);
+    else view.line(segment, COLORS.orbit, 1.6);
+  }
+  if (segments.length && Number.isFinite(headTime)) {
+    const current = nearestSample(series, headTime);
+    view.line([[current.t, yRange[0]], [current.t, yRange[1]]], COLORS.current, 1.2);
+    if (current.distance > 0) view.point(current.t, Math.log10(current.distance), COLORS.current, 4.1);
+  }
+  if (!segments.length) view.empty(series.length ? "The recorded distances are zero" : "Run a comparison to see the distances");
   view.finish();
 }
 

@@ -1,6 +1,7 @@
 const INK = "#071c18";
 const AXIS = "#8eafa6";
 const TRAIL = "#78ddc9";
+const COMPARISON = "#ffb280";
 const SECTION = "#d2b7fa";
 const SELECTION = "#f2c969";
 const projectionCache = new WeakMap();
@@ -22,10 +23,20 @@ function cameraProjection(bounds, width, height, { azimuth, elevation, zoom }) {
   const viewHeight = 2 * Math.max(...corners.map(([, y]) => Math.abs(y)));
   const padding = Math.min(30, width * 0.075, height * 0.085);
   const scale = zoom * Math.min((width - 2 * padding) / viewWidth, (height - 2 * padding) / viewHeight);
-  return (point) => {
+  const project = (point) => {
     const [x, y] = orient(point);
     return [width / 2 + scale * x, height / 2 + scale * y];
   };
+  function pointAt(x, y, z = 0) {
+    // At zero elevation a fixed-z plane is seen edge-on, so a screen
+    // location cannot pick a unique point on it.
+    if (Math.abs(s) < 0.08 || !Number.isFinite(z)) return null;
+    const horizontal = (x - width / 2) / scale;
+    const depth = ((y - height / 2) / scale + c * (z - zmid)) / s;
+    const point = [xmid + a * horizontal + b * depth, ymid - b * horizontal + a * depth, z];
+    return point.every((value, axis) => value >= bounds[axis][0] && value <= bounds[axis][1]) ? point : null;
+  }
+  return { project, pointAt };
 }
 
 function sectionCorners([[xmin, xmax], [ymin, ymax], [zmin, zmax]], { angle, offset }) {
@@ -72,9 +83,13 @@ function traceGeometry(points, project, key) {
 export function drawPortrait(context, width, height, {
   preset,
   trajectory,
+  comparison = null,
   equilibria = [],
   section = null,
   crossings = [],
+  selectedCrossing = null,
+  nextCrossing = null,
+  launchHeight = null,
   camera,
   headIndex,
   selectedEquilibrium
@@ -82,11 +97,8 @@ export function drawPortrait(context, width, height, {
   if (width < 1 || height < 1) return;
   const bounds = preset.bounds ?? preset.viewBounds;
   const [[xmin, xmax], [ymin, ymax], [zmin, zmax]] = bounds;
-  const project = cameraProjection(bounds, width, height, camera);
-  const points = trajectory.points;
-  const animated = Number.isFinite(headIndex) && points.length > 0;
+  const { project, pointAt } = cameraProjection(bounds, width, height, camera);
   const key = [width, height, camera.azimuth, camera.elevation, camera.zoom, ...bounds.flat()].join(",");
-  const { stride, rendered, path } = traceGeometry(points, project, key);
   const selectedId = selectedEquilibrium?.id ?? selectedEquilibrium;
 
   function polygon(points, close = false) {
@@ -131,6 +143,50 @@ export function drawPortrait(context, width, height, {
     context.fillText(label, x, y);
   }
 
+  function drawTrail(points, color, muted, headColor) {
+    if (!points?.length) return;
+    const animated = Number.isFinite(headIndex);
+    const { stride, rendered, path } = traceGeometry(points, project, key);
+    context.strokeStyle = animated ? muted : color;
+    context.lineWidth = animated ? 1.05 : 1.22;
+    context.stroke(path);
+    if (!animated) return;
+
+    const head = Math.max(0, Math.min(points.length - 1, Math.round(headIndex)));
+    const end = Math.floor(head / stride);
+    const tail = Math.max(0, end - Math.max(40, Math.round(rendered.length * 0.055)));
+    const [headX, headY] = project(points[head]);
+    context.beginPath();
+    context.moveTo(...rendered[tail]);
+    for (let index = tail + 1; index <= end; index += 1) context.lineTo(...rendered[index]);
+    context.lineTo(headX, headY);
+    context.strokeStyle = color;
+    context.lineWidth = 1.7;
+    context.stroke();
+    circle(headX, headY, 4, headColor, INK, 1.35);
+  }
+
+  function drawNormal(corners) {
+    const sign = section.direction < 0 ? -1 : 1;
+    const length = 0.15 * Math.min(xmax - xmin, ymax - ymin) * sign;
+    const [x, y] = corners[2].map((coordinate, axis) => 0.5 * (coordinate + corners[3][axis]));
+    const z = zmax - 0.15 * (zmax - zmin);
+    const [startX, startY] = project([x, y, z]);
+    const [endX, endY] = project([x + length * Math.cos(section.angle), y + length * Math.sin(section.angle), z]);
+    if (Math.hypot(endX - startX, endY - startY) < 9) return;
+    const heading = Math.atan2(endY - startY, endX - startX);
+    context.beginPath();
+    context.moveTo(startX, startY);
+    context.lineTo(endX, endY);
+    for (const tilt of [-0.57, 0.57]) {
+      context.moveTo(endX, endY);
+      context.lineTo(endX - 6 * Math.cos(heading + tilt), endY - 6 * Math.sin(heading + tilt));
+    }
+    context.strokeStyle = SECTION;
+    context.lineWidth = 1.65;
+    context.stroke();
+  }
+
   context.save();
   const background = context.createLinearGradient(0, 0, width, height);
   background.addColorStop(0, "#0c2b25");
@@ -158,6 +214,16 @@ export function drawPortrait(context, width, height, {
   ];
   axes.forEach(({ start, end }) => line([start, end], "#8eafa686", 1.05));
 
+  if (Number.isFinite(launchHeight) && launchHeight >= zmin && launchHeight <= zmax) {
+    const launchPlane = floor.map(([x, y]) => [x, y, launchHeight]);
+    polygon(launchPlane, true);
+    context.fillStyle = "#78ddc922";
+    context.fill();
+    context.setLineDash([4, 4]);
+    line(launchPlane, TRAIL, 1.2, true);
+    context.setLineDash([]);
+  }
+
   if (section) {
     const corners = sectionCorners(bounds, section);
     if (corners.length) {
@@ -169,27 +235,12 @@ export function drawPortrait(context, width, height, {
       context.setLineDash([5, 4]);
       context.stroke();
       context.setLineDash([]);
+      drawNormal(corners);
     }
   }
 
-  context.strokeStyle = animated ? "#78ddc976" : TRAIL;
-  context.lineWidth = animated ? 1.05 : 1.22;
-  context.stroke(path);
-
-  if (animated) {
-    const head = Math.max(0, Math.min(points.length - 1, Math.round(headIndex)));
-    const tail = Math.max(0, Math.floor(head / stride) - Math.max(40, Math.round(rendered.length * 0.055)));
-    const end = Math.floor(head / stride);
-    const [headX, headY] = project(points[head]);
-    context.beginPath();
-    context.moveTo(...rendered[tail]);
-    for (let index = tail + 1; index <= end; index += 1) context.lineTo(...rendered[index]);
-    context.lineTo(headX, headY);
-    context.strokeStyle = TRAIL;
-    context.lineWidth = 1.7;
-    context.stroke();
-    circle(headX, headY, 4, "#e5fff8", INK, 1.35);
-  }
+  drawTrail(comparison?.points, COMPARISON, "#ffb28060", COMPARISON);
+  drawTrail(trajectory.points, TRAIL, "#78ddc976", "#e5fff8");
 
   if (section) {
     for (const hit of crossings) {
@@ -208,7 +259,7 @@ export function drawPortrait(context, width, height, {
     const [x, y] = project(point);
     const color = stability === "stable" ? TRAIL : "#f0b18b";
     if (id === selectedId) circle(x, y, 8, null, SELECTION, 1.4);
-    if (stability === "nonhyperbolic") {
+    if (stability === "critical" || stability === "nonhyperbolic") {
       context.strokeStyle = SELECTION;
       context.lineWidth = 1.65;
       context.strokeRect(x - 3.65, y - 3.65, 7.3, 7.3);
@@ -217,5 +268,27 @@ export function drawPortrait(context, width, height, {
     }
     if (label) labelAt(x + 8, y - 9, label, id === selectedId ? SELECTION : "#eef8f4");
   }
+  for (const [point, color] of [[nextCrossing, SECTION], [selectedCrossing, SELECTION]]) {
+    if (!point) continue;
+    const [x, y] = project(point);
+    circle(x, y, 8, null, INK, 3.6);
+    circle(x, y, 8, null, color, 1.7);
+    circle(x, y, 3.7, color, INK, 1.2);
+  }
   context.restore();
+
+  function equilibriumAt(x, y) {
+    let nearest = null;
+    let gap = 10;
+    for (const equilibrium of equilibria) {
+      const [px, py] = project(equilibrium.point);
+      const distance = Math.hypot(x - px, y - py);
+      if (distance < gap) {
+        gap = distance;
+        nearest = equilibrium;
+      }
+    }
+    return nearest;
+  }
+  return { pointAt, equilibriumAt };
 }

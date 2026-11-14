@@ -1,8 +1,8 @@
 import {
-  LORENZ_HOPF, PRESETS, equilibriaAt, integrateTrajectory, sampleEquilibria, samplePeakColumn, sectionCrossings
-} from "./model.js?v=20261114-3";
-import { drawPortrait } from "./portrait.js?v=20261114-3";
-import { drawParameterChart, drawSectionChart, drawStabilityChart } from "./charts.js?v=20261114-3";
+  LORENZ_HOPF, PRESETS, compareTrajectories, equilibriaAt, integrateTrajectory, sampleEquilibria, samplePeakColumn, sectionCrossings
+} from "./model.js?v=20261114-4";
+import { drawPortrait } from "./portrait.js?v=20261114-4";
+import { drawParameterChart, drawSectionChart, drawSeparationChart, drawStabilityChart } from "./charts.js?v=20261114-4";
 
 const byId = id => document.getElementById(id);
 const controls = {
@@ -19,6 +19,20 @@ const controls = {
   resetInitial: byId("reset-initial"),
   playback: byId("playback"),
   restart: byId("restart"),
+  timeline: byId("timeline"),
+  timeReadout: byId("time-readout"),
+  stepTime: byId("step-time"),
+  playbackSpeed: byId("playback-speed"),
+  sweep: byId("sweep"),
+  sweepSpeed: byId("sweep-speed"),
+  compare: byId("compare"),
+  comparisonKey: byId("comparison-key"),
+  perturbationControls: byId("perturbation-controls"),
+  perturbationAxis: byId("perturbation-axis"),
+  perturbationSize: byId("perturbation-size"),
+  launchMode: byId("launch-mode"),
+  launchHeight: byId("launch-height"),
+  portraitHelp: byId("portrait-help"),
   fullscreen: byId("fullscreen"),
   parameterMode: byId("parameter-mode"),
   equilibriumKey: byId("equilibrium-key"),
@@ -35,7 +49,14 @@ const controls = {
   portrait: byId("portrait-canvas"),
   parameterChart: byId("parameter-canvas"),
   sectionChart: byId("section-canvas"),
+  previousHit: byId("previous-hit"),
+  nextHit: byId("next-hit"),
+  clearHit: byId("clear-hit"),
+  sectionSelection: byId("section-selection"),
   stabilityChart: byId("stability-canvas"),
+  separationPanel: byId("separation-panel"),
+  separationChart: byId("separation-canvas"),
+  separationSummary: byId("separation-summary"),
   trajectorySummary: byId("trajectory-summary"),
   parameterSummary: byId("parameter-summary"),
   sectionSummary: byId("section-summary"),
@@ -67,7 +88,10 @@ const state = {
   equilibria: [], selectedEquilibrium: null, run: null, trajectory: null,
   section: { angle: 0, offset: 5, direction: 1 }, crossings: [],
   camera: { ...defaultCamera }, headIndex: 0, playing: !motion.matches,
-  lastFrame: null, animation: null, drag: null
+  lastFrame: null, animation: null, drag: null,
+  comparison: null, comparisonTrail: null, sweepTimer: null,
+  portraitGeometry: null, parameterGeometry: null, sectionGeometry: null,
+  parameterPointer: null, selectedHit: null, hoveredHit: null, placing: false
 };
 const branchCache = new Map();
 const peakCache = new Map();
@@ -96,7 +120,8 @@ function surface(canvas) {
 function paintPortrait() {
   const target = surface(controls.portrait);
   if (!target || !state.trajectory) return;
-  drawPortrait(...target, {
+  const selection = state.sectionGeometry?.pointAt(state.hoveredHit ?? state.selectedHit);
+  state.portraitGeometry = drawPortrait(...target, {
     preset: state.preset,
     trajectory: state.trajectory,
     equilibria: state.equilibria,
@@ -104,7 +129,11 @@ function paintPortrait() {
     section: controls.showPlane.checked ? state.section : null,
     crossings: controls.showPlane.checked ? state.crossings : [],
     camera: state.camera,
-    headIndex: state.headIndex
+    headIndex: state.headIndex,
+    comparison: state.comparisonTrail,
+    selectedCrossing: selection?.point,
+    nextCrossing: selection?.nextPoint,
+    launchHeight: state.placing ? controls.launchHeight.valueAsNumber : null
   });
 }
 
@@ -132,7 +161,7 @@ function paintParameter() {
     controls.parameterSummary.textContent = `${sampled} Gold points show ${observed.length} late ${label} peaks for the current trajectory.${progress}`;
   }
   const target = surface(controls.parameterChart);
-  if (target) drawParameterChart(...target, {
+  if (target) state.parameterGeometry = drawParameterChart(...target, {
     preset: state.preset, mode, parameter: state.parameter, branches: state.branches,
     equilibria: state.equilibria, peakSweep: peakRequest?.presetId === state.preset.id
       ? peakRequest.columns : peakSweep, peaks: observed, selectedEquilibrium: state.selectedEquilibrium
@@ -165,10 +194,43 @@ function paintSection() {
       : "Fewer than two late peaks in this trajectory.";
   }
   const target = surface(controls.sectionChart);
-  if (target) drawSectionChart(...target, {
+  if (target) state.sectionGeometry = drawSectionChart(...target, {
     preset: state.preset, mode: controls.sectionMode.value, section: state.section,
-    crossings: state.crossings, peaks
+    crossings: state.crossings, peaks, selectedIndex: state.selectedHit, hoverIndex: state.hoveredHit
   });
+  const count = state.sectionGeometry?.count ?? 0;
+  const hit = state.sectionGeometry?.pointAt(state.hoveredHit ?? state.selectedHit);
+  controls.previousHit.disabled = !count || state.selectedHit === 0;
+  controls.nextHit.disabled = !count || state.selectedHit === count - 1;
+  controls.clearHit.disabled = state.selectedHit === null;
+  controls.sectionSelection.textContent = hit
+    ? inSectionMode
+      ? `Crossing ${hit.index + 1}/${count} at t = ${formatted(hit.time)}. (x, y, z) = (${hit.point.map(formatted).join(", ")}).`
+      : `Pair ${hit.index + 1}/${count} at t = ${formatted(hit.time)}, ${formatted(hit.nextTime)}. Peaks: ${formatted(hit.u)}, ${formatted(hit.v)}.`
+    : count ? "Select a point to locate it on the trajectory." : "No points to inspect.";
+}
+
+function currentTime() {
+  const samples = state.run?.samples;
+  if (!samples?.length) return 0;
+  const index = Math.floor(state.headIndex);
+  const start = samples[index].t;
+  return start + (state.headIndex - index) * ((samples[index + 1]?.t ?? start) - start);
+}
+
+function paintSeparation() {
+  if (!state.comparison) return;
+  const target = surface(controls.separationChart);
+  if (!target) return;
+  drawSeparationChart(...target, { series: state.comparison.separation, headTime: currentTime() });
+}
+
+function syncTimeline() {
+  const time = currentTime();
+  controls.timeline.value = String(time);
+  const text = time.toFixed(2);
+  if (controls.timeReadout.textContent !== text) controls.timeReadout.textContent = text;
+  controls.timeline.setAttribute("aria-valuetext", `t equals ${text}`);
 }
 
 function eigenvalueText({ re, im }) {
@@ -200,10 +262,11 @@ function paintStability() {
 }
 
 function paintAll() {
-  paintPortrait();
   paintParameter();
   paintSection();
+  paintPortrait();
   paintStability();
+  paintSeparation();
 }
 
 function updateEquilibriumList() {
@@ -232,8 +295,9 @@ function updateSection() {
     direction: Number(controls.direction.value)
   };
   updateCrossings();
-  paintPortrait();
+  if (controls.sectionMode.value === "section") clearPointSelection();
   paintSection();
+  paintPortrait();
 }
 
 function syncPlayback() {
@@ -241,6 +305,8 @@ function syncPlayback() {
   controls.playback.setAttribute("aria-label", state.playing ? "Pause trajectory playback" : "Play trajectory");
   controls.playback.disabled = !state.trajectory?.points?.length;
   controls.restart.disabled = controls.playback.disabled;
+  controls.timeline.disabled = controls.playback.disabled;
+  controls.stepTime.disabled = controls.playback.disabled;
 }
 
 function animate(time) {
@@ -249,7 +315,7 @@ function animate(time) {
   if (state.lastFrame === null) state.lastFrame = time;
   const elapsed = Math.min(50, time - state.lastFrame);
   const count = state.trajectory.points.length;
-  state.headIndex += elapsed * (count - 1) / 24000;
+  state.headIndex += elapsed * (count - 1) * Number(controls.playbackSpeed.value) / 24000;
   state.lastFrame = time;
   if (state.headIndex >= count - 1) {
     state.headIndex = count - 1;
@@ -257,12 +323,39 @@ function animate(time) {
     syncPlayback();
   }
   paintPortrait();
+  syncTimeline();
+  paintSeparation();
   if (state.playing) state.animation = requestAnimationFrame(animate);
 }
 
 function startAnimation() {
   state.lastFrame = null;
   if (state.playing && state.animation === null) state.animation = requestAnimationFrame(animate);
+}
+
+function clearPointSelection() {
+  state.selectedHit = null;
+  state.hoveredHit = null;
+}
+
+function seekTime(time) {
+  const samples = state.run?.samples;
+  if (!samples?.length) return;
+  pauseSweep();
+  state.playing = false;
+  let low = 0;
+  let high = samples.length - 1;
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if (samples[middle].t <= time) low = middle;
+    else high = middle;
+  }
+  const span = samples[high].t - samples[low].t;
+  state.headIndex = low + (span ? clamp((time - samples[low].t) / span, 0, 1) : 0);
+  syncPlayback();
+  syncTimeline();
+  paintPortrait();
+  paintSeparation();
 }
 
 function runTrajectory() {
@@ -272,8 +365,21 @@ function runTrajectory() {
     cancelAnimationFrame(state.animation);
     state.animation = null;
   }
+  clearPointSelection();
+  state.sectionGeometry = null;
+  state.comparison = null;
+  state.comparisonTrail = null;
   try {
-    state.run = integrateTrajectory(state.preset.id, state.parameter, { initial: state.initial });
+    const options = { initial: state.initial };
+    if (controls.compare.checked) {
+      state.comparison = compareTrajectories(state.preset.id, state.parameter, {
+        ...options, component: controls.perturbationAxis.value, perturbation: controls.perturbationSize.valueAsNumber
+      });
+      state.run = state.comparison.primary;
+      state.comparisonTrail = { points: state.comparison.comparison.samples.map(({ x, y, z }) => [x, y, z]) };
+    } else {
+      state.run = integrateTrajectory(state.preset.id, state.parameter, options);
+    }
     state.trajectory = { points: state.run.samples.map(({ x, y, z }) => [x, y, z]) };
     const endTime = state.run.samples.at(-1).t;
     const timing = `r = ${formatted(state.parameter)} \u00b7 t = 0 to ${formatted(endTime)}`;
@@ -287,16 +393,29 @@ function runTrajectory() {
     announce(controls.trajectorySummary.textContent);
     console.error(error);
   }
+  controls.separationPanel.hidden = !state.comparison;
+  controls.comparisonKey.hidden = !state.comparisonTrail;
+  if (state.comparison) {
+    const { initialDistance, maximumDistance, firstThresholdTime, finalDistance } = state.comparison;
+    const threshold = firstThresholdTime === null ? "Distance stays below 1 at the sampled times." : `First sampled distance of at least 1 at t = ${formatted(firstThresholdTime)}.`;
+    const zero = finalDistance === 0 ? " The last samples coincide at numerical precision." : "";
+    const partial = state.comparison.comparison.termination !== "completed" || state.run.termination !== "completed"
+      ? " The plot ends at the last common sample." : "";
+    controls.separationSummary.textContent = `Starts at ${formatted(initialDistance)} and reaches ${formatted(maximumDistance)}. ${threshold}${zero}${partial}`;
+  }
+  controls.timeline.max = String(state.run?.samples.at(-1).t ?? 1);
   state.crossings = [];
   updateCrossings();
   state.headIndex = state.playing ? 0 : Math.max(0, state.trajectory.points.length - 1);
   syncPlayback();
+  syncTimeline();
   paintAll();
   startAnimation();
 }
 
-function setParameter(value) {
+function setParameter(value, { fromSweep = false } = {}) {
   if (!Number.isFinite(value)) return;
+  if (!fromSweep) pauseSweep();
   state.parameter = clamp(value, ...state.preset.parameterRange);
   controls.parameterInput.value = String(state.parameter);
   controls.parameter.value = String(state.parameter);
@@ -313,6 +432,8 @@ function cancelScheduledParameter() {
 }
 
 function scheduleParameter(value) {
+  if (!Number.isFinite(value)) return;
+  pauseSweep();
   controls.parameterInput.value = String(value);
   pendingParameter = value;
   if (parameterFrame !== null) return;
@@ -321,6 +442,32 @@ function scheduleParameter(value) {
     cancelScheduledParameter();
     setParameter(next);
   });
+}
+
+function pauseSweep() {
+  if (state.sweepTimer === null) return;
+  clearTimeout(state.sweepTimer);
+  state.sweepTimer = null;
+  controls.sweep.textContent = "Play parameter sweep";
+  controls.sweep.setAttribute("aria-pressed", "false");
+}
+
+function startSweep() {
+  state.playing = false;
+  syncPlayback();
+  const [min, max] = state.preset.parameterRange;
+  const interval = 100;
+  let direction = state.parameter >= max ? -1 : 1;
+  controls.sweep.textContent = "Pause parameter sweep";
+  controls.sweep.setAttribute("aria-pressed", "true");
+  function next() {
+    const speed = Number(controls.sweepSpeed.value);
+    const parameter = clamp(state.parameter + direction * speed * (max - min) / 220, min, max);
+    if (parameter === min || parameter === max) direction *= -1;
+    setParameter(parameter, { fromSweep: true });
+    state.sweepTimer = setTimeout(next, interval);
+  }
+  state.sweepTimer = setTimeout(next, interval);
 }
 
 function setInitial(values) {
@@ -350,7 +497,7 @@ function ensurePeakSweep() {
   }
   peakRequest = request;
   try {
-    const worker = new Worker(new URL("./peak-worker.js?v=20261114-3", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./peak-worker.js?v=20261114-4", import.meta.url), { type: "module" });
     request.worker = worker;
     worker.onmessage = ({ data }) => {
       if (peakRequest !== request) return;
@@ -368,6 +515,8 @@ function ensurePeakSweep() {
 
 function loadPreset(id) {
   cancelScheduledParameter();
+  pauseSweep();
+  setLaunchMode(false);
   state.preset = PRESETS[id];
   state.camera = { ...defaultCamera };
   state.selectedEquilibrium = null;
@@ -385,6 +534,8 @@ function loadPreset(id) {
     input.min = minimum;
     input.max = maximum;
   }
+  [controls.launchHeight.min, controls.launchHeight.max] = state.preset.bounds[2];
+  controls.launchHeight.value = String(state.preset.id === "lorenz" ? state.preset.initial[2] : 0);
   const offsetLimit = id === "lorenz" ? 20 : 2;
   controls.sectionOffset.min = -offsetLimit;
   controls.sectionOffset.max = offsetLimit;
@@ -431,6 +582,45 @@ function useCamera(action) {
   paintPortrait();
 }
 
+function canvasPoint(canvas, event) {
+  const { left, top } = canvas.getBoundingClientRect();
+  return [event.clientX - left, event.clientY - top];
+}
+
+function selectEquilibrium(id) {
+  state.selectedEquilibrium = id;
+  controls.equilibrium.value = id;
+  paintPortrait();
+  paintParameter();
+  paintStability();
+}
+
+function setLaunchMode(active) {
+  state.placing = active;
+  controls.launchMode.setAttribute("aria-pressed", String(active));
+  controls.portrait.toggleAttribute("data-launch", active);
+  controls.portraitHelp.textContent = active
+    ? "Click in the portrait to start on the chosen z-plane. Escape cancels. You can also enter coordinates under Initial condition."
+    : "Drag to rotate or click an equilibrium to inspect it. Use arrow keys to rotate, + and minus to zoom, and 0 to reset.";
+  paintPortrait();
+}
+
+function inspectHit(index, seek = false) {
+  const hit = state.sectionGeometry?.pointAt(index);
+  state.selectedHit = hit?.index ?? null;
+  state.hoveredHit = null;
+  paintSection();
+  if (hit && seek) seekTime(hit.time);
+  else paintPortrait();
+}
+
+function stepHit(direction) {
+  const count = state.sectionGeometry?.count ?? 0;
+  if (!count) return;
+  const from = state.selectedHit ?? (direction > 0 ? -1 : count);
+  inspectHit(clamp(from + direction, 0, count - 1), true);
+}
+
 controls.system.addEventListener("change", () => {
   loadPreset(controls.system.value);
   announce(`${state.preset.name} loaded.`);
@@ -448,48 +638,133 @@ controls.parameterInput.addEventListener("keydown", event => {
 });
 controls.form.addEventListener("submit", event => {
   event.preventDefault();
+  pauseSweep();
   setInitial(controls.initial.map(input => input.valueAsNumber));
+  state.playing = !motion.matches;
   runTrajectory();
   if (state.run?.termination === "completed") announce("New trajectory computed from the specified initial condition.");
 });
 controls.resetInitial.addEventListener("click", () => {
+  pauseSweep();
   setInitial(state.preset.initial);
   runTrajectory();
 });
 controls.playback.addEventListener("click", () => {
+  pauseSweep();
+  clearPointSelection();
+  paintSection();
   state.playing = !state.playing;
   if (state.playing && state.headIndex >= state.trajectory.points.length - 1) state.headIndex = 0;
   syncPlayback();
   startAnimation();
 });
 controls.restart.addEventListener("click", () => {
+  pauseSweep();
+  clearPointSelection();
+  paintSection();
   state.headIndex = 0;
   state.playing = !motion.matches;
   syncPlayback();
+  syncTimeline();
   paintPortrait();
+  paintSeparation();
   startAnimation();
 });
 motion.addEventListener("change", event => {
   if (event.matches) {
+    pauseSweep();
     state.playing = false;
     syncPlayback();
   }
 });
+controls.timeline.addEventListener("input", () => {
+  clearPointSelection();
+  paintSection();
+  seekTime(controls.timeline.valueAsNumber);
+});
+controls.stepTime.addEventListener("click", () => {
+  clearPointSelection();
+  paintSection();
+  seekTime(currentTime() + 1);
+});
+controls.sweep.addEventListener("click", () => {
+  if (state.sweepTimer === null) startSweep();
+  else pauseSweep();
+});
+controls.compare.addEventListener("change", () => {
+  controls.perturbationControls.hidden = !controls.compare.checked;
+  runTrajectory();
+});
+controls.perturbationAxis.addEventListener("change", runTrajectory);
+controls.perturbationSize.addEventListener("change", () => {
+  const value = controls.perturbationSize.valueAsNumber;
+  controls.perturbationSize.value = String(Number.isFinite(value) ? clamp(value, 1e-12, 0.1) : 1e-6);
+  runTrajectory();
+});
+controls.launchMode.addEventListener("click", () => setLaunchMode(!state.placing));
+controls.launchHeight.addEventListener("input", paintPortrait);
 controls.parameterMode.addEventListener("change", () => {
   ensurePeakSweep();
   paintParameter();
 });
-controls.sectionMode.addEventListener("change", paintSection);
+controls.sectionMode.addEventListener("change", () => inspectHit(null));
 controls.showPlane.addEventListener("change", paintPortrait);
 controls.sectionAngle.addEventListener("input", updateSection);
 controls.sectionOffset.addEventListener("input", updateSection);
 controls.direction.addEventListener("change", updateSection);
 controls.stabilityMode.addEventListener("change", paintStability);
-controls.equilibrium.addEventListener("change", () => {
-  state.selectedEquilibrium = controls.equilibrium.value;
+controls.equilibrium.addEventListener("change", () => selectEquilibrium(controls.equilibrium.value));
+controls.previousHit.addEventListener("click", () => stepHit(-1));
+controls.nextHit.addEventListener("click", () => stepHit(1));
+controls.clearHit.addEventListener("click", () => inspectHit(null));
+controls.sectionChart.addEventListener("pointermove", event => {
+  const hit = state.sectionGeometry?.hitAt(...canvasPoint(controls.sectionChart, event));
+  const index = hit?.index ?? null;
+  if (index === state.hoveredHit) return;
+  state.hoveredHit = index;
+  paintSection();
   paintPortrait();
-  paintParameter();
-  paintStability();
+});
+controls.sectionChart.addEventListener("pointerleave", () => {
+  if (state.hoveredHit === null) return;
+  state.hoveredHit = null;
+  paintSection();
+  paintPortrait();
+});
+controls.sectionChart.addEventListener("click", event => {
+  const hit = state.sectionGeometry?.hitAt(...canvasPoint(controls.sectionChart, event));
+  if (hit) inspectHit(hit.index, true);
+});
+controls.sectionChart.addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Escape"].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === "Escape") inspectHit(null);
+  else stepHit(event.key === "ArrowRight" ? 1 : -1);
+});
+
+controls.parameterChart.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || state.parameterPointer !== null) return;
+  const value = state.parameterGeometry?.parameterAt(...canvasPoint(controls.parameterChart, event));
+  if (!Number.isFinite(value)) return;
+  state.parameterPointer = event.pointerId;
+  controls.parameterChart.setPointerCapture(event.pointerId);
+  scheduleParameter(value);
+});
+controls.parameterChart.addEventListener("pointermove", event => {
+  if (state.parameterPointer !== event.pointerId) return;
+  const value = state.parameterGeometry?.parameterAt(...canvasPoint(controls.parameterChart, event), { clamp: true });
+  scheduleParameter(value);
+});
+controls.parameterChart.addEventListener("lostpointercapture", event => {
+  if (state.parameterPointer === event.pointerId) state.parameterPointer = null;
+});
+controls.parameterChart.addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const [min, max] = state.preset.parameterRange;
+  const step = (max - min) * (event.shiftKey ? 0.05 : 0.01);
+  const delta = event.key === "ArrowRight" ? step : -step;
+  setParameter(event.key === "Home" ? min : event.key === "End" ? max : state.parameter + delta);
 });
 
 for (const button of document.querySelectorAll("[data-camera]")) {
@@ -507,15 +782,40 @@ controls.portrait.addEventListener("keydown", event => {
 controls.portrait.addEventListener("pointerdown", event => {
   if (event.button !== 0 || state.drag) return;
   controls.portrait.setPointerCapture(event.pointerId);
-  state.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, ...state.camera };
-  controls.portrait.dataset.dragging = "";
+  state.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, ...state.camera };
 });
 controls.portrait.addEventListener("pointermove", event => {
   const drag = state.drag;
   if (drag?.id !== event.pointerId) return;
+  if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+  drag.moved = true;
+  controls.portrait.dataset.dragging = "";
   state.camera.azimuth = drag.azimuth + (event.clientX - drag.x) * 0.011;
   state.camera.elevation = clamp(drag.elevation - (event.clientY - drag.y) * 0.011, -1.45, 1.45);
   paintPortrait();
+});
+controls.portrait.addEventListener("pointerup", event => {
+  const drag = state.drag;
+  if (drag?.id !== event.pointerId || drag.moved) return;
+  const coords = canvasPoint(controls.portrait, event);
+  if (state.placing) {
+    const height = controls.launchHeight.valueAsNumber;
+    const point = Number.isFinite(height) ? state.portraitGeometry?.pointAt(...coords, height) : null;
+    if (!point) {
+      controls.portraitHelp.textContent = "That click misses the launch plane. Rotate the portrait or choose a different z value.";
+      announce(controls.portraitHelp.textContent);
+      return;
+    }
+    pauseSweep();
+    setLaunchMode(false);
+    setInitial(point);
+    state.playing = !motion.matches;
+    runTrajectory();
+    announce(`Trajectory launched at (${point.map(formatted).join(", ")}).`);
+  } else {
+    const eq = state.portraitGeometry?.equilibriumAt(...coords);
+    if (eq) selectEquilibrium(eq.id);
+  }
 });
 for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) {
   controls.portrait.addEventListener(event, ({ pointerId }) => {
@@ -554,6 +854,7 @@ controls.fullscreen.addEventListener("click", async () => {
 });
 document.addEventListener("fullscreenchange", syncFullscreen);
 document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && state.placing) setLaunchMode(false);
   if (event.key === "Escape" && controls.workspace.classList.contains("space-expanded")) setExpanded(false);
 });
 
@@ -564,7 +865,7 @@ const resizeObserver = new ResizeObserver(() => {
     paintAll();
   });
 });
-for (const canvas of [controls.portrait, controls.parameterChart, controls.sectionChart, controls.stabilityChart]) {
+for (const canvas of [controls.portrait, controls.parameterChart, controls.sectionChart, controls.stabilityChart, controls.separationChart]) {
   resizeObserver.observe(canvas);
 }
 loadPreset(controls.system.value);

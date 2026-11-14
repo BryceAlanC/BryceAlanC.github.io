@@ -221,6 +221,46 @@ export function integrateTrajectory(id, r, options = {}) {
   return { samples, peaks, step: dt, transient, termination };
 }
 
+export function compareTrajectories(id, r, {
+  initial = presetFor(id).initial, component = "x", perturbation = 1e-6, threshold = 1,
+  ...integrationOptions
+} = {}) {
+  const axis = ["x", "y", "z"].indexOf(component);
+  if (axis < 0) throw new RangeError("Choose x, y, or z as the perturbed coordinate.");
+  finite(perturbation, "Perturbation");
+  if (finite(threshold, "Threshold") <= 0) throw new RangeError("The separation threshold must be positive.");
+
+  const primary = integrateTrajectory(id, r, { ...integrationOptions, initial });
+  const perturbed = [...initial];
+  perturbed[axis] += perturbation;
+  const comparison = integrateTrajectory(id, r, { ...integrationOptions, initial: perturbed });
+
+  const separation = [];
+  let maximumDistance = 0;
+  let timeOfMaximum = 0;
+  let firstThresholdTime = null;
+  const commonCount = Math.min(primary.samples.length, comparison.samples.length);
+  for (let index = 0; index < commonCount; index += 1) {
+    const a = primary.samples[index];
+    const b = comparison.samples[index];
+    // Both runs share a time grid. A run that stops early can append an
+    // off-grid final sample, which has no matching time in the other run.
+    if (a.t !== b.t) break;
+    const distance = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    separation.push({ t: a.t, distance });
+    if (distance > maximumDistance) {
+      maximumDistance = distance;
+      timeOfMaximum = a.t;
+    }
+    if (firstThresholdTime === null && distance >= threshold) firstThresholdTime = a.t;
+  }
+  return {
+    primary, comparison, separation, maximumDistance, timeOfMaximum, firstThresholdTime,
+    initialDistance: separation[0].distance,
+    finalDistance: separation.at(-1).distance
+  };
+}
+
 export function sectionCrossings(samples, { angle = 0, offset = 0, direction = 1, after = 0 } = {}) {
   const normalX = Math.cos(angle);
   const normalY = Math.sin(angle);
