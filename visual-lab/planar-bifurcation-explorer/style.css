@@ -460,6 +460,56 @@
   text-align: right;
 }
 
+.diagram-switch {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink);
+  cursor: pointer;
+  font: 0.68rem var(--mono);
+}
+
+.diagram-switch input {
+  appearance: none;
+  display: grid;
+  width: 2.25rem;
+  height: 1.25rem;
+  align-items: center;
+  margin: 0;
+  padding: 0 0.13rem;
+  border: 1px solid var(--forest);
+  border-radius: 1rem;
+  background: #fcfaf3;
+  color: var(--forest);
+  cursor: pointer;
+}
+
+.diagram-switch input::before {
+  width: 0.86rem;
+  height: 0.86rem;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.diagram-switch input:checked {
+  justify-items: end;
+  background: var(--forest);
+  color: #fffdf7;
+}
+
+.diagram-switch input:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 3px;
+}
+
+.bifurcation-panel .panel-heading {
+  flex-wrap: wrap;
+  gap: 0 0.65rem;
+}
+
 .panel-heading-dark {
   border-bottom-color: rgba(235, 247, 243, 0.16);
   background: #0d2b25;
@@ -640,7 +690,9 @@
   gap: 0.32rem;
 }
 
-.phase-legend span[hidden] {
+.phase-legend span[hidden],
+.bifurcation-legend span[hidden],
+#spectrum-regions-control[hidden] {
   display: none;
 }
 
@@ -694,7 +746,8 @@
   color: #34564a;
 }
 
-.line-spectrum-orbit {
+.line-spectrum-orbit,
+.line-state-orbit {
   color: #4f55a1;
 }
 
@@ -1130,6 +1183,14 @@
 }
 
 @media (forced-colors: active) {
+  .diagram-switch input {
+    appearance: auto;
+  }
+
+  .diagram-switch input::before {
+    content: none;
+  }
+
   #phase-canvas,
   #bifurcation-canvas,
   #eigenvalue-canvas,

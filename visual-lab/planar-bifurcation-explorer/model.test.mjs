@@ -749,6 +749,10 @@ for (const id of ["subcritical-hopf", "fold-cycles"]) {
 {
   const symmetric = model.spectrumSlice("supercritical-hopf", 0.16).orbits[0];
   assert.equal(symmetric.points.length, 1);
+  assert.equal(symmetric.phasePoints.length, 120);
+  for (const { x, y } of symmetric.phasePoints) near(Math.hypot(x, y), 0.4);
+  assert.ok(symmetric.phasePoints.some(point => point.y > 0.39));
+  assert.ok(symmetric.phasePoints.some(point => point.y < -0.39));
   near(symmetric.points[0].trace, -0.32);
   near(symmetric.points[0].determinant, 1);
 
@@ -768,6 +772,7 @@ for (const id of ["subcritical-hopf", "fold-cycles"]) {
   assert.ok(saddlePhase, "a frozen saddle can lie on an attracting cycle");
   const track = model.buildSpectrum(preset).orbitTracks[0];
   assert.equal(track[0].points.length, 1);
+  assert.equal(track[0].phasePoints.length, 1);
   assert.equal(track[0].parameter, 0);
   assert.equal(track[0].points[0].boundary, "imaginary-pair");
   assert.ok(track.at(-1).points.length > 1);
@@ -777,6 +782,7 @@ for (const id of ["subcritical-hopf", "fold-cycles"]) {
   assert.equal(model.buildSpectrum("snic").equilibriumTracks.length, 3);
   const snic = model.spectrumSlice("snic", 0).orbits[0];
   assert.equal(snic.kind, "connection");
+  assert.equal(snic.phasePoints.length, 120);
   assert.equal(snic.period, Infinity);
   assert.equal(snic.points[0].boundary, "zero-eigenvalue");
   const [track] = model.buildSpectrum("homoclinic").orbitTracks;

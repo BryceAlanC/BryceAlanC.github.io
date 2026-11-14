@@ -6,7 +6,7 @@
     <title>Bifurcations in the Plane | Bryce Christopherson</title>
     <meta
       name="description"
-      content="Explore bifurcations of two-dimensional differential equations through linked phase portraits, 3D trace-determinant diagrams, trajectories, nullclines, and Jacobian eigenvalues."
+      content="Explore planar bifurcations through linked phase portraits, state-space and trace-determinant diagrams, and Jacobian eigenvalues."
     />
     <meta name="author" content="Bryce A. Christopherson" />
     <meta name="theme-color" content="#0b5748" />
@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261113-2" />
-    <script type="module" src="./demo.js?v=20261113-4"></script>
+    <link rel="stylesheet" href="./style.css?v=20261114-1" />
+    <script type="module" src="./demo.js?v=20261114-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -76,8 +76,9 @@
             <p class="app-hero-copy">
               Move the parameter <span class="math-symbol">r</span> through the planar system
               <span class="system-inline">x&#775; = f(x, y; r), y&#775; = g(x, y; r)</span>.
-              The phase portrait, three-dimensional trace-determinant diagram, and Jacobian
-              eigenvalues update together as the equilibria and periodic orbits change.
+              The phase portrait, bifurcation diagram, and Jacobian eigenvalues update together.
+              Switch the diagram between trace and determinant and the original coordinates
+              <span class="math-symbol">(x, y)</span>.
             </p>
           </div>
         </div>
@@ -267,7 +268,7 @@
                 <input id="show-trajectories" type="checkbox" checked />
                 <span>Trajectories</span>
               </label>
-              <label class="check-row" for="show-spectrum-regions">
+              <label class="check-row" id="spectrum-regions-control" for="show-spectrum-regions">
                 <input id="show-spectrum-regions" type="checkbox" checked />
                 <span>Trace-determinant regions</span>
               </label>
@@ -305,7 +306,7 @@
             <p class="keyboard-help">
               Phase portrait: click to add a trajectory · scroll to zoom · middle-drag to pan ·
               arrow keys move the initial-condition cursor · Enter launches it.
-              Trace-determinant diagram: drag or use arrow keys to rotate · scroll to zoom.
+              Bifurcation diagram: drag or use arrow keys to rotate · scroll to zoom.
               The parameter slider moves the slice. Press 0 over either plot to reset its view.
             </p>
           </aside>
@@ -407,7 +408,11 @@
                   <section class="visual-panel bifurcation-panel" aria-labelledby="bifurcation-title">
                     <div class="panel-heading">
                       <div><span>02</span><h3 id="bifurcation-title">Trace-determinant diagram</h3></div>
-                      <p>Drag to rotate</p>
+                      <label class="diagram-switch">
+                        <span aria-hidden="true">Trace&ndash;det</span>
+                        <input type="checkbox" role="switch" id="diagram-mode" aria-label="State-space view" aria-controls="bifurcation-canvas" />
+                        <span aria-hidden="true">State space</span>
+                      </label>
                     </div>
                     <div class="plot-controls bifurcation-plot-controls" role="group" aria-label="Bifurcation diagram view controls">
                       <button type="button" id="bifurcation-zoom-in" aria-label="Zoom in on the bifurcation diagram">+</button>
@@ -416,7 +421,7 @@
                       <button type="button" id="bifurcation-rotate-right" aria-label="Rotate the diagram right">→</button>
                       <button type="button" id="bifurcation-rotate-up" aria-label="Rotate the diagram up">↑</button>
                       <button type="button" id="bifurcation-rotate-down" aria-label="Rotate the diagram down">↓</button>
-                      <button type="button" id="bifurcation-fit" aria-label="Reset the trace-determinant view">0</button>
+                      <button type="button" id="bifurcation-fit" aria-label="Reset the bifurcation diagram view">0</button>
                     </div>
                     <div class="canvas-frame bifurcation-frame">
                       <canvas
@@ -427,11 +432,13 @@
                         aria-describedby="bifurcation-description event-list"
                         aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown + - 0 F"
                       >
-                        Trace-determinant diagram for the selected planar system.
+                        Bifurcation diagram for the selected planar system.
                       </canvas>
                       <div class="bifurcation-legend" aria-hidden="true">
                         <span><i class="line line-spectrum-equilibrium"></i>Equilibria</span>
-                        <span><i class="line line-spectrum-orbit"></i>Orbit spectra</span>
+                        <span id="spectrum-orbit-key"><i class="line line-spectrum-orbit"></i>Orbit spectra</span>
+                        <span id="state-orbit-key" hidden><i class="line line-state-orbit"></i>Periodic orbits</span>
+                        <span id="state-stability-key" hidden><i class="line line-spectrum-equilibrium line-cycle-unstable"></i>Unstable</span>
                         <span><i class="line line-spectrum-slice"></i>Current r</span>
                       </div>
                       <p class="sr-only" id="bifurcation-description">
@@ -443,6 +450,14 @@
                         The shared parameter control moves the highlighted slice. Drag or use
                         the arrow keys to rotate, use plus and minus to zoom, and press 0 or F
                         to reset the view.
+                      </p>
+                      <p class="sr-only" id="state-diagram-description" hidden>
+                        The axes are x, y, and parameter r. Equilibria trace curves and periodic
+                        orbits sweep out surfaces as r varies. The highlighted slice shows the
+                        equilibrium points and orbit shapes for the current r. Solid paths are
+                        attracting, dashed paths are unstable, and dotted paths mark critical or
+                        semistable objects. Drag or use arrow keys to rotate, use plus and minus to
+                        zoom, and press 0 or F to reset the view.
                       </p>
                     </div>
                   </section>
@@ -547,6 +562,13 @@
                 full lap, even when the loop passes through an unstable region.
               </p>
               <p class="app-note">
+                <strong>Reading the state-space diagram.</strong> Each equilibrium traces a
+                branch in <span class="nowrap">(x, y, r)</span>. Each periodic orbit is a loop
+                in the current parameter slice. Loops at successive parameter values form a
+                surface. Solid paths are attracting, dashed paths are unstable, and dotted
+                paths mark critical or semistable objects.
+              </p>
+              <p class="app-note">
                 <strong>Periodic orbits.</strong> The supercritical Hopf normal form has an
                 attracting orbit of radius <span class="nowrap">ρ = √r</span> for
                 <span class="nowrap">r &gt; 0</span>. The subcritical normal form has a
@@ -554,7 +576,7 @@
                 <span class="nowrap">r &lt; 0</span>. The bounded subcritical family adds a
                 quintic term and has an attracting outer orbit near the Hopf point. For the
                 homoclinic preset, periodic-orbit paths are approximated numerically.
-                For a custom system, the phase portrait and trace-determinant diagram
+                For a custom system, the phase portrait and both diagram views
                 show the limit cycles the search finds. Narrow the plot window around
                 a cycle if it is small compared with the full phase portrait.
               </p>

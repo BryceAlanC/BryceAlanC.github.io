@@ -11,8 +11,9 @@ import {
   sampleNullclineSegments,
   buildSpectrum,
   spectrumSlice
-} from "./model.js?v=20261113-4";
+} from "./model.js?v=20261114-1";
 import { drawSpectrumView } from "./spectrum-view.js?v=20261113-3";
+import { drawStateView } from "./state-view.js?v=20261114-1";
 
 const COLORS = Object.freeze({
   ink: "#17211d",
@@ -85,6 +86,14 @@ const elements = {
   phaseParameterLabel: document.getElementById("phase-parameter-label"),
   homoclinicLegendItem: document.getElementById("homoclinic-legend-item"),
   showSpectrumRegions: document.getElementById("show-spectrum-regions"),
+  spectrumRegionsControl: document.getElementById("spectrum-regions-control"),
+  diagramMode: document.getElementById("diagram-mode"),
+  bifurcationTitle: document.getElementById("bifurcation-title"),
+  spectrumDescription: document.getElementById("bifurcation-description"),
+  stateDescription: document.getElementById("state-diagram-description"),
+  spectrumOrbitKey: document.getElementById("spectrum-orbit-key"),
+  stateOrbitKey: document.getElementById("state-orbit-key"),
+  stateStabilityKey: document.getElementById("state-stability-key"),
   bifurcationPanel: document.querySelector(".bifurcation-panel"),
   stabilityObjectLabel: document.getElementById("stability-object-label"),
   linearizationTitle: document.getElementById("linearization-title"),
@@ -1048,7 +1057,7 @@ function startCycleSearch(family) {
       observable: family.observable === "y" ? "x2" : "x1"
     }
   };
-  const workerUrl = new URL("./cycle-worker.js?v=20261113-4", import.meta.url);
+  const workerUrl = new URL("./cycle-worker.js?v=20261114-1", import.meta.url);
   try {
     search.branchWorker = new Worker(workerUrl, { type: "module" });
     search.sliceWorker = new Worker(workerUrl, { type: "module" });
@@ -1564,13 +1573,16 @@ function drawBifurcationDiagram() {
   const { context, width, height } = canvasSurface(elements.bifurcationCanvas);
   const { azimuth, elevation, zoom } = state.spectrumView;
   const showRegions = Boolean(elements.showSpectrumRegions?.checked);
-  const key = [width, height, context.canvas.width, context.canvas.height, azimuth, elevation, zoom, showRegions].join("|");
+  const stateSpace = elements.diagramMode.checked;
+  const key = [width, height, context.canvas.width, context.canvas.height, azimuth, elevation, zoom, showRegions, stateSpace].join("|");
   if (state.spectrumRenderKey === key) return;
-  drawSpectrumView(context, width, height, {
+  const draw = stateSpace ? drawStateView : drawSpectrumView;
+  draw(context, width, height, {
     data: state.spectrumData,
     slice: state.spectrumSlice,
     parameter: state.parameter,
     parameterRange: state.family.parameterRange,
+    phaseWindow: state.family.phaseWindow,
     azimuth,
     elevation,
     zoom,
@@ -1578,6 +1590,22 @@ function drawBifurcationDiagram() {
     hopfView: state.family.id === HOPF_PRESET_ID
   });
   state.spectrumRenderKey = key;
+}
+
+function syncDiagramMode() {
+  const stateSpace = elements.diagramMode.checked;
+  const title = stateSpace ? "State-space diagram" : "Trace-determinant diagram";
+  elements.bifurcationTitle.textContent = title;
+  elements.bifurcationCanvas.setAttribute("aria-label", `Interactive 3D ${title.toLowerCase()}`);
+  const description = stateSpace ? elements.stateDescription : elements.spectrumDescription;
+  elements.bifurcationCanvas.setAttribute("aria-describedby", `${description.id} event-list`);
+  elements.spectrumDescription.hidden = stateSpace;
+  elements.stateDescription.hidden = !stateSpace;
+  elements.spectrumRegionsControl.hidden = stateSpace;
+  elements.showSpectrumRegions.disabled = stateSpace;
+  elements.spectrumOrbitKey.hidden = stateSpace;
+  elements.stateOrbitKey.hidden = !stateSpace;
+  elements.stateStabilityKey.hidden = !stateSpace;
 }
 
 function nearbyEigenvalueTrail(equilibrium) {
@@ -1863,13 +1891,13 @@ function orientBifurcation(azimuth, elevation) {
 function rotateBifurcation(horizontal, vertical) {
   const { azimuth, elevation } = state.spectrumView;
   orientBifurcation(azimuth + horizontal * SPECTRUM_ROTATION_STEP, elevation + vertical * SPECTRUM_ROTATION_STEP);
-  announce("Trace-determinant view rotated.");
+  announce("Bifurcation diagram rotated.");
 }
 
 function fitBifurcation() {
   resetBifurcationView();
   drawBifurcationDiagram();
-  announce("Trace-determinant view reset.");
+  announce("Bifurcation diagram view reset.");
 }
 
 function addInitialCondition(x, y, options = {}) {
@@ -2032,7 +2060,7 @@ function handleBifurcationKey(event) {
     event.preventDefault();
     const zoomIn = event.key === "+" || event.key === "=";
     zoomBifurcation(zoomIn ? 1.2 : 1 / 1.2);
-    announce(zoomIn ? "Trace-determinant view zoomed in." : "Trace-determinant view zoomed out.");
+    announce(zoomIn ? "Bifurcation diagram zoomed in." : "Bifurcation diagram zoomed out.");
   } else if (event.key === "0" || event.key.toLowerCase() === "f") {
     event.preventDefault();
     fitBifurcation();
@@ -2228,11 +2256,11 @@ elements.phaseFit?.addEventListener("click", () => {
 });
 elements.bifurcationZoomIn?.addEventListener("click", () => {
   zoomBifurcation(1.2);
-  announce("Trace-determinant view zoomed in.");
+  announce("Bifurcation diagram zoomed in.");
 });
 elements.bifurcationZoomOut?.addEventListener("click", () => {
   zoomBifurcation(1 / 1.2);
-  announce("Trace-determinant view zoomed out.");
+  announce("Bifurcation diagram zoomed out.");
 });
 for (const [control, direction] of [
   [elements.bifurcationRotateLeft, SPECTRUM_DIRECTIONS.ArrowLeft],
@@ -2243,6 +2271,11 @@ for (const [control, direction] of [
   control?.addEventListener("click", () => rotateBifurcation(...direction));
 }
 elements.bifurcationFit?.addEventListener("click", fitBifurcation);
+elements.diagramMode.addEventListener("change", () => {
+  syncDiagramMode();
+  drawBifurcationDiagram();
+  announce(`${elements.bifurcationTitle.textContent} shown.`);
+});
 elements.showSpectrumRegions?.addEventListener("change", () => {
   state.spectrumRegionsPreference = elements.showSpectrumRegions.checked;
   drawBifurcationDiagram();
@@ -2418,6 +2451,7 @@ if (typeof ResizeObserver === "function") {
 
 initializeFamilyOptions();
 syncTrajectoryButton();
+syncDiagramMode();
 if (elements.sweepSpeedValue) elements.sweepSpeedValue.textContent = `${state.sweepSpeed.toFixed(2)}×`;
 initializeFullscreen();
 loadFamily(elements.familySelect?.value || HOPF_PRESET_ID, { announce: false });

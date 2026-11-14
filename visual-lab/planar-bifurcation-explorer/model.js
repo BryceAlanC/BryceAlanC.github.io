@@ -2238,6 +2238,7 @@ function orbitSpectrum(preset, parameter, orbit, phaseCount) {
   );
   return {
     points: constant ? [first] : points,
+    phasePoints: !orbit.path && orbit.radius === 0 ? [positions[0]] : positions,
     stability: orbit.stability,
     label: orbit.label,
     closed: !constant,
