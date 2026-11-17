@@ -1,3 +1,6 @@
+import { axisLabel, projectedBounds, sectionFrame } from "./section-plane.js?v=20261117-1";
+import { hopfCycleRadius } from "./model.js?v=20261117-1";
+
 const COLORS = {
   paper: "#f5f1e7",
   ink: "#17211d",
@@ -9,6 +12,7 @@ const COLORS = {
   unstable: "#a8513a",
   critical: "#755600",
   orbit: "#4f55a1",
+  cycle: "#225ca0",
   current: "#8a6200",
   dark: "#09211d",
   darkInk: "#edf5ed",
@@ -184,20 +188,22 @@ function currentMarkers(view, equilibria, coordinates, selectedEquilibrium) {
 
 export function drawParameterChart(context, width, height, {
   preset, mode = "equilibria", parameter, branches = [], equilibria = [], peakSweep = [], peaks = [],
-  selectedEquilibrium, currentPeakColumn
+  selectedEquilibrium
 }) {
   const isPeakView = mode === "peaks";
   const coordinate = preset.peakCoordinate;
   const actualPeaks = peaks.map(peak => peak[coordinate]);
-  const current = actualPeaks.length ? actualPeaks : currentPeakColumn?.values ?? [];
+  const showCycle = !isPeakView && preset.id === "hopf";
+  const maxRadius = showCycle ? hopfCycleRadius(preset.parameterRange[1]) : null;
   const values = isPeakView
-    ? [...peakSweep.flatMap(column => column.values), ...current]
+    ? [...peakSweep.flatMap(column => column.values), ...actualPeaks]
     : branches.flatMap(branch => branch.points.map(item => item.point[0]));
+  if (maxRadius !== null) values.push(-maxRadius, maxRadius);
   const xRange = preset.parameterRange;
   const fallback = preset.bounds[coordinate === "z" ? 2 : 0];
   const yRange = values.length ? rangeOf([...values, 0], fallback, 1) : fallback;
   const xLabel = preset.parameterLabel || "r";
-  const view = plot(context, width, height, xRange, yRange, xLabel, isPeakView ? preset.peakLabel : "Equilibrium x");
+  const view = plot(context, width, height, xRange, yRange, xLabel, isPeakView ? preset.peakLabel : showCycle ? "x" : "Equilibrium x");
   if (!view) return;
 
   for (const { parameter: critical } of preset.events) {
@@ -212,17 +218,32 @@ export function drawParameterChart(context, width, height, {
         view.point(value, sample, steady ? COLORS.stable : "rgba(79,85,161,0.68)", steady ? 1.7 : 1.45, { square: steady });
       }
     }
-    if (!peakSweep.length && !current.length) view.empty("Sampling parameter values\u2026");
+    if (!peakSweep.length && !actualPeaks.length) view.empty("Sampling parameter values\u2026");
   } else {
+    if (showCycle) {
+      // Parameterizing by x keeps the square-root branches smooth at r = 0.
+      const upper = Array.from({ length: 85 }, (_, i) => {
+        const x = maxRadius * i / 84;
+        return [x * x, x];
+      });
+      view.line(upper, COLORS.cycle, 2);
+      view.line(upper.map(([r, x]) => [r, -x]), COLORS.cycle, 2);
+    }
     for (const branch of branches) {
       drawEquilibriumTrack(view, branch.points, item => [item.parameter, item.point[0]], branch.id === selectedEquilibrium);
     }
   }
   view.line([[parameter, yRange[0]], [parameter, yRange[1]]], COLORS.current, 1.45);
   if (isPeakView) {
-    const steady = !actualPeaks.length && currentPeakColumn?.kind === "steady";
-    for (const value of current) view.point(parameter, value, COLORS.current, 3.6, { square: steady });
+    for (const value of actualPeaks) view.point(parameter, value, COLORS.current, 3.6);
   } else {
+    if (showCycle) {
+      const radius = hopfCycleRadius(parameter);
+      if (radius !== null) {
+        view.point(parameter, radius, COLORS.cycle, 4);
+        view.point(parameter, -radius, COLORS.cycle, 4);
+      }
+    }
     currentMarkers(view, equilibria, item => [parameter, item.point[0]], selectedEquilibrium);
   }
   const labelLeft = view.x(parameter) > view.right - 76;
@@ -292,16 +313,14 @@ export function drawSectionChart(context, width, height, {
 }) {
   if (mode === "return") return drawReturnChart(context, width, height, preset, peaks, hoverIndex, selectedIndex);
 
-  const { angle } = section;
-  const [first, second, third] = preset.bounds;
-  const bounds = first.flatMap(x => second.map(y => -x * Math.sin(angle) + y * Math.cos(angle)));
-  const xFallback = rangeOf(bounds);
-  const yFallback = rangeOf(third);
+  const { u, v } = sectionFrame(section);
+  const xFallback = rangeOf(projectedBounds(preset.bounds, u));
+  const yFallback = rangeOf(projectedBounds(preset.bounds, v));
   const xRange = preset.id === "hopf" ? xFallback
     : rangeOf(crossings.map(({ u }) => u), xFallback, (xFallback[1] - xFallback[0]) * 0.16);
   const yRange = preset.id === "hopf" ? yFallback
     : rangeOf(crossings.map(({ v }) => v), yFallback, (yFallback[1] - yFallback[0]) * 0.16);
-  const view = plot(context, width, height, xRange, yRange, "u (along plane)", "z");
+  const view = plot(context, width, height, xRange, yRange, axisLabel(u, "u"), axisLabel(v, "v"));
   if (!view) return;
   view.zeroAxes();
   const points = crossings.map(({ x, y, z, t, u, v }, index) => ({ index, point: [x, y, z], time: t, u, v }));
@@ -347,8 +366,9 @@ function nearestSample(series, time) {
   return time - series[first].t <= series[last].t - time ? series[first] : series[last];
 }
 
-export function drawSeparationChart(context, width, height, { series = [], headTime, threshold = 1 }) {
-  const { segments, minimum, maximum } = separationTracks(series);
+export function drawSeparationChart(context, width, height, { series = [], sample, threshold = 1 }) {
+  const tracks = separationTracks(series);
+  const { segments, minimum, maximum } = tracks;
   const thresholdLevel = threshold > 0 && Number.isFinite(threshold) ? Math.log10(threshold) : null;
   const xRange = series.length > 1 ? [series[0].t, series.at(-1).t] : [0, 1];
   const yRange = segments.length ? [Math.floor(minimum), Math.ceil(maximum)] : [-6, 0];
@@ -365,17 +385,38 @@ export function drawSeparationChart(context, width, height, { series = [], headT
   if (thresholdLevel !== null && thresholdLevel >= yRange[0] && thresholdLevel <= yRange[1]) {
     view.line([[xRange[0], thresholdLevel], [xRange[1], thresholdLevel]], COLORS.axis, 1, [4, 4]);
   }
-  for (const segment of segments) {
-    if (segment.length === 1) view.point(...segment[0], COLORS.orbit, 2.3);
-    else view.line(segment, COLORS.orbit, 1.6);
+  // Only the time cursor moves during playback. Project the curve once per size.
+  const projectionKey = [width, height, ...yRange].join(",");
+  if (tracks.projectionKey !== projectionKey) {
+    const path = new Path2D();
+    for (const segment of segments) {
+      for (let i = 0; i < segment.length; i++) {
+        const [time, exponent] = segment[i];
+        const x = view.x(time), y = view.y(exponent);
+        if (i === 0) path.moveTo(x, y);
+        else path.lineTo(x, y);
+        if (segment.length === 1) path.lineTo(x + 1, y);
+      }
+    }
+    tracks.path = path;
+    tracks.projectionKey = projectionKey;
   }
-  if (segments.length && Number.isFinite(headTime)) {
-    const current = nearestSample(series, headTime);
-    view.line([[current.t, yRange[0]], [current.t, yRange[1]]], COLORS.current, 1.2);
-    if (current.distance > 0) view.point(current.t, Math.log10(current.distance), COLORS.current, 4.1);
+  context.strokeStyle = COLORS.orbit;
+  context.lineWidth = 1.6;
+  context.stroke(tracks.path);
+  if (sample) {
+    view.line([[sample.t, yRange[0]], [sample.t, yRange[1]]], COLORS.current, 1.2);
+    if (sample.distance > 0) view.point(sample.t, Math.log10(sample.distance), COLORS.current, 4.1);
   }
   if (!segments.length) view.empty(series.length ? "The recorded distances are zero" : "Run a comparison to see the distances");
   view.finish();
+  return {
+    sampleAt(x, y) {
+      if (!series.length || x < view.left || x > view.right || y < view.top || y > view.bottom) return null;
+      const time = xRange[0] + (xRange[1] - xRange[0]) * (x - view.left) / (view.right - view.left);
+      return nearestSample(series, time);
+    }
+  };
 }
 
 const PERMUTATIONS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];

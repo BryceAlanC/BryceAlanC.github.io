@@ -1,8 +1,10 @@
+import { attachTimeTrace } from "./time-trace.js?v=20261117-1";
+import { axisLabel, projectedBounds, sectionFrame } from "./section-plane.js?v=20261117-1";
 import {
-  LORENZ_HOPF, PRESETS, compareTrajectories, equilibriaAt, integrateTrajectory, sampleEquilibria, samplePeakColumn, sectionCrossings
-} from "./model.js?v=20261114-4";
-import { drawPortrait } from "./portrait.js?v=20261114-4";
-import { drawParameterChart, drawSectionChart, drawSeparationChart, drawStabilityChart } from "./charts.js?v=20261114-4";
+  LORENZ_HOPF, PRESETS, compareTrajectories, equilibriaAt, hopfCycleRadius, integrateTrajectory, sampleEquilibria, samplePeakColumn, sectionCrossings
+} from "./model.js?v=20261117-1";
+import { drawPortrait } from "./portrait.js?v=20261117-1";
+import { drawParameterChart, drawSectionChart, drawSeparationChart, drawStabilityChart } from "./charts.js?v=20261117-1";
 
 const byId = id => document.getElementById(id);
 const controls = {
@@ -20,6 +22,7 @@ const controls = {
   playback: byId("playback"),
   restart: byId("restart"),
   timeline: byId("timeline"),
+  fullOrbit: byId("full-orbit"),
   timeReadout: byId("time-readout"),
   stepTime: byId("step-time"),
   playbackSpeed: byId("playback-speed"),
@@ -33,15 +36,24 @@ const controls = {
   launchMode: byId("launch-mode"),
   launchHeight: byId("launch-height"),
   portraitHelp: byId("portrait-help"),
+  cameraView: byId("camera-view"),
   fullscreen: byId("fullscreen"),
   parameterMode: byId("parameter-mode"),
   equilibriumKey: byId("equilibrium-key"),
+  cycleExtremaKey: byId("cycle-extrema-key"),
+  portraitCycleKey: byId("portrait-cycle-key"),
+  cycleControl: byId("cycle-control"),
+  showCycle: byId("show-cycle"),
+  peakLabel: byId("peak-label"),
+  steadyLabel: byId("steady-label"),
   peakKey: byId("peak-key"),
   sectionMode: byId("section-mode"),
   showPlane: byId("show-plane"),
   sectionAngle: byId("section-angle"),
+  sectionTilt: byId("section-tilt"),
   sectionOffset: byId("section-offset"),
   angleReadout: byId("angle-readout"),
+  tiltReadout: byId("tilt-readout"),
   offsetReadout: byId("offset-readout"),
   direction: byId("direction"),
   stabilityMode: byId("stability-mode"),
@@ -57,6 +69,8 @@ const controls = {
   separationPanel: byId("separation-panel"),
   separationChart: byId("separation-canvas"),
   separationSummary: byId("separation-summary"),
+  liveDistance: byId("live-distance"),
+  jumpSeparation: byId("jump-separation"),
   trajectorySummary: byId("trajectory-summary"),
   parameterSummary: byId("parameter-summary"),
   sectionSummary: byId("section-summary"),
@@ -67,6 +81,12 @@ const controls = {
 };
 
 const defaultCamera = { azimuth: -0.55, elevation: 0.31, zoom: 1 };
+const cameraViews = {
+  free: defaultCamera,
+  xy: { azimuth: 0, elevation: -Math.PI / 2 },
+  xz: { azimuth: 0, elevation: 0 },
+  yz: { azimuth: -Math.PI / 2, elevation: 0 }
+};
 const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const examples = {
   lorenz: [[12, "r = 12"], [LORENZ_HOPF, "Hopf point"], [28, "r = 28"]],
@@ -86,13 +106,19 @@ const equations = {
 const state = {
   preset: PRESETS.lorenz, parameter: 28, initial: null, branches: [],
   equilibria: [], selectedEquilibrium: null, run: null, trajectory: null,
-  section: { angle: 0, offset: 5, direction: 1 }, crossings: [],
+  section: { angle: 0, tilt: 0, offset: 5, direction: 1 }, crossings: [],
   camera: { ...defaultCamera }, headIndex: 0, playing: !motion.matches,
   lastFrame: null, animation: null, drag: null,
   comparison: null, comparisonTrail: null, sweepTimer: null,
   portraitGeometry: null, parameterGeometry: null, sectionGeometry: null,
+  separationGeometry: null, fullOrbitChosen: false,
   parameterPointer: null, selectedHit: null, hoveredHit: null, placing: false
 };
+const timeTrace = attachTimeTrace(byId("time-trace"), time => {
+  clearPointSelection();
+  paintSection();
+  seekTime(time);
+});
 const branchCache = new Map();
 const peakCache = new Map();
 let peakRequest = null;
@@ -128,9 +154,13 @@ function paintPortrait() {
     selectedEquilibrium: state.selectedEquilibrium,
     section: controls.showPlane.checked ? state.section : null,
     crossings: controls.showPlane.checked ? state.crossings : [],
+    crossingCutoff: controls.fullOrbit.checked ? Infinity : currentTime(),
     camera: state.camera,
     headIndex: state.headIndex,
     comparison: state.comparisonTrail,
+    cycleRadius: state.preset.id === "hopf" && controls.showCycle.checked ? hopfCycleRadius(state.parameter) : null,
+    comparisonAtHead: Boolean(state.comparison?.separation[Math.round(state.headIndex)]),
+    showFullOrbit: controls.fullOrbit.checked,
     selectedCrossing: selection?.point,
     nextCrossing: selection?.nextPoint,
     launchHeight: state.placing ? controls.launchHeight.valueAsNumber : null
@@ -145,15 +175,27 @@ function paintParameter() {
   const observed = state.run?.peaks ?? [];
   controls.equilibriumKey.hidden = isPeak;
   controls.peakKey.hidden = !isPeak;
+  const hopf = state.preset.id === "hopf";
+  controls.cycleExtremaKey.hidden = !hopf || isPeak;
+  controls.peakLabel.textContent = hopf ? "Cycle maximum" : "Sampled peak";
+  controls.steadyLabel.textContent = hopf ? "Limiting x = 0" : "Near a sink";
   controls.parameterChart.setAttribute("aria-label", isPeak
     ? `${state.preset.peakCoordinate} peaks against r`
-    : "Equilibrium x coordinates against r");
+    : hopf ? "Equilibrium and exact cycle x-extrema against r" : "Equilibrium x coordinates against r");
   if (!isPeak) {
-    controls.parameterSummary.textContent = "Branches show equilibrium x-coordinates. Dashed branches are unstable. The vertical line marks the current r.";
+    if (hopf) {
+      const radius = hopfCycleRadius(state.parameter);
+      const detail = radius === null
+        ? "There is no periodic orbit at this r."
+        : `At this r its radius is ${formatted(radius)}, its period is 2\u03c0, and it lies in z = 0.`;
+      controls.parameterSummary.textContent = `The horizontal branch is the origin. The blue curves give the minimum and maximum x of one attracting periodic orbit for r > 0. ${detail}`;
+    } else {
+      controls.parameterSummary.textContent = "Branches show equilibrium x-coordinates. Dashed branches are unstable. The vertical line marks the current r.";
+    }
   } else {
     const label = state.preset.peakCoordinate;
     const sampled = state.preset.id === "hopf"
-      ? "The curve gives the limiting x peak of the Hopf normal form."
+      ? "The sweep gives the exact limiting x maximum for the preset starting point."
       : "The sweep samples late z peaks from the preset initial condition at each r.";
     const progress = peakRequest?.presetId === state.preset.id
       ? ` Computing parameter samples (${peakRequest.columns.length}/${peakRequest.count}).`
@@ -171,20 +213,32 @@ function paintParameter() {
 function paintSection() {
   const inSectionMode = controls.sectionMode.value === "section";
   const peaks = state.run?.peaks ?? [];
-  const angle = Number(controls.sectionAngle.value);
-  const offset = Number(controls.sectionOffset.value);
-  controls.angleReadout.textContent = `${angle}\u00b0`;
+  const { normal, u, v } = sectionFrame(state.section);
+  const offset = state.section.offset;
+  controls.angleReadout.textContent = `${controls.sectionAngle.value}\u00b0`;
+  controls.tiltReadout.textContent = `${controls.sectionTilt.value}\u00b0`;
+  controls.sectionAngle.disabled = Math.abs(normal[2]) === 1;
   controls.offsetReadout.textContent = formatted(offset);
   controls.sectionTitle.textContent = inSectionMode ? "Poincar\u00e9 section" : "Peak return plot";
   if (inSectionMode) {
-    controls.sectionDefinition.textContent = angle === 0
-      ? `x = ${formatted(offset)}`
-      : `x cos(${angle}\u00b0) + y sin(${angle}\u00b0) = ${formatted(offset)}`;
+    const coordinate = axisLabel(normal, "");
+    if (coordinate) {
+      controls.sectionDefinition.textContent = `${coordinate} = ${formatted(offset)}`;
+    } else {
+      const terms = normal.map((value, i) => {
+        if (value === 0) return "";
+        const coefficient = Number(Math.abs(value).toPrecision(3));
+        return `${value < 0 ? "-" : "+"} ${coefficient}${"xyz"[i]}`;
+      }).filter(Boolean).join(" ").replace(/^\+ /, "").replace(/-/g, "\u2212");
+      controls.sectionDefinition.textContent = `${terms} \u2248 ${formatted(offset)}`;
+    }
     controls.sectionChart.setAttribute("aria-label", "Directed crossings in the section plane");
     const number = state.crossings.length;
     controls.sectionSummary.textContent = number
-      ? `${number} directed ${number === 1 ? "crossing" : "crossings"} after the transient. The coordinates u and z lie in the section plane.`
-      : "No directed crossings after the transient. Move the plane, reverse direction, or try another initial condition.";
+      ? `${number} directed ${number === 1 ? "crossing" : "crossings"} after the transient. Axes show ${axisLabel(u, "u")} and ${axisLabel(v, "v")} in the section plane.`
+      : state.preset.id === "hopf" && Math.abs(normal[2]) === 1 && offset === 0
+        ? "No directed crossings. A Hopf trajectory stays on one side of z = 0 or lies in the plane. Use an x or y slice to cut across the cycle."
+        : "No directed crossings after the transient. Move the plane, reverse direction, or try another initial condition.";
   } else {
     controls.sectionDefinition.textContent = `Consecutive ${state.preset.peakCoordinate} maxima`;
     controls.sectionChart.setAttribute("aria-label", "Successive peak heights plotted against each other");
@@ -222,11 +276,18 @@ function paintSeparation() {
   if (!state.comparison) return;
   const target = surface(controls.separationChart);
   if (!target) return;
-  drawSeparationChart(...target, { series: state.comparison.separation, headTime: currentTime() });
+  const series = state.comparison.separation;
+  const sample = series[Math.round(state.headIndex)];
+  state.separationGeometry = drawSeparationChart(...target, { series, sample });
+  const text = sample
+    ? `t = ${sample.t.toFixed(2)}  \u00b7  d = ${formatted(sample.distance)}`
+    : "Beyond the last common sample";
+  if (controls.liveDistance.textContent !== text) controls.liveDistance.textContent = text;
 }
 
 function syncTimeline() {
   const time = currentTime();
+  timeTrace.setTime(time);
   controls.timeline.value = String(time);
   const text = time.toFixed(2);
   if (controls.timeReadout.textContent !== text) controls.timeReadout.textContent = text;
@@ -236,6 +297,9 @@ function syncTimeline() {
 function eigenvalueText({ re, im }) {
   if (Math.abs(im) < 1e-8) return formatted(re);
   const sign = im < 0 ? "\u2212" : "+";
+  if (re === 0) {
+    return `${im < 0 ? "\u2212" : ""}${formatted(Math.abs(im))}i`;
+  }
   return `${formatted(re)} ${sign} ${formatted(Math.abs(im))}i`;
 }
 
@@ -252,7 +316,13 @@ function paintStability() {
       stable: "sink", saddle: "saddle", unstable: "unstable",
       critical: "nonhyperbolic", nonhyperbolic: "nonhyperbolic"
     }[selected.stability] || selected.stability;
-    controls.stabilitySummary.textContent = `${selected.label} is ${descriptor === "nonhyperbolic" || descriptor === "unstable" ? descriptor : `a ${descriptor}`}. ${detail}`;
+    let dynamics = "";
+    if (state.preset.id === "lorenz" && selected.id !== "origin" && state.parameter === LORENZ_HOPF) {
+      dynamics = " At this Hopf point the conjugate pair crosses the imaginary axis at both nonzero equilibria.";
+    } else if (state.preset.id === "hopf" && state.parameter === 0) {
+      dynamics = " The nonlinear radial equation gives inward motion, so the origin still attracts.";
+    }
+    controls.stabilitySummary.textContent = `${selected.label} is ${descriptor === "nonhyperbolic" || descriptor === "unstable" ? descriptor : `a ${descriptor}`}. ${detail}${dynamics}`;
   }
   const target = surface(controls.stabilityChart);
   if (target) drawStabilityChart(...target, {
@@ -288,12 +358,21 @@ function updateCrossings() {
   });
 }
 
-function updateSection() {
-  state.section = {
-    angle: Number(controls.sectionAngle.value) * Math.PI / 180,
-    offset: Number(controls.sectionOffset.value),
-    direction: Number(controls.direction.value)
-  };
+function readSection(quickOffset) {
+  const angle = Number(controls.sectionAngle.value) * Math.PI / 180;
+  const tilt = Number(controls.sectionTilt.value) * Math.PI / 180;
+  const { normal } = sectionFrame({ angle, tilt });
+  const [min, max] = projectedBounds(state.preset.bounds, normal);
+  const step = Number(controls.sectionOffset.step);
+  const requested = quickOffset ?? Number(controls.sectionOffset.value);
+  controls.sectionOffset.min = Number((Math.ceil(min / step - 1e-9) * step).toFixed(6));
+  controls.sectionOffset.max = Number((Math.floor(max / step + 1e-9) * step).toFixed(6));
+  controls.sectionOffset.value = String(requested);
+  return { angle, tilt, offset: Number(controls.sectionOffset.value), direction: Number(controls.direction.value) };
+}
+
+function updateSection(quickOffset) {
+  state.section = readSection(quickOffset);
   updateCrossings();
   if (controls.sectionMode.value === "section") clearPointSelection();
   paintSection();
@@ -360,6 +439,10 @@ function seekTime(time) {
 
 function runTrajectory() {
   state.equilibria = equilibriaAt(state.preset.id, state.parameter);
+  const cycleExists = state.preset.id === "hopf" && state.parameter > 0;
+  controls.cycleControl.hidden = state.preset.id !== "hopf";
+  controls.showCycle.disabled = !cycleExists;
+  controls.portraitCycleKey.hidden = !cycleExists || !controls.showCycle.checked;
   updateEquilibriumList();
   if (state.animation !== null) {
     cancelAnimationFrame(state.animation);
@@ -386,6 +469,9 @@ function runTrajectory() {
     controls.trajectorySummary.textContent = state.run.termination === "completed"
       ? `${timing} \u00b7 discard t < ${formatted(state.run.transient)} for crossings and peaks`
       : `${timing} \u00b7 integration stopped early`;
+    if (state.preset.id === "hopf" && state.initial[0] === 0 && state.initial[1] === 0) {
+      controls.trajectorySummary.textContent += " This launch stays on the z-axis.";
+    }
   } catch (error) {
     state.run = null;
     state.trajectory = { points: [] };
@@ -393,16 +479,19 @@ function runTrajectory() {
     announce(controls.trajectorySummary.textContent);
     console.error(error);
   }
+  state.separationGeometry = null;
   controls.separationPanel.hidden = !state.comparison;
   controls.comparisonKey.hidden = !state.comparisonTrail;
   if (state.comparison) {
     const { initialDistance, maximumDistance, firstThresholdTime, finalDistance } = state.comparison;
     const threshold = firstThresholdTime === null ? "Distance stays below 1 at the sampled times." : `First sampled distance of at least 1 at t = ${formatted(firstThresholdTime)}.`;
+    controls.jumpSeparation.disabled = firstThresholdTime === null;
     const zero = finalDistance === 0 ? " The last samples coincide at numerical precision." : "";
     const partial = state.comparison.comparison.termination !== "completed" || state.run.termination !== "completed"
       ? " The plot ends at the last common sample." : "";
     controls.separationSummary.textContent = `Starts at ${formatted(initialDistance)} and reaches ${formatted(maximumDistance)}. ${threshold}${zero}${partial}`;
   }
+  timeTrace.setRun(state.run, state.comparison?.comparison);
   controls.timeline.max = String(state.run?.samples.at(-1).t ?? 1);
   state.crossings = [];
   updateCrossings();
@@ -497,7 +586,7 @@ function ensurePeakSweep() {
   }
   peakRequest = request;
   try {
-    const worker = new Worker(new URL("./peak-worker.js?v=20261114-4", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./peak-worker.js?v=20261117-1", import.meta.url), { type: "module" });
     request.worker = worker;
     worker.onmessage = ({ data }) => {
       if (peakRequest !== request) return;
@@ -519,6 +608,7 @@ function loadPreset(id) {
   setLaunchMode(false);
   state.preset = PRESETS[id];
   state.camera = { ...defaultCamera };
+  controls.cameraView.value = "free";
   state.selectedEquilibrium = null;
   if (!branchCache.has(id)) branchCache.set(id, sampleEquilibria(id));
   state.branches = branchCache.get(id);
@@ -536,15 +626,14 @@ function loadPreset(id) {
   }
   [controls.launchHeight.min, controls.launchHeight.max] = state.preset.bounds[2];
   controls.launchHeight.value = String(state.preset.id === "lorenz" ? state.preset.initial[2] : 0);
-  const offsetLimit = id === "lorenz" ? 20 : 2;
-  controls.sectionOffset.min = -offsetLimit;
-  controls.sectionOffset.max = offsetLimit;
   controls.sectionOffset.step = id === "lorenz" ? 0.1 : 0.02;
   const { sectionAngle, sectionOffset } = state.preset.defaults;
   controls.sectionAngle.value = String(sectionAngle * 180 / Math.PI);
-  controls.sectionOffset.value = String(sectionOffset);
+  controls.sectionTilt.value = "0";
   controls.direction.value = "1";
-  state.section = { angle: sectionAngle, offset: sectionOffset, direction: 1 };
+  state.section = readSection(sectionOffset);
+  controls.parameterMode.querySelector('option[value="equilibria"]').textContent = id === "hopf"
+    ? "Equilibrium and cycle" : "Equilibrium branches";
   controls.stabilityMode.querySelector('option[value="coefficients"]').disabled = id !== "lorenz";
   if (id !== "lorenz") controls.stabilityMode.value = "eigenvalues";
   controls.equations.innerHTML = equations[id].map(line => `<span>${line}</span>`).join("");
@@ -555,17 +644,21 @@ function loadPreset(id) {
     button.textContent = label;
     button.addEventListener("click", () => {
       cancelScheduledParameter();
+      if (id === "lorenz" && value === LORENZ_HOPF && state.selectedEquilibrium !== "minus") {
+        state.selectedEquilibrium = "plus";
+      }
       setParameter(value);
       announce(`Parameter r set to ${formatted(value)}.`);
     });
     return button;
   }));
   setInitial(state.preset.initial);
-  setParameter(state.preset.defaultParameter);
   ensurePeakSweep();
+  setParameter(state.preset.defaultParameter);
 }
 
 function useCamera(action) {
+  if (["left", "right", "up", "down", "reset"].includes(action)) controls.cameraView.value = "free";
   const rotation = Math.PI / 12;
   const { camera } = state;
   switch (action) {
@@ -577,7 +670,7 @@ function useCamera(action) {
     case "out": camera.zoom /= 1.18; break;
     case "reset": state.camera = { ...defaultCamera }; break;
   }
-  state.camera.elevation = clamp(state.camera.elevation, -1.45, 1.45);
+  state.camera.elevation = clamp(state.camera.elevation, -Math.PI / 2, Math.PI / 2);
   state.camera.zoom = clamp(state.camera.zoom, 0.55, 3.5);
   paintPortrait();
 }
@@ -693,7 +786,35 @@ controls.sweep.addEventListener("click", () => {
 });
 controls.compare.addEventListener("change", () => {
   controls.perturbationControls.hidden = !controls.compare.checked;
+  if (!state.fullOrbitChosen) controls.fullOrbit.checked = !controls.compare.checked;
   runTrajectory();
+});
+controls.fullOrbit.addEventListener("change", () => {
+  state.fullOrbitChosen = true;
+  paintPortrait();
+});
+function inspectSeparationTime(time) {
+  if (!Number.isFinite(time)) return;
+  clearPointSelection();
+  paintSection();
+  seekTime(time);
+}
+controls.jumpSeparation.addEventListener("click", () => {
+  inspectSeparationTime(state.comparison?.firstThresholdTime);
+});
+controls.separationChart.addEventListener("click", event => {
+  const sample = state.separationGeometry?.sampleAt(...canvasPoint(controls.separationChart, event));
+  if (sample) inspectSeparationTime(sample.t);
+});
+controls.separationChart.addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !state.comparison) return;
+  event.preventDefault();
+  const series = state.comparison.separation;
+  const last = series.at(-1).t;
+  const step = event.shiftKey ? 0.1 : 1;
+  const time = event.key === "Home" ? series[0].t : event.key === "End" ? last
+    : currentTime() + (event.key === "ArrowLeft" ? -step : step);
+  inspectSeparationTime(clamp(time, series[0].t, last));
 });
 controls.perturbationAxis.addEventListener("change", runTrajectory);
 controls.perturbationSize.addEventListener("change", () => {
@@ -703,15 +824,33 @@ controls.perturbationSize.addEventListener("change", () => {
 });
 controls.launchMode.addEventListener("click", () => setLaunchMode(!state.placing));
 controls.launchHeight.addEventListener("input", paintPortrait);
+controls.showCycle.addEventListener("change", () => {
+  controls.portraitCycleKey.hidden = !controls.showCycle.checked || controls.showCycle.disabled;
+  paintPortrait();
+});
 controls.parameterMode.addEventListener("change", () => {
   ensurePeakSweep();
   paintParameter();
 });
 controls.sectionMode.addEventListener("change", () => inspectHit(null));
 controls.showPlane.addEventListener("change", paintPortrait);
-controls.sectionAngle.addEventListener("input", updateSection);
-controls.sectionOffset.addEventListener("input", updateSection);
-controls.direction.addEventListener("change", updateSection);
+for (const slider of [controls.sectionAngle, controls.sectionTilt, controls.sectionOffset]) {
+  slider.addEventListener("input", () => updateSection());
+}
+controls.direction.addEventListener("change", () => updateSection());
+for (const button of document.querySelectorAll("[data-slice]")) {
+  button.addEventListener("click", () => {
+    const axis = button.dataset.slice;
+    controls.sectionAngle.value = axis === "y" ? "90" : "0";
+    controls.sectionTilt.value = axis === "z" ? "90" : "0";
+    let offset = 0;
+    if (axis === "x") offset = state.preset.defaults.sectionOffset;
+    if (axis === "z" && state.preset.id === "lorenz") offset = Math.max(0, state.parameter - 1);
+    controls.sectionMode.value = "section";
+    controls.showPlane.checked = true;
+    updateSection(offset);
+  });
+}
 controls.stabilityMode.addEventListener("change", paintStability);
 controls.equilibrium.addEventListener("change", () => selectEquilibrium(controls.equilibrium.value));
 controls.previousHit.addEventListener("click", () => stepHit(-1));
@@ -767,6 +906,11 @@ controls.parameterChart.addEventListener("keydown", event => {
   setParameter(event.key === "Home" ? min : event.key === "End" ? max : state.parameter + delta);
 });
 
+controls.cameraView.addEventListener("change", () => {
+  const { azimuth, elevation } = cameraViews[controls.cameraView.value];
+  Object.assign(state.camera, { azimuth, elevation });
+  paintPortrait();
+});
 for (const button of document.querySelectorAll("[data-camera]")) {
   button.addEventListener("click", () => useCamera(button.dataset.camera));
 }
@@ -789,9 +933,10 @@ controls.portrait.addEventListener("pointermove", event => {
   if (drag?.id !== event.pointerId) return;
   if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
   drag.moved = true;
+  controls.cameraView.value = "free";
   controls.portrait.dataset.dragging = "";
   state.camera.azimuth = drag.azimuth + (event.clientX - drag.x) * 0.011;
-  state.camera.elevation = clamp(drag.elevation - (event.clientY - drag.y) * 0.011, -1.45, 1.45);
+  state.camera.elevation = clamp(drag.elevation - (event.clientY - drag.y) * 0.011, -Math.PI / 2, Math.PI / 2);
   paintPortrait();
 });
 controls.portrait.addEventListener("pointerup", event => {
@@ -802,7 +947,7 @@ controls.portrait.addEventListener("pointerup", event => {
     const height = controls.launchHeight.valueAsNumber;
     const point = Number.isFinite(height) ? state.portraitGeometry?.pointAt(...coords, height) : null;
     if (!point) {
-      controls.portraitHelp.textContent = "That click misses the launch plane. Rotate the portrait or choose a different z value.";
+      controls.portraitHelp.textContent = "Choose the x-y projection to see the launch plane face-on, then click inside the box.";
       announce(controls.portraitHelp.textContent);
       return;
     }

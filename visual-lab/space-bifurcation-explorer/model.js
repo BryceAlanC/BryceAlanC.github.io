@@ -1,7 +1,10 @@
+import { dot, sectionFrame } from "./section-plane.js?v=20261117-1";
+
 const SIGMA = 10;
 const B = 8 / 3;
 const LORENZ_A1 = SIGMA + B + 1;
-export const LORENZ_HOPF = SIGMA * (SIGMA + B + 3) / (SIGMA - B - 1);
+// sigma*(sigma+b+3)/(sigma-b-1) for sigma = 10 and b = 8/3.
+export const LORENZ_HOPF = 470 / 19;
 
 export const PRESETS = Object.freeze({
   lorenz: Object.freeze({
@@ -93,12 +96,10 @@ function cubicEigenvalues([a1, a2, a3]) {
   return [{ re: u + v - shift, im: 0 }, { re, im }, { re, im: -im }];
 }
 
-function equilibrium(id, label, point, coefficients, eigenvalues) {
-  const tolerance = 1e-9;
-  const positive = eigenvalues.some(({ re }) => re > tolerance);
-  const negative = eigenvalues.some(({ re }) => re < -tolerance);
-  const critical = eigenvalues.some(({ re }) => Math.abs(re) <= tolerance);
-  const stability = critical ? "critical" : positive ? negative ? "saddle" : "unstable" : "stable";
+// Each displayed equilibrium is a sink below its known threshold and
+// a saddle above it. Use the parameter itself near a transition.
+function equilibrium(id, label, point, coefficients, eigenvalues, r, threshold) {
+  const stability = r === threshold ? "critical" : r < threshold ? "stable" : "saddle";
   return { id, label, point, coefficients, eigenvalues, stability };
 }
 
@@ -109,7 +110,7 @@ export function equilibriaAt(id, r) {
     // (lambda + 1)((lambda - r)^2 + 1).
     const coefficients = [1 - 2 * r, r * r + 1 - 2 * r, r * r + 1];
     return [equilibrium("origin", "O", [0, 0, 0], coefficients,
-      [{ re: -1, im: 0 }, { re: r, im: 1 }, { re: r, im: -1 }])];
+      [{ re: -1, im: 0 }, { re: r, im: 1 }, { re: r, im: -1 }], r, 0)];
   }
 
   // The origin's (x,y) block and z direction give separate factors.
@@ -118,18 +119,21 @@ export function equilibriaAt(id, r) {
   const discriminant = trace * trace - 4 * determinant;
   const root = Math.sqrt(Math.abs(discriminant));
   const originEigenvalues = discriminant >= 0
-    ? [{ re: (trace - root) / 2, im: 0 }, { re: (trace + root) / 2, im: 0 }]
+    ? [{ re: (trace - root) / 2, im: 0 }, { re: 2 * determinant / (trace - root), im: 0 }]
     : [{ re: trace / 2, im: root / 2 }, { re: trace / 2, im: -root / 2 }];
   const origin = equilibrium("origin", "O", [0, 0, 0],
-    [LORENZ_A1, determinant - B * trace, B * determinant], [...originEigenvalues, { re: -B, im: 0 }]);
+    [LORENZ_A1, determinant - B * trace, B * determinant], [...originEigenvalues, { re: -B, im: 0 }], r, 1);
   if (r <= 1) return [origin];
 
   const coordinate = Math.sqrt(B * (r - 1));
   const coefficients = [LORENZ_A1, B * (SIGMA + r), 2 * SIGMA * B * (r - 1)];
-  const eigenvalues = cubicEigenvalues(coefficients);
+  // At Hopf the cubic factors as (lambda + a1)*(lambda^2 + a2).
+  const eigenvalues = r === LORENZ_HOPF
+    ? [{ re: -LORENZ_A1, im: 0 }, { re: 0, im: Math.sqrt(coefficients[1]) }, { re: 0, im: -Math.sqrt(coefficients[1]) }]
+    : cubicEigenvalues(coefficients);
   return [origin,
-    equilibrium("plus", "C+", [coordinate, coordinate, r - 1], coefficients, eigenvalues),
-    equilibrium("minus", "C-", [-coordinate, -coordinate, r - 1], coefficients, eigenvalues)
+    equilibrium("plus", "C+", [coordinate, coordinate, r - 1], coefficients, eigenvalues, r, LORENZ_HOPF),
+    equilibrium("minus", "C-", [-coordinate, -coordinate, r - 1], coefficients, eigenvalues, r, LORENZ_HOPF)
   ];
 }
 
@@ -261,16 +265,15 @@ export function compareTrajectories(id, r, {
   };
 }
 
-export function sectionCrossings(samples, { angle = 0, offset = 0, direction = 1, after = 0 } = {}) {
-  const normalX = Math.cos(angle);
-  const normalY = Math.sin(angle);
+export function sectionCrossings(samples, { angle = 0, tilt = 0, offset = 0, direction = 1, after = 0 } = {}) {
+  const { normal, u, v } = sectionFrame({ angle, tilt });
   const sign = direction < 0 ? -1 : 1;
   const crossings = [];
   let previous = null;
   let previousDistance = 0;
   let onPlane = null;
   for (const sample of samples) {
-    const distance = sign * (normalX * sample.x + normalY * sample.y - offset);
+    const distance = sign * (normal[0] * sample.x + normal[1] * sample.y + normal[2] * sample.z - offset);
     if (distance === 0) {
       onPlane ??= sample;
       continue;
@@ -286,7 +289,8 @@ export function sectionCrossings(samples, { angle = 0, offset = 0, direction = 1
         z: lerp(previous.z, sample.z, fraction)
       };
       const { t, x, y, z } = intersection;
-      if (t >= after) crossings.push({ t, x, y, z, point: [x, y, z], u: -normalY * x + normalX * y, v: z });
+      const point = [x, y, z];
+      if (t >= after) crossings.push({ t, x, y, z, point, u: dot(point, u), v: dot(point, v) });
     }
     previous = sample;
     previousDistance = distance;
@@ -295,12 +299,18 @@ export function sectionCrossings(samples, { angle = 0, offset = 0, direction = 1
   return crossings;
 }
 
+// A positive radius gives one periodic orbit in the plane z = 0.
+export function hopfCycleRadius(r) {
+  return r > 0 ? Math.sqrt(r) : null;
+}
+
 export function samplePeakColumn(id, r, { count = 24 } = {}) {
   const preset = presetFor(id);
   finite(r, "Parameter");
   if (id === "hopf") {
     // The attracting circle has radius sqrt(r) and lies in z = 0.
-    return { parameter: r, values: [Math.sqrt(Math.max(0, r))], kind: r > 0 ? "peaks" : "steady", exact: true };
+    const radius = hopfCycleRadius(r);
+    return { parameter: r, values: [radius ?? 0], kind: radius === null ? "steady" : "peaks", exact: true };
   }
 
   const peakCount = Math.max(1, Math.min(100, Math.round(finite(count, "Peak count"))));

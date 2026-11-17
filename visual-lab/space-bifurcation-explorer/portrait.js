@@ -1,3 +1,5 @@
+import { sectionFrame, sectionPolygon } from "./section-plane.js?v=20261117-1";
+
 const INK = "#071c18";
 const AXIS = "#8eafa6";
 const TRAIL = "#78ddc9";
@@ -5,6 +7,10 @@ const COMPARISON = "#ffb280";
 const SECTION = "#d2b7fa";
 const SELECTION = "#f2c969";
 const projectionCache = new WeakMap();
+const unitCircle = Array.from({ length: 96 }, (_, i) => {
+  const angle = i * 2 * Math.PI / 96;
+  return [Math.cos(angle), Math.sin(angle)];
+});
 
 function cameraProjection(bounds, width, height, { azimuth, elevation, zoom }) {
   const [xmid, ymid, zmid] = bounds.map(([min, max]) => (min + max) / 2);
@@ -39,29 +45,6 @@ function cameraProjection(bounds, width, height, { azimuth, elevation, zoom }) {
   return { project, pointAt };
 }
 
-function sectionCorners([[xmin, xmax], [ymin, ymax], [zmin, zmax]], { angle, offset }) {
-  const nx = Math.cos(angle);
-  const ny = Math.sin(angle);
-  const x0 = offset * nx;
-  const y0 = offset * ny;
-  let low = -Infinity;
-  let high = Infinity;
-  // Intersect the plane's horizontal line with the x-y bounds before
-  // extending that segment between the minimum and maximum z values.
-  for (const [start, direction, min, max] of [[x0, -ny, xmin, xmax], [y0, nx, ymin, ymax]]) {
-    if (Math.abs(direction) < 1e-10) {
-      if (start < min || start > max) return [];
-      continue;
-    }
-    const first = (min - start) / direction;
-    const second = (max - start) / direction;
-    low = Math.max(low, Math.min(first, second));
-    high = Math.min(high, Math.max(first, second));
-  }
-  if (low >= high) return [];
-  return [[low, zmin], [high, zmin], [high, zmax], [low, zmax]].map(([u, z]) => [x0 - u * ny, y0 + u * nx, z]);
-}
-
 function traceGeometry(points, project, key) {
   const cached = projectionCache.get(points);
   if (cached?.key === key) return cached;
@@ -75,23 +58,41 @@ function traceGeometry(points, project, key) {
     if (index === 0) path.moveTo(x, y);
     else path.lineTo(x, y);
   }
-  const result = { key, stride, rendered, path };
+  const result = { key, stride, rendered, path, prefix: null, prefixEnd: -1 };
   projectionCache.set(points, result);
   return result;
+}
+
+// A forward-playing trail extends its cached path by only the new samples.
+function pathThrough(geometry, end) {
+  if (!geometry.prefix || end < geometry.prefixEnd) {
+    geometry.prefix = new Path2D();
+    geometry.prefix.moveTo(...geometry.rendered[0]);
+    geometry.prefixEnd = 0;
+  }
+  while (geometry.prefixEnd < end) {
+    geometry.prefixEnd += 1;
+    geometry.prefix.lineTo(...geometry.rendered[geometry.prefixEnd]);
+  }
+  return geometry.prefix;
 }
 
 export function drawPortrait(context, width, height, {
   preset,
   trajectory,
   comparison = null,
+  cycleRadius = null,
   equilibria = [],
   section = null,
   crossings = [],
+  crossingCutoff = Infinity,
   selectedCrossing = null,
   nextCrossing = null,
   launchHeight = null,
   camera,
   headIndex,
+  showFullOrbit = true,
+  comparisonAtHead = false,
   selectedEquilibrium
 }) {
   if (width < 1 || height < 1) return;
@@ -143,17 +144,18 @@ export function drawPortrait(context, width, height, {
     context.fillText(label, x, y);
   }
 
-  function drawTrail(points, color, muted, headColor) {
+  function drawTrail(points, color, muted, headColor, showHead = true) {
     if (!points?.length) return;
     const animated = Number.isFinite(headIndex);
-    const { stride, rendered, path } = traceGeometry(points, project, key);
+    const geometry = traceGeometry(points, project, key);
+    const { stride, rendered, path } = geometry;
+    const head = animated ? Math.max(0, Math.min(points.length - 1, Math.round(headIndex))) : points.length - 1;
+    const end = head === points.length - 1 ? rendered.length - 1 : Math.floor(head / stride);
     context.strokeStyle = animated ? muted : color;
     context.lineWidth = animated ? 1.05 : 1.22;
-    context.stroke(path);
-    if (!animated) return;
+    context.stroke(showFullOrbit || !animated ? path : pathThrough(geometry, end));
+    if (!animated || !showHead) return;
 
-    const head = Math.max(0, Math.min(points.length - 1, Math.round(headIndex)));
-    const end = Math.floor(head / stride);
     const tail = Math.max(0, end - Math.max(40, Math.round(rendered.length * 0.055)));
     const [headX, headY] = project(points[head]);
     context.beginPath();
@@ -166,13 +168,12 @@ export function drawPortrait(context, width, height, {
     circle(headX, headY, 4, headColor, INK, 1.35);
   }
 
-  function drawNormal(corners) {
+  function drawNormal(corners, normal) {
     const sign = section.direction < 0 ? -1 : 1;
-    const length = 0.15 * Math.min(xmax - xmin, ymax - ymin) * sign;
-    const [x, y] = corners[2].map((coordinate, axis) => 0.5 * (coordinate + corners[3][axis]));
-    const z = zmax - 0.15 * (zmax - zmin);
-    const [startX, startY] = project([x, y, z]);
-    const [endX, endY] = project([x + length * Math.cos(section.angle), y + length * Math.sin(section.angle), z]);
+    const length = 0.15 * Math.min(xmax - xmin, ymax - ymin, zmax - zmin) * sign;
+    const center = [0, 1, 2].map(i => corners.reduce((sum, p) => sum + p[i], 0) / corners.length);
+    const [startX, startY] = project(center);
+    const [endX, endY] = project(center.map((value, i) => value + length * normal[i]));
     if (Math.hypot(endX - startX, endY - startY) < 9) return;
     const heading = Math.atan2(endY - startY, endX - startX);
     context.beginPath();
@@ -225,7 +226,8 @@ export function drawPortrait(context, width, height, {
   }
 
   if (section) {
-    const corners = sectionCorners(bounds, section);
+    const frame = sectionFrame(section);
+    const corners = sectionPolygon(bounds, frame, section.offset);
     if (corners.length) {
       polygon(corners, true);
       context.fillStyle = "#b595e526";
@@ -235,15 +237,26 @@ export function drawPortrait(context, width, height, {
       context.setLineDash([5, 4]);
       context.stroke();
       context.setLineDash([]);
-      drawNormal(corners);
+      drawNormal(corners, frame.normal);
     }
   }
 
-  drawTrail(comparison?.points, COMPARISON, "#ffb28060", COMPARISON);
+  if (comparisonAtHead) {
+    const index = Math.round(headIndex);
+    context.setLineDash([4, 4]);
+    line([trajectory.points[index], comparison.points[index]], "#ffdfad", 1.6);
+    context.setLineDash([]);
+  }
+  if (cycleRadius !== null) {
+    const circle = unitCircle.map(([x, y]) => [cycleRadius * x, cycleRadius * y, 0]);
+    line(circle, "#9bc8ff", 3.5, true);
+  }
+  drawTrail(comparison?.points, COMPARISON, "#ffb28060", COMPARISON, comparisonAtHead);
   drawTrail(trajectory.points, TRAIL, "#78ddc976", "#e5fff8");
 
   if (section) {
     for (const hit of crossings) {
+      if (hit.t > crossingCutoff) break;
       const [x, y] = project(hit.point ?? hit);
       circle(x, y, 2.6, SECTION, INK, 0.85);
     }

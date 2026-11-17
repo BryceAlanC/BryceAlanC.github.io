@@ -25,8 +25,8 @@
     />
     <link rel="stylesheet" href="../../assets/styles.css" />
     <link rel="stylesheet" href="../assets/lab.css" />
-    <link rel="stylesheet" href="./style.css?v=20261114-4" />
-    <script type="module" src="./demo.js?v=20261114-4"></script>
+    <link rel="stylesheet" href="./style.css?v=20261117-1" />
+    <script type="module" src="./demo.js?v=20261117-1"></script>
   </head>
   <body class="visual-lab-page">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -71,12 +71,10 @@
         <div class="section-shell">
           <a class="app-back" href="../"><span aria-hidden="true">&larr;</span> Back to the Visual Lab</a>
           <div class="app-hero-grid">
-            <p class="section-kicker">Nonlinear dynamics</p>
             <h1>Bifurcations in 3D</h1>
             <p class="app-hero-copy">
-              Follow the Lorenz flow as <i>r</i> changes. Launch nearby trajectories to see
-              how fast they separate. Move a section through the portrait and select a
-              crossing to find it on the orbit.
+              Explore the Lorenz and Hopf flows. Change the parameter, follow nearby
+              trajectories, or slice an orbit to see where it returns.
             </p>
           </div>
         </div>
@@ -149,6 +147,12 @@
                 <p id="trajectory-summary">Computing trajectory&hellip;</p>
               </div>
               <div class="space-actions space-camera" role="group" aria-label="Portrait camera">
+                <select id="camera-view" aria-label="Portrait projection">
+                  <option value="free">Free 3D</option>
+                  <option value="xy">x-y projection</option>
+                  <option value="xz">x-z projection</option>
+                  <option value="yz">y-z projection</option>
+                </select>
                 <button aria-label="Rotate left" type="button" data-camera="left">&larr;</button>
                 <button aria-label="Rotate right" type="button" data-camera="right">&rarr;</button>
                 <button aria-label="Rotate up" type="button" data-camera="up">&uarr;</button>
@@ -164,6 +168,7 @@
               </canvas>
               <div class="space-key space-portrait-key" aria-hidden="true">
                 <span><i class="key-trajectory"></i>Trajectory</span>
+                <span id="portrait-cycle-key" hidden><i class="key-portrait-cycle"></i>Exact cycle</span>
                 <span id="comparison-key" hidden><i class="key-comparison"></i>Nearby trajectory</span>
                 <span><i class="key-equilibrium"></i>Equilibria</span>
                 <span><i class="key-hit"></i>Section crossings</span>
@@ -183,9 +188,30 @@
                 <button type="button" id="launch-mode" aria-pressed="false">Place initial point</button>
                 <label for="launch-height">at <i>z</i> =</label>
                 <input type="number" id="launch-height" min="0" max="70" step="any" value="1" />
+                <label class="space-full-orbit"><input type="checkbox" id="full-orbit" checked /> Show full trajectory</label>
+                <label class="space-check" id="cycle-control" hidden>
+                  <input type="checkbox" id="show-cycle" checked /> Show exact cycle
+                </label>
               </div>
               <p id="portrait-help">Drag to rotate or click an equilibrium to inspect it. Use arrow keys to rotate, + and &minus; to zoom, and 0 to reset.</p>
             </div>
+            <details class="space-time-trace" id="time-trace">
+              <summary>Coordinate through time</summary>
+              <div class="space-trace-controls">
+                <label>Coordinate <select aria-label="Time trace coordinate">
+                  <option value="x">x(t)</option><option value="y">y(t)</option><option value="z">z(t)</option>
+                </select></label>
+                <span class="space-trace-value"></span>
+              </div>
+              <div class="space-trace-plot">
+                <canvas role="img" aria-label="Selected coordinate against time for the displayed trajectories"></canvas>
+                <div class="space-trace-window">
+                  <span class="space-trace-cursor" aria-hidden="true"></span>
+                  <input type="range" min="0" max="90" step="any" value="0" aria-label="Time on coordinate plot" />
+                </div>
+              </div>
+              <p>Click or drag to set the time. Use the left and right arrow keys to step by one time unit.</p>
+            </details>
           </section>
 
           <section class="space-panel space-bifurcation" aria-labelledby="bifurcation-title">
@@ -206,11 +232,12 @@
             <div class="space-key space-chart-key" id="equilibrium-key" aria-hidden="true">
               <span><i class="key-sink"></i>Sink</span>
               <span><i class="key-unstable"></i>Unstable</span>
+              <span id="cycle-extrema-key" hidden><i class="key-cycle-extrema"></i>Cycle extrema</span>
               <span><i class="key-parameter"></i>Current <i>r</i></span>
             </div>
             <div class="space-key space-chart-key" id="peak-key" aria-hidden="true" hidden>
-              <span><i class="key-peak"></i>Sampled peak</span>
-              <span><i class="key-steady"></i>Near a sink</span>
+              <span><i class="key-peak"></i><span id="peak-label">Sampled peak</span></span>
+              <span><i class="key-steady"></i><span id="steady-label">Near a sink</span></span>
               <span><i class="key-parameter"></i>Current <i>r</i></span>
             </div>
             <p class="space-footnote" id="parameter-summary"></p>
@@ -232,8 +259,16 @@
             </header>
             <div class="space-section-controls">
               <label class="space-check"><input id="show-plane" type="checkbox" checked /> Show plane</label>
-              <label for="section-angle">Angle <output id="angle-readout" for="section-angle">0&deg;</output>
-                <input id="section-angle" type="range" min="-180" max="180" step="1" value="0" />
+              <div class="space-axis-slices" role="group" aria-label="Coordinate plane shortcuts">
+                <button type="button" data-slice="x" title="Slice perpendicular to the x-axis">x slice</button>
+                <button type="button" data-slice="y" title="Slice perpendicular to the y-axis">y slice</button>
+                <button type="button" data-slice="z" title="Slice perpendicular to the z-axis">z slice</button>
+              </div>
+              <label for="section-angle">Azimuth <output id="angle-readout" for="section-angle">0&deg;</output>
+                <input id="section-angle" type="range" min="-180" max="180" step="1" value="0" aria-label="Section azimuth" />
+              </label>
+              <label for="section-tilt">Normal tilt <output id="tilt-readout" for="section-tilt">0&deg;</output>
+                <input id="section-tilt" type="range" min="-90" max="90" step="1" value="0" aria-label="Section normal tilt" />
               </label>
               <label for="section-offset">Offset <output id="offset-readout" for="section-offset">5</output>
                 <input id="section-offset" type="range" min="-20" max="20" step="0.1" value="5" />
@@ -264,12 +299,16 @@
           <section class="space-panel space-separation" id="separation-panel" aria-labelledby="separation-title" hidden>
             <header class="space-panel-heading">
               <h2 id="separation-title">Trajectory separation</h2>
-              <p>Euclidean distance at equal times</p>
+              <p id="live-distance" class="space-distance-readout"></p>
             </header>
             <div class="space-canvas space-canvas-chart">
-              <canvas id="separation-canvas" role="img" aria-label="Distance between the trajectories versus time, logarithmic scale" aria-describedby="separation-summary">
+              <canvas id="separation-canvas" tabindex="0" role="img" aria-label="Distance between the trajectories versus time, logarithmic scale" aria-describedby="live-distance separation-help separation-summary" aria-keyshortcuts="ArrowLeft ArrowRight Home End">
                 Distance between nearby trajectories over time.
               </canvas>
+            </div>
+            <div class="space-point-controls">
+              <p id="separation-help">Click the graph to inspect both points at that time. Arrow keys step one time unit.</p>
+              <button type="button" id="jump-separation" disabled>Jump to first <i>d</i> &ge; 1</button>
             </div>
             <p class="space-footnote" id="separation-summary"></p>
           </section>
@@ -305,15 +344,18 @@
               The sweep steps through a family of systems.</dd>
             <dt>Trajectory separation</dt>
             <dd>The nearby trajectory starts at the same point with one coordinate changed.
-              The distance plot compares the two trajectories at equal times. Growth over a finite
+              The dashed line joins the two current points in the portrait. The plot shows their
+              Euclidean distance in three dimensions at equal sampled times. Turn off
+              Show full trajectory to reveal the paths and crossings as playback advances. Growth over a finite
               interval illustrates how the trajectories separate in this run.</dd>
             <dt>Plane crossings</dt>
-            <dd>The vertical plane has horizontal normal (cos&nbsp;&alpha;, sin&nbsp;&alpha;, 0)
-              and signed offset <i>d</i>. Its horizontal coordinate is
-              <i>u</i> = &minus;<i>x</i> sin&nbsp;&alpha; + <i>y</i> cos&nbsp;&alpha;.
-              The section records the original 3D trajectory crossing in the chosen direction,
-              after discarding an initial transient. The Hopf orbit meets a transverse section
-              through the origin once per direction per revolution.</dd>
+            <dd>The arrow is perpendicular to the section and points in the selected crossing direction.
+              Azimuth turns the normal around the <i>z</i>-axis. Tilting the normal from 0&deg; to 90&deg;
+              moves the section from vertical to horizontal. Offset moves it along its positive unit normal.
+              For a tilted plane, <i>u</i> runs horizontally along the plane and <i>v</i> runs uphill
+              perpendicular to <i>u</i>. Horizontal sections use <i>x</i> and <i>y</i>.
+              Each point marks one crossing after the transient. A trajectory lying in the plane has
+              no directed crossings.</dd>
             <dt>Orbit peaks</dt>
             <dd>The Lorenz sweep samples local maxima of <i>z</i> after a transient,
               using one fixed starting point for each parameter. It can miss coexisting

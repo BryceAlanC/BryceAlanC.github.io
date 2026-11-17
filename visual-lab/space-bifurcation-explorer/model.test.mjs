@@ -1,9 +1,11 @@
+import { dot, projectedBounds, sectionFrame, sectionPolygon } from "./section-plane.js";
 import assert from "node:assert/strict";
 import {
   LORENZ_HOPF,
   compareTrajectories,
   equilibriaAt,
   fieldAt,
+  hopfCycleRadius,
   integrateTrajectory,
   sampleEquilibria,
   samplePeakColumn,
@@ -14,7 +16,13 @@ function near(actual, expected, tolerance = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `Expected ${actual} near ${expected}`);
 }
 
-near(LORENZ_HOPF, 470 / 19);
+assert.equal(LORENZ_HOPF, 470 / 19);
+for (const [r, type] of [[-1e-12, "stable"], [0, "critical"], [1e-12, "saddle"]]) {
+  assert.equal(equilibriaAt("hopf", r)[0].stability, type);
+}
+for (const [r, type] of [[LORENZ_HOPF - 1e-12, "stable"], [LORENZ_HOPF + 1e-12, "saddle"]]) {
+  assert.equal(equilibriaAt("lorenz", r)[1].stability, type);
+}
 assert.equal(equilibriaAt("lorenz", 0)[0].stability, "stable");
 assert.deepEqual(equilibriaAt("lorenz", 1).map(eq => eq.stability), ["critical"]);
 assert.deepEqual(equilibriaAt("lorenz", 12).map(eq => eq.stability), ["saddle", "stable", "stable"]);
@@ -47,6 +55,22 @@ assert.equal(equilibriaAt("hopf", -0.5)[0].stability, "stable");
 assert.equal(equilibriaAt("hopf", 0)[0].stability, "critical");
 assert.equal(equilibriaAt("hopf", 0.5)[0].stability, "saddle");
 
+for (const r of [-1, -1e-12, 0]) assert.equal(hopfCycleRadius(r), null);
+for (const r of [1e-12, 0.25, 1, 2]) {
+  const radius = hopfCycleRadius(r);
+  near(radius, Math.sqrt(r), 1e-15);
+  for (const angle of [0, 1.2, Math.PI]) {
+    const x = radius * Math.cos(angle), y = radius * Math.sin(angle);
+    const [dx, dy, dz] = fieldAt("hopf", r, [x, y, 0]);
+    near(dx, -y);
+    near(dy, x);
+    near(dz, 0);
+  }
+}
+const axial = integrateTrajectory("hopf", 1, { initial: [0, 0, 1] });
+assert.ok(axial.samples.every(({ x, y }) => x === 0 && y === 0));
+assert.equal(axial.peaks.length, 0);
+assert.deepEqual(samplePeakColumn("hopf", 0).values, [0]);
 const orbit = integrateTrajectory("hopf", 1);
 assert.equal(orbit.termination, "completed");
 assert.equal(orbit.samples.at(-1).t, 100);
@@ -77,6 +101,43 @@ assert.deepEqual(sectionCrossings(line).map(crossing => crossing.point), [[0, 2,
 assert.equal(sectionCrossings(line, { direction: -1 }).length, 0);
 assert.equal(sectionCrossings(line, { after: 1.1 }).length, 0);
 assert.equal(sectionCrossings([line[0], line[1], { ...line[0], t: 2 }]).length, 0);
+
+// A horizontal slice reports ordinary x-y coordinates, independent of azimuth.
+// A cycle lying within the plane has no transverse intersections.
+const horizontal = { angle: 0.37, tilt: Math.PI / 2, offset: 2 };
+const rising = [{ t: 0, x: 1, y: 2, z: 1 }, { t: 2, x: 3, y: 0, z: 3 }];
+const [hit] = sectionCrossings(rising, horizontal);
+assert.deepEqual([hit.t, hit.u, hit.v], [1, 2, 1]);
+assert.equal(sectionCrossings(rising, { ...horizontal, direction: -1 }).length, 0);
+const flatOrbit = integrateTrajectory("hopf", 1, { initial: [1, 0, 0], duration: 12, transient: 0 });
+assert.equal(sectionCrossings(flatOrbit.samples, { tilt: Math.PI / 2 }).length, 0);
+
+const box = [[-1, 1], [-1, 1], [-1, 1]];
+const oblique = { angle: Math.PI / 4, tilt: Math.asin(1 / Math.sqrt(3)), offset: 0 };
+const frame = sectionFrame(oblique);
+for (const axis of [frame.normal, frame.u, frame.v]) near(dot(axis, axis), 1);
+near(dot(frame.normal, frame.u), 0);
+near(dot(frame.normal, frame.v), 0);
+near(dot(frame.u, frame.v), 0);
+const [obliqueHit] = sectionCrossings([
+  { t: 0, x: -1, y: 1, z: -1 }, { t: 1, x: 1, y: 1, z: -1 }
+], oblique);
+near(obliqueHit.t, 0.5);
+near(dot(obliqueHit.point, frame.normal), 0);
+near(obliqueHit.u, dot(obliqueHit.point, frame.u));
+near(obliqueHit.v, dot(obliqueHit.point, frame.v));
+const hexagon = sectionPolygon(box, frame, 0);
+assert.equal(hexagon.length, 6);
+for (const p of hexagon) {
+  near(dot(p, frame.normal), 0);
+  assert.equal(p.filter(x => Math.abs(x) === 1).length, 2);
+}
+near(projectedBounds(box, frame.normal)[1], Math.sqrt(3));
+assert.equal(sectionPolygon(box, frame, 1).length, 3);
+assert.equal(sectionPolygon(box, frame, 2).length, 0);
+const top = sectionPolygon(box, sectionFrame(horizontal), 1);
+assert.equal(top.length, 4);
+assert.ok(top.every(p => p[2] === 1));
 
 assert.deepEqual(samplePeakColumn("hopf", 1), { parameter: 1, values: [1], kind: "peaks", exact: true });
 assert.deepEqual(samplePeakColumn("lorenz", 12), { parameter: 12, values: [11], kind: "steady" });
